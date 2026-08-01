@@ -3,61 +3,104 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>ZERO+ · لعبة المحاكاة المالية</title>
-  <!-- React و Babel من CDN -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <!-- الخطوط -->
+  <title>ZERO+ · مدينة المال</title>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Noto Kufi Arabic', sans-serif; background: #0a1e1a; color: #e0e8e4; -webkit-tap-highlight-color: transparent; }
-    .app { max-width: 520px; margin: 0 auto; min-height: 100vh; background: #0d2621; position: relative; padding-bottom: 80px; box-shadow: 0 0 40px rgba(0,0,0,0.5); }
-    /* شريط الحالة العلوي */
-    .top-bar { padding: 16px; background: #0a1e1a; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1d3d35; }
-    .avatar { width: 52px; height: 52px; border-radius: 50%; background: #1d3d35; display: flex; align-items: center; justify-content: center; font-size: 30px; transition: 0.3s; }
-    .net-worth { font-family: 'IBM Plex Mono', monospace; font-size: 24px; font-weight: 600; color: #c9974a; }
-    .net-worth small { font-size: 14px; font-weight: 400; opacity: 0.7; }
-    .stats-row { display: flex; gap: 8px; margin: 8px 12px; }
-    .stat-box { flex: 1; background: #122e27; border-radius: 12px; padding: 12px 8px; text-align: center; border: 1px solid #1d3d35; }
+    body { font-family: 'Noto Kufi Arabic', sans-serif; background: #0a1e1a; color: #e0e8e4; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+    .app { max-width: 520px; margin: 0 auto; min-height: 100vh; background: #0d2621; position: relative; box-shadow: 0 0 40px rgba(0,0,0,0.5); }
+
+    .hud { padding: 14px 16px; background: #0a1e1a; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1d3d35; }
+    .hud-mid { text-align: center; }
+    .hud-date { font-size: 12px; color: #8aa89b; }
+    .hud-net { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 600; color: #c9974a; }
+    .hud-net small { font-size: 13px; font-weight: 400; opacity: 0.7; }
+    #moodEmoji { font-size: 28px; }
+
+    .stats-panel { display: none; margin: 10px 12px; }
+    .stats-panel.open { display: flex; gap: 8px; }
+    .stat-box { flex: 1; background: #122e27; border-radius: 12px; padding: 10px 6px; text-align: center; border: 1px solid #1d3d35; }
     .stat-box .label { font-size: 10px; color: #8aa89b; margin-bottom: 4px; }
-    .stat-box .value { font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 600; }
+    .stat-box .value { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 600; }
+
+    .stage { position: relative; margin: 10px 12px; border-radius: 14px; overflow: hidden; border: 1px solid #1d3d35; }
+    .stage canvas { display: block; width: 100%; height: auto; background: #0a1e1a; }
+    .interact-btn { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); background: #c9974a; color: #0a1e1a; border: none; padding: 10px 20px; border-radius: 22px; font-weight: 700; font-family: inherit; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,0.45); cursor: pointer; }
+    .interact-btn.hidden { display: none; }
+
+    .controls { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px 24px; }
+    .dpad { direction: ltr; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .dpad-row { display: flex; gap: 6px; }
+    .dpad-btn { width: 50px; height: 50px; border-radius: 10px; background: #122e27; border: 1px solid #1d3d35; color: #c9974a; font-size: 18px; cursor: pointer; touch-action: none; }
+    .dpad-btn:active { background: #1d3d35; }
+    .dpad-spacer { width: 50px; height: 50px; }
+
     .card { background: #122e27; border-radius: 14px; padding: 16px; margin: 12px; border: 1px solid #1d3d35; }
     .card h3 { font-size: 16px; color: #c9974a; margin-bottom: 12px; }
     .progress { height: 10px; background: #1d3d35; border-radius: 5px; overflow: hidden; margin: 6px 0; }
-    .progress-fill { height: 100%; border-radius: 5px; transition: width 0.5s ease; }
+    .progress-fill { height: 100%; border-radius: 5px; transition: width 0.3s ease; }
     .btn { background: #c9974a; color: #0a1e1a; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer; width: 100%; font-family: inherit; font-size: 15px; transition: opacity 0.2s; }
     .btn:active { opacity: 0.8; }
     .btn-sm { padding: 8px 16px; width: auto; font-size: 13px; }
     .btn-outline { background: transparent; border: 1px solid #c9974a; color: #c9974a; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .term { color: #c9974a; text-decoration: underline dotted; cursor: pointer; }
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
     .modal { background: #122e27; border-radius: 18px; padding: 24px; max-width: 400px; width: 100%; border: 1px solid #c9974a; max-height: 80vh; overflow-y: auto; }
     .modal h2 { color: #c9974a; margin-bottom: 16px; font-size: 20px; }
-    input, select { width: 100%; padding: 10px; background: #0a1e1a; border: 1px solid #1d3d35; color: #e0e8e4; border-radius: 8px; font-family: inherit; margin: 6px 0 14px; font-size: 15px; }
+    input { width: 100%; padding: 10px; background: #0a1e1a; border: 1px solid #1d3d35; color: #e0e8e4; border-radius: 8px; font-family: inherit; margin: 6px 0 14px; font-size: 15px; }
     input[type=range] { accent-color: #c9974a; }
     .slider-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
     .slider-row span { font-size: 13px; }
     .slider-row .val { font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #c9974a; }
-    /* شريط التنقل السفلي */
-    .nav { display: flex; justify-content: space-around; background: #0a1e1a; padding: 10px 0 14px; border-top: 1px solid #1d3d35; position: fixed; bottom: 0; width: 100%; max-width: 520px; z-index: 30; }
-    .nav-btn { background: none; border: none; color: #5c7a6e; font-size: 11px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: 0.2s; padding: 6px 12px; border-radius: 8px; }
-    .nav-btn.active { color: #c9974a; background: rgba(201,151,74,0.1); }
-    canvas { width: 100%; border-radius: 8px; background: #0a1e1a; }
+    .row-actions { display: flex; gap: 8px; align-items: center; }
+    .row-actions input { margin: 0; }
     .event-btn { background: #1d3d35; border: 1px solid #2a5043; color: #e0e8e4; padding: 12px; border-radius: 8px; width: 100%; margin: 6px 0; cursor: pointer; font-family: inherit; font-size: 14px; text-align: right; transition: background 0.2s; }
     .event-btn:hover { background: #2a5043; }
-    .danger { color: #e74c3c; }
-    .success { color: #2ecc71; }
+    .inline-error { color: #e74c3c; font-size: 13px; margin: -8px 0 12px; min-height: 16px; }
     .muted { color: #8aa89b; }
-    @media (max-width: 400px) { .stats-row { flex-wrap: wrap; } .stat-box { min-width: 45%; } }
+    .term-row { padding: 10px 0; border-bottom: 1px solid #1d3d35; cursor: pointer; }
   </style>
 </head>
 <body>
-  <div id="root"></div>
-  <script type="text/babel">
-    const { useState, useEffect, useRef, useCallback } = React;
+  <div class="app">
+    <div class="hud">
+      <span id="moodEmoji">🙂</span>
+      <div class="hud-mid">
+        <div class="hud-date" id="hudDate">السنة 1 · شهر 1</div>
+        <div class="hud-net" id="hudNet">0 <small>ريال</small></div>
+      </div>
+      <button class="btn btn-sm" id="statsBtn">📊</button>
+    </div>
+
+    <div class="stats-panel" id="statsPanel">
+      <div class="stat-box"><div class="label">💰 الجاري</div><div class="value" id="statCash">0</div></div>
+      <div class="stat-box"><div class="label">🛡 الطوارئ</div><div class="value" id="statEmergency">0</div></div>
+      <div class="stat-box"><div class="label">📈 استثمارات</div><div class="value" id="statInvest">0</div></div>
+      <div class="stat-box"><div class="label">💳 ديون</div><div class="value" id="statDebt">0</div></div>
+    </div>
+
+    <div class="stage">
+      <canvas id="game" width="512" height="640"></canvas>
+      <button class="interact-btn hidden" id="interactBtn"></button>
+    </div>
+
+    <div class="controls">
+      <div class="dpad-spacer"></div>
+      <div class="dpad">
+        <button class="dpad-btn" id="btnUp">▲</button>
+        <div class="dpad-row">
+          <button class="dpad-btn" id="btnLeft">◀</button>
+          <button class="dpad-btn" id="btnDown">▼</button>
+          <button class="dpad-btn" id="btnRight">▶</button>
+        </div>
+      </div>
+      <div class="dpad-spacer"></div>
+    </div>
+  </div>
+
+  <div id="modalRoot"></div>
+
+  <script>
     const fmt = (n) => Math.round(n).toLocaleString("en-US");
 
     // ==================== القاموس المالي ====================
@@ -77,7 +120,7 @@
     const INITIAL_STATE = {
       cash: 3000,
       emergency: 2000,
-      emergencyTarget: 18000, // 6 أشهر مصروفات
+      emergencyTarget: 18000,
       investments: {
         stocks: { amount: 0, cost: 0 },
         bonds: { amount: 0, cost: 0 },
@@ -91,9 +134,9 @@
       month: 1,
       year: 1,
       goals: [],
-      history: [], // { month, netWorth }
+      history: [],
       eventLog: [],
-      tempEffects: [], // { type: 'income' | 'expense', amount, monthsLeft } — تأثيرات مؤقتة من الأحداث
+      tempEffects: [],
     };
 
     // ==================== الأحداث المالية ====================
@@ -125,7 +168,7 @@
     ];
 
     // ==================== الدوال المساعدة ====================
-    const derive = (state) => {
+    function derive(state) {
       const tempEffects = state.tempEffects || [];
       const incomeAdj = tempEffects.filter((e) => e.type === "income").reduce((a, e) => a + e.amount, 0);
       const expenseAdj = tempEffects.filter((e) => e.type === "expense").reduce((a, e) => a + e.amount, 0);
@@ -136,39 +179,374 @@
       const netWorth = state.cash + state.emergency + totalInv - state.debt;
       const coverage = effExpenses > 0 ? state.emergency / effExpenses : 0;
       return { surplus, netWorth, totalInv, coverage, effIncome, effExpenses };
-    };
+    }
 
-    // ==================== التطبيق الرئيسي ====================
-    function App() {
-      const [screen, setScreen] = useState("dashboard");
-      const [state, setState] = useState(() => {
-        try {
-          const saved = localStorage.getItem("zeroStateV2");
-          return saved ? { ...INITIAL_STATE, ...JSON.parse(saved) } : INITIAL_STATE;
-        } catch { return INITIAL_STATE; }
+    function cloneInvestments(inv) {
+      return {
+        stocks: { ...inv.stocks },
+        bonds: { ...inv.bonds },
+        realEstate: { ...inv.realEstate },
+        crypto: { ...inv.crypto },
+      };
+    }
+
+    // ==================== الحالة والحفظ ====================
+    const SAVE_KEY = "zeroGameStateV1";
+    let isFirstVisit = false;
+    let state = loadState();
+
+    function loadState() {
+      try {
+        const saved = localStorage.getItem(SAVE_KEY);
+        if (!saved) { isFirstVisit = true; return structuredClone(INITIAL_STATE); }
+        return { ...structuredClone(INITIAL_STATE), ...JSON.parse(saved) };
+      } catch {
+        isFirstVisit = true;
+        return structuredClone(INITIAL_STATE);
+      }
+    }
+
+    function setState(next) {
+      state = next;
+      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      refreshHud();
+    }
+
+    // ==================== منطق الشهر والأحداث ====================
+    function advanceMonth(baseState) {
+      const source = baseState || state;
+      let s = {
+        ...source,
+        investments: cloneInvestments(source.investments),
+        tempEffects: (source.tempEffects || []).map((e) => ({ ...e })),
+      };
+      if (s.month % 12 === 0) {
+        s.monthlyIncome = Math.round(s.monthlyIncome * 1.02);
+        s.monthlyExpenses = Math.round(s.monthlyExpenses * 1.015);
+      }
+      const stockR = (Math.random() * 0.24) - 0.10;
+      s.investments.stocks.amount = Math.round(s.investments.stocks.amount * (1 + stockR));
+      s.investments.bonds.amount = Math.round(s.investments.bonds.amount * 1.003);
+      if (s.investments.realEstate.amount > 0) {
+        s.investments.realEstate.rentalIncome = Math.round(s.investments.realEstate.amount * 0.004);
+        s.cash += s.investments.realEstate.rentalIncome;
+      }
+      s.investments.crypto.amount = Math.round(s.investments.crypto.amount * (1 + (Math.random() * 0.6 - 0.25)));
+      if (s.debt > 0) s.debt = Math.round(s.debt * 1.01);
+
+      const { surplus } = derive(s);
+      s.cash += surplus;
+      s.tempEffects = s.tempEffects.map((e) => ({ ...e, monthsLeft: e.monthsLeft - 1 })).filter((e) => e.monthsLeft > 0);
+      s.month += 1;
+      if (s.month > 12) { s.month = 1; s.year += 1; }
+
+      const totalInv = Object.values(s.investments).reduce((a, i) => a + i.amount, 0);
+      const nw = s.cash + s.emergency + totalInv - s.debt;
+      s.history = [...s.history, { month: s.month + (s.year - 1) * 12, netWorth: nw }];
+
+      setState(s);
+
+      if (Math.random() < 0.5) {
+        const ev = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+        openEvent(ev);
+      }
+    }
+
+    function openEvent(ev) {
+      pushModal(`
+        <h2>${ev.title}</h2>
+        <p style="margin:12px 0;line-height:1.8">${ev.desc}</p>
+        ${ev.choices.map((c, i) => `<button class="event-btn" data-choice="${i}">${c.label}</button>`).join("")}
+      `, (root) => {
+        root.querySelectorAll("[data-choice]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const choice = ev.choices[Number(btn.dataset.choice)];
+            setState(choice.effect(state));
+            closeAllModals();
+          });
+        });
       });
-      const [event, setEvent] = useState(null);
-      const [showAlloc, setShowAlloc] = useState(false);
-      const [alloc, setAlloc] = useState({ emergency: 0, savings: 0, investStocks: 0, investBonds: 0, investReal: 0, investCrypto: 0, leisure: 0 });
-      const [termModal, setTermModal] = useState(null);
-      const [logModal, setLogModal] = useState(false);
+    }
+
+    // ==================== نظام الوحدات المنبثقة (Modals) ====================
+    let modalStack = [];
+    function isModalOpen() { return modalStack.length > 0; }
+
+    function mountCommon(root) {
+      root.querySelectorAll(".term").forEach((el) => {
+        el.addEventListener("click", () => {
+          const term = el.dataset.term;
+          pushModal(`<h2>${term}</h2><p style="line-height:2">${DICTIONARY[term]}</p><button class="btn" data-close>فهمت</button>`);
+        });
+      });
+      root.querySelectorAll("[data-close]").forEach((el) => el.addEventListener("click", () => popModal()));
+      root.querySelectorAll("[data-close-all]").forEach((el) => el.addEventListener("click", () => closeAllModals()));
+    }
+
+    function pushModal(html, onMount) {
+      const overlay = document.createElement("div");
+      overlay.className = "modal-overlay";
+      overlay.innerHTML = `<div class="modal">${html}</div>`;
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) popModal(); });
+      document.getElementById("modalRoot").appendChild(overlay);
+      modalStack.push(overlay);
+      mountCommon(overlay);
+      if (onMount) onMount(overlay);
+    }
+
+    function popModal() {
+      const overlay = modalStack.pop();
+      if (overlay) overlay.remove();
+      refreshHud();
+    }
+
+    function closeAllModals() {
+      modalStack.forEach((o) => o.remove());
+      modalStack = [];
+      refreshHud();
+    }
+
+    function term(t) { return `<span class="term" data-term="${t}">${t}</span>`; }
+
+    // ==================== مباني المدينة ====================
+    function openBank() {
       const d = derive(state);
-      const canvasRef = useRef(null);
+      const pct = Math.min(100, (state.emergency / state.emergencyTarget) * 100);
+      pushModal(`
+        <h2>🏦 البنك</h2>
+        <p class="muted" style="margin-bottom:6px">${term("صندوق الطوارئ")}: <b>${fmt(state.emergency)}</b> ريال (الهدف ${fmt(state.emergencyTarget)})</p>
+        <div class="progress"><div class="progress-fill" style="width:${pct}%;background:#c9974a"></div></div>
+        <p class="muted" style="margin:10px 0 16px">${d.coverage.toFixed(1)} شهر من أصل 6 · النقد المتاح: ${fmt(state.cash)} ريال</p>
+        <div class="slider-row"><span>إيداع من الجاري</span></div>
+        <div class="row-actions">
+          <input type="number" id="depositAmt" min="0" max="${Math.max(0, state.cash)}" value="0" />
+          <button class="btn btn-sm" id="depositBtn">إيداع</button>
+        </div>
+        <div class="slider-row" style="margin-top:8px"><span>سحب للجاري</span></div>
+        <div class="row-actions">
+          <input type="number" id="withdrawAmt" min="0" max="${Math.max(0, state.emergency)}" value="0" />
+          <button class="btn btn-sm btn-outline" id="withdrawBtn">سحب</button>
+        </div>
+        <div class="inline-error" id="bankErr"></div>
+        <button class="btn btn-outline" style="margin-top:10px" data-close-all>خروج</button>
+      `, (root) => {
+        const err = root.querySelector("#bankErr");
+        root.querySelector("#depositBtn").addEventListener("click", () => {
+          const amt = Math.floor(Number(root.querySelector("#depositAmt").value));
+          if (!amt || amt <= 0 || amt > state.cash) { err.textContent = "مبلغ غير صالح."; return; }
+          setState({ ...state, cash: state.cash - amt, emergency: state.emergency + amt });
+          popModal(); openBank();
+        });
+        root.querySelector("#withdrawBtn").addEventListener("click", () => {
+          const amt = Math.floor(Number(root.querySelector("#withdrawAmt").value));
+          if (!amt || amt <= 0 || amt > state.emergency) { err.textContent = "مبلغ غير صالح."; return; }
+          setState({ ...state, cash: state.cash + amt, emergency: state.emergency - amt });
+          popModal(); openBank();
+        });
+      });
+    }
 
-      // حفظ تلقائي
-      useEffect(() => { localStorage.setItem("zeroStateV2", JSON.stringify(state)); }, [state]);
+    const ASSET_LABELS = { stocks: "أسهم", bonds: "سندات", realEstate: "عقار", crypto: "عملات رقمية" };
 
-      // رسم البياني
-      useEffect(() => {
-        if (screen === "reports" && canvasRef.current && state.history.length > 0) {
-          const canvas = canvasRef.current;
-          const ctx = canvas.getContext("2d");
-          const w = canvas.width = canvas.offsetWidth;
-          const h = canvas.height = 200;
-          ctx.clearRect(0, 0, w, h);
-          const data = state.history;
-          const maxVal = Math.max(...data.map(d => d.netWorth), 10000);
-          const minVal = Math.min(...data.map(d => d.netWorth), 0);
+    function openMarket() {
+      const rows = Object.entries(state.investments).map(([key, inv]) => `
+        <div class="card" style="margin:8px 0;padding:12px">
+          <div style="display:flex;justify-content:space-between"><span>${ASSET_LABELS[key]}</span><span style="color:${inv.amount > inv.cost ? '#2ecc71' : inv.amount < inv.cost ? '#e74c3c' : '#8aa89b'}">${fmt(inv.amount)} <span class="muted" style="font-size:11px">(تكلفة ${fmt(inv.cost)})</span></span></div>
+          <div class="row-actions" style="margin-top:8px">
+            <input type="number" min="0" id="amt_${key}" placeholder="مبلغ" />
+            <button class="btn btn-sm" data-buy="${key}">شراء</button>
+            <button class="btn btn-sm btn-outline" data-sell="${key}">بيع الكل</button>
+          </div>
+        </div>
+      `).join("");
+      pushModal(`
+        <h2>📈 البورصة</h2>
+        <p class="muted" style="margin-bottom:10px">النقد المتاح: ${fmt(state.cash)} ريال</p>
+        ${rows}
+        <p style="margin:10px 0;font-size:13px">${term("التنويع")} يقلل ${term("المخاطر")}. انتبه إلى ${term("السيولة")}.</p>
+        <div class="inline-error" id="marketErr"></div>
+        <button class="btn btn-outline" data-close-all>خروج</button>
+      `, (root) => {
+        const err = root.querySelector("#marketErr");
+        root.querySelectorAll("[data-buy]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const key = btn.dataset.buy;
+            const amt = Math.floor(Number(root.querySelector(`#amt_${key}`).value));
+            if (!amt || amt <= 0 || amt > state.cash) { err.textContent = "مبلغ غير صالح."; return; }
+            const inv = { ...state.investments[key], amount: state.investments[key].amount + amt, cost: state.investments[key].cost + amt };
+            setState({ ...state, cash: state.cash - amt, investments: { ...state.investments, [key]: inv } });
+            popModal(); openMarket();
+          });
+        });
+        root.querySelectorAll("[data-sell]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const key = btn.dataset.sell;
+            const amount = state.investments[key].amount;
+            if (amount <= 0) { err.textContent = "لا يوجد رصيد لبيعه."; return; }
+            setState({ ...state, cash: state.cash + amount, investments: { ...state.investments, [key]: { ...state.investments[key], amount: 0, cost: 0 } } });
+            popModal(); openMarket();
+          });
+        });
+      });
+    }
+
+    function openWork() {
+      const d = derive(state);
+      if (d.surplus > 0) {
+        openAllocation(d.surplus);
+      } else {
+        pushModal(`
+          <h2>💼 العمل</h2>
+          <p style="margin:12px 0;line-height:1.8">الدخل الشهري (${fmt(d.effIncome)}) لا يغطي المصروفات (${fmt(d.effExpenses)}) هذا الشهر. سينتقل الراتب مباشرة دون تخصيص فائض.</p>
+          <button class="btn" id="proceedBtn">بدء الشهر التالي</button>
+        `, (root) => {
+          root.querySelector("#proceedBtn").addEventListener("click", () => {
+            closeAllModals();
+            advanceMonth();
+          });
+        });
+      }
+    }
+
+    const ALLOC_FIELDS = [
+      ["emergency", "🛡 صندوق الطوارئ"], ["savings", "💰 ادخار عام"], ["investStocks", "📈 أسهم"],
+      ["investBonds", "📋 سندات"], ["investReal", "🏠 عقار"], ["investCrypto", "₿ عملات رقمية"], ["leisure", "🎉 إنفاق شخصي"]
+    ];
+
+    function openAllocation(surplus) {
+      const rows = ALLOC_FIELDS.map(([key, label]) => `
+        <div style="margin-bottom:12px">
+          <div class="slider-row"><span>${label}</span><span class="val" id="val_${key}">0</span></div>
+          <input type="range" min="0" max="${surplus}" value="0" id="range_${key}" />
+        </div>
+      `).join("");
+      pushModal(`
+        <h2>💼 يوم الراتب — تخصيص الفائض</h2>
+        <p class="muted" style="margin-bottom:10px">الفائض هذا الشهر: <b id="surplusLabel">${fmt(surplus)}</b> ريال · الموزّع: <span id="totalLabel">0</span></p>
+        ${rows}
+        <div class="inline-error" id="allocErr"></div>
+        <button class="btn" id="confirmAlloc">تأكيد التخصيص</button>
+      `, (root) => {
+        const alloc = Object.fromEntries(ALLOC_FIELDS.map(([k]) => [k, 0]));
+        const totalLabel = root.querySelector("#totalLabel");
+        const err = root.querySelector("#allocErr");
+        ALLOC_FIELDS.forEach(([key]) => {
+          root.querySelector(`#range_${key}`).addEventListener("input", (e) => {
+            alloc[key] = Number(e.target.value);
+            root.querySelector(`#val_${key}`).textContent = fmt(alloc[key]);
+            totalLabel.textContent = fmt(Object.values(alloc).reduce((a, b) => a + b, 0));
+          });
+        });
+        root.querySelector("#confirmAlloc").addEventListener("click", () => {
+          const total = Object.values(alloc).reduce((a, b) => a + b, 0);
+          if (total !== surplus) { err.textContent = `يجب أن يساوي التخصيص الفائض بالكامل (${fmt(surplus)}).`; return; }
+          let s = { ...state, investments: cloneInvestments(state.investments) };
+          s.emergency += alloc.emergency;
+          s.cash += alloc.savings + alloc.leisure;
+          s.investments.stocks.amount += alloc.investStocks; s.investments.stocks.cost += alloc.investStocks;
+          s.investments.bonds.amount += alloc.investBonds; s.investments.bonds.cost += alloc.investBonds;
+          s.investments.realEstate.amount += alloc.investReal; s.investments.realEstate.cost += alloc.investReal;
+          s.investments.crypto.amount += alloc.investCrypto; s.investments.crypto.cost += alloc.investCrypto;
+          s.cash -= total;
+          closeAllModals();
+          advanceMonth(s);
+        });
+      });
+    }
+
+    function openHome() {
+      pushModal(`
+        <h2>🏠 المنزل</h2>
+        <p class="muted" style="margin-bottom:4px">الدخل الشهري: <b>${fmt(state.monthlyIncome)}</b> ريال</p>
+        <p class="muted" style="margin-bottom:16px">المصروفات الشهرية: <b>${fmt(state.monthlyExpenses)}</b> ريال</p>
+        <div class="slider-row"><span>سداد جزء من الدين (${fmt(state.debt)})</span></div>
+        <div class="row-actions">
+          <input type="number" id="payAmt" min="0" max="${Math.max(0, Math.min(state.cash, state.debt))}" value="0" />
+          <button class="btn btn-sm" id="payBtn">سداد</button>
+        </div>
+        <div class="inline-error" id="homeErr"></div>
+        <button class="btn btn-outline" id="downsizeBtn" ${state.cash < 600 ? "disabled" : ""}>الانتقال لسكن أرخص (تكلفة 600، يخفض المصروفات 5%)</button>
+        <button class="btn btn-outline" style="margin-top:10px" data-close-all>خروج</button>
+      `, (root) => {
+        const err = root.querySelector("#homeErr");
+        root.querySelector("#payBtn").addEventListener("click", () => {
+          const amt = Math.floor(Number(root.querySelector("#payAmt").value));
+          if (!amt || amt <= 0 || amt > state.cash || amt > state.debt) { err.textContent = "مبلغ غير صالح."; return; }
+          setState({ ...state, cash: state.cash - amt, debt: state.debt - amt });
+          popModal(); openHome();
+        });
+        root.querySelector("#downsizeBtn").addEventListener("click", () => {
+          if (state.cash < 600) return;
+          setState({ ...state, cash: state.cash - 600, monthlyExpenses: Math.round(state.monthlyExpenses * 0.95) });
+          popModal(); openHome();
+        });
+      });
+    }
+
+    function openGoals() {
+      const goalsHtml = state.goals.length ? state.goals.map((g) => `
+        <div class="card" style="margin:8px 0;padding:12px">
+          <div style="display:flex;justify-content:space-between"><span>${g.name}</span><span>${fmt(g.saved)} / ${fmt(g.target)}</span></div>
+          <div class="progress"><div class="progress-fill" style="width:${Math.min(100, (g.saved / g.target) * 100)}%;background:#2ecc71"></div></div>
+          <div class="row-actions" style="margin-top:8px">
+            <input type="number" min="0" id="contrib_${g.id}" placeholder="مبلغ المساهمة" />
+            <button class="btn btn-sm" data-contrib="${g.id}">ساهم</button>
+          </div>
+        </div>
+      `).join("") : `<p class="muted" style="margin-bottom:12px">لا توجد أهداف بعد.</p>`;
+      pushModal(`
+        <h2>🎯 لوحة الأهداف</h2>
+        ${goalsHtml}
+        <div class="inline-error" id="goalsErr"></div>
+        <div style="margin-top:8px">
+          <input id="newGoalName" placeholder="اسم الهدف" />
+          <input id="newGoalTarget" type="number" min="1" placeholder="المبلغ المستهدف" />
+          <button class="btn btn-sm btn-outline" id="addGoalBtn">+ إضافة هدف</button>
+        </div>
+        <button class="btn btn-outline" style="margin-top:14px" data-close-all>خروج</button>
+      `, (root) => {
+        const err = root.querySelector("#goalsErr");
+        root.querySelectorAll("[data-contrib]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const id = Number(btn.dataset.contrib);
+            const goal = state.goals.find((g) => g.id === id);
+            const amt = Math.floor(Number(root.querySelector(`#contrib_${id}`).value));
+            const room = goal.target - goal.saved;
+            if (!amt || amt <= 0 || amt > state.cash || amt > room) { err.textContent = "مبلغ غير صالح."; return; }
+            const goals = state.goals.map((g) => g.id === id ? { ...g, saved: g.saved + amt } : g);
+            setState({ ...state, cash: state.cash - amt, goals });
+            popModal(); openGoals();
+          });
+        });
+        root.querySelector("#addGoalBtn").addEventListener("click", () => {
+          const name = root.querySelector("#newGoalName").value.trim();
+          const target = Math.floor(Number(root.querySelector("#newGoalTarget").value));
+          if (!name || !target || target <= 0) { err.textContent = "أدخل اسمًا ومبلغًا صحيحين."; return; }
+          setState({ ...state, goals: [...state.goals, { id: Date.now(), name, target, saved: 0 }] });
+          popModal(); openGoals();
+        });
+      });
+    }
+
+    function openTownHall() {
+      const logHtml = state.eventLog.length
+        ? state.eventLog.slice().reverse().map((e) => `<div style="padding:6px 0;border-bottom:1px solid #1d3d35">• ${e}</div>`).join("")
+        : `<p class="muted">لا توجد أحداث بعد</p>`;
+      pushModal(`
+        <h2>📰 دار البلدية</h2>
+        <h3 style="font-size:14px;color:#c9974a;margin:6px 0">صافي الثروة عبر الزمن</h3>
+        <canvas id="chartCanvas" width="320" height="160" style="width:100%;border-radius:8px;background:#0a1e1a;margin-bottom:14px"></canvas>
+        <h3 style="font-size:14px;color:#c9974a;margin:6px 0">سجل الأحداث</h3>
+        ${logHtml}
+        <button class="btn btn-outline" style="margin-top:14px" data-close-all>خروج</button>
+      `, (root) => {
+        const canvas = root.querySelector("#chartCanvas");
+        const ctx = canvas.getContext("2d");
+        const data = state.history;
+        if (data.length > 0) {
+          const w = canvas.width, h = canvas.height;
+          const maxVal = Math.max(...data.map((p) => p.netWorth), 10000);
+          const minVal = Math.min(...data.map((p) => p.netWorth), 0);
           const range = maxVal - minVal || 1;
           const stepX = w / (data.length - 1 || 1);
           ctx.beginPath();
@@ -177,259 +555,204 @@
           data.forEach((pt, i) => {
             const x = i * stepX;
             const y = h - ((pt.netWorth - minVal) / range) * (h - 20) - 10;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
           });
           ctx.stroke();
-          // تسمية المحاور
           ctx.fillStyle = "#8aa89b";
-          ctx.font = "10px Noto Kufi Arabic";
+          ctx.font = "10px sans-serif";
           ctx.fillText(fmt(minVal), 5, h - 5);
           ctx.fillText(fmt(maxVal), 5, 15);
         }
-      }, [screen, state.history]);
-
-      // دورة شهر جديد. يقبل حالة أساس اختيارية (تُستخدم بعد تخصيص الفائض
-      // مباشرة، لتفادي فقدان التخصيص بسبب قراءة حالة قديمة من الإغلاق).
-      const advanceMonth = (baseState) => {
-        const source = baseState || state;
-        let s = {
-          ...source,
-          investments: {
-            stocks: { ...source.investments.stocks },
-            bonds: { ...source.investments.bonds },
-            realEstate: { ...source.investments.realEstate },
-            crypto: { ...source.investments.crypto },
-          },
-          tempEffects: (source.tempEffects || []).map((e) => ({ ...e })),
-        };
-        // تضخم سنوي
-        if (s.month % 12 === 0) {
-          s.monthlyIncome = Math.round(s.monthlyIncome * 1.02);
-          s.monthlyExpenses = Math.round(s.monthlyExpenses * 1.015);
-        }
-        // نمو الاستثمارات
-        const stockR = (Math.random() * 0.24) - 0.10;
-        s.investments.stocks.amount = Math.round(s.investments.stocks.amount * (1 + stockR));
-        s.investments.bonds.amount = Math.round(s.investments.bonds.amount * 1.003);
-        if (s.investments.realEstate.amount > 0) {
-          s.investments.realEstate.rentalIncome = Math.round(s.investments.realEstate.amount * 0.004);
-          s.cash += s.investments.realEstate.rentalIncome;
-        }
-        s.investments.crypto.amount = Math.round(s.investments.crypto.amount * (1 + (Math.random() * 0.6 - 0.25)));
-        // فائدة ديون
-        if (s.debt > 0) s.debt = Math.round(s.debt * 1.01);
-        // الفائض الفعلي (يشمل التأثيرات المؤقتة النشطة هذا الشهر)
-        const { surplus } = derive(s);
-        s.cash += surplus;
-        // تحديث التأثيرات المؤقتة (فقدان وظيفة، أقساط طبية...) وإزالة المنتهية
-        s.tempEffects = s.tempEffects.map((e) => ({ ...e, monthsLeft: e.monthsLeft - 1 })).filter((e) => e.monthsLeft > 0);
-        s.month += 1;
-        if (s.month > 12) { s.month = 1; s.year += 1; }
-        // سجل صافي الثروة
-        const totalInv = Object.values(s.investments).reduce((a,i) => a + i.amount, 0);
-        const nw = s.cash + s.emergency + totalInv - s.debt;
-        s.history = [...s.history, { month: s.month + (s.year-1)*12, netWorth: nw }];
-        setState(s);
-        // حدث عشوائي
-        if (Math.random() < 0.5) {
-          const ev = EVENTS[Math.floor(Math.random() * EVENTS.length)];
-          setEvent(ev);
-        }
-      };
-
-      const handleEventChoice = (choiceFn) => {
-        setState(prev => choiceFn(prev));
-        setEvent(null);
-      };
-
-      // زر "شهر جديد": إن لم يوجد فائض (أو كان هناك عجز) ننتقل للشهر التالي
-      // مباشرة بدل حجب اللاعب بتنبيه لا يمكن تجاوزه.
-      const handleNewMonth = () => {
-        if (d.surplus <= 0) {
-          advanceMonth();
-        } else {
-          openAllocation();
-        }
-      };
-
-      const openAllocation = () => {
-        setAlloc({ emergency: 0, savings: 0, investStocks: 0, investBonds: 0, investReal: 0, investCrypto: 0, leisure: 0 });
-        setShowAlloc(true);
-      };
-
-      const applyAllocation = () => {
-        const total = Object.values(alloc).reduce((a,b) => a+b, 0);
-        if (total !== d.surplus) { alert(`يجب أن يساوي التخصيص صافي الدخل (${fmt(d.surplus)})`); return; }
-        let s = {
-          ...state,
-          investments: {
-            stocks: { ...state.investments.stocks },
-            bonds: { ...state.investments.bonds },
-            realEstate: { ...state.investments.realEstate },
-            crypto: { ...state.investments.crypto },
-          },
-        };
-        s.emergency += alloc.emergency;
-        s.cash += alloc.savings + alloc.leisure;
-        s.investments.stocks.amount += alloc.investStocks;
-        s.investments.stocks.cost += alloc.investStocks;
-        s.investments.bonds.amount += alloc.investBonds;
-        s.investments.bonds.cost += alloc.investBonds;
-        s.investments.realEstate.amount += alloc.investReal;
-        s.investments.realEstate.cost += alloc.investReal;
-        s.investments.crypto.amount += alloc.investCrypto;
-        s.investments.crypto.cost += alloc.investCrypto;
-        s.cash -= total; // خصم الموزع
-        setShowAlloc(false);
-        advanceMonth(s);
-      };
-
-      const renderTerm = (term) => <span className="term" onClick={() => setTermModal(term)}>{term}</span>;
-
-      const totalInv = d.totalInv;
-      const nw = d.netWorth;
-
-      return (
-        <div className="app">
-          {/* الشريط العلوي */}
-          <div className="top-bar">
-            <div className="avatar">{state.emergency > 5000 ? "😊" : state.debt > 2000 ? "😰" : "🙂"}</div>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:12, color:'#8aa89b'}}>السنة {state.year} · شهر {state.month}</div>
-              <div className="net-worth">{fmt(nw)} <small>ريال</small></div>
-            </div>
-            <button className="btn btn-sm" onClick={handleNewMonth}>شهر جديد</button>
-          </div>
-
-          {/* صف الإحصائيات */}
-          <div className="stats-row">
-            <div className="stat-box"><div className="label">💰 الجاري</div><div className="value">{fmt(state.cash)}</div></div>
-            <div className="stat-box"><div className="label">🛡 الطوارئ</div><div className="value">{fmt(state.emergency)}</div></div>
-            <div className="stat-box"><div className="label">📈 استثمارات</div><div className="value">{fmt(totalInv)}</div></div>
-            <div className="stat-box"><div className="label">💳 ديون</div><div className="value" style={{color: state.debt>0?'#e74c3c':'#8aa89b'}}>{fmt(state.debt)}</div></div>
-          </div>
-
-          {/* المحتوى */}
-          {screen === "dashboard" && (
-            <div>
-              <div className="card">
-                <h3>📊 تغطية الطوارئ</h3>
-                <div className="progress"><div className="progress-fill" style={{width:`${Math.min(100,(state.emergency/state.emergencyTarget)*100)}%`, background:'#c9974a'}}></div></div>
-                <small>{d.coverage.toFixed(1)} شهر من أصل 6</small>
-              </div>
-              <div className="card">
-                <h3>📋 آخر الأحداث</h3>
-                {state.eventLog && state.eventLog.length > 0 ? state.eventLog.slice(-4).reverse().map((e,i) => <div key={i} style={{padding:'4px 0', borderBottom:'1px solid #1d3d35'}}>• {e}</div>) : <p className="muted">لا توجد أحداث بعد</p>}
-              </div>
-            </div>
-          )}
-
-          {screen === "invest" && (
-            <div className="card">
-              <h3>📈 مركز الاستثمار</h3>
-              {Object.entries(state.investments).map(([key, inv]) => (
-                <div key={key} style={{display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px solid #1d3d35'}}>
-                  <span>{key==='stocks'?'أسهم':key==='bonds'?'سندات':key==='realEstate'?'عقار':'عملات رقمية'}</span>
-                  <span className="amount" style={{color: inv.amount > inv.cost ? '#2ecc71' : inv.amount < inv.cost ? '#e74c3c' : '#8aa89b'}}>{fmt(inv.amount)}</span>
-                </div>
-              ))}
-              <p style={{marginTop:12, fontSize:13}}>{renderTerm("التنويع")} يقلل المخاطر.</p>
-            </div>
-          )}
-
-          {screen === "goals" && (
-            <div className="card">
-              <h3>🎯 الأهداف المالية</h3>
-              {state.goals.map(g => (
-                <div key={g.id} style={{marginBottom:14}}>
-                  <div style={{display:'flex',justifyContent:'space-between'}}><span>{g.name}</span><span>{fmt(g.saved)} / {fmt(g.target)}</span></div>
-                  <div className="progress"><div className="progress-fill" style={{width:`${(g.saved/g.target)*100}%`, background:'#2ecc71'}}></div></div>
-                </div>
-              ))}
-              <button className="btn btn-sm btn-outline" onClick={() => {
-                const name = prompt("اسم الهدف:");
-                const target = Number(prompt("المبلغ المستهدف:"));
-                if(name && target > 0) setState({...state, goals: [...state.goals, {id:Date.now(), name, target, saved:0}]});
-              }}>+ إضافة هدف</button>
-            </div>
-          )}
-
-          {screen === "reports" && (
-            <div className="card">
-              <h3>📈 صافي الثروة عبر الزمن</h3>
-              <canvas ref={canvasRef} style={{width:'100%', height:'200px'}}></canvas>
-              <div style={{marginTop:10}}>
-                <button className="btn btn-sm" onClick={() => setLogModal(true)}>عرض سجل الأحداث</button>
-              </div>
-            </div>
-          )}
-
-          {/* مودال الحدث */}
-          {event && (
-            <div className="modal-overlay">
-              <div className="modal">
-                <h2>{event.title}</h2>
-                <p style={{margin:'12px 0', lineHeight:1.8}}>{event.desc}</p>
-                {event.choices.map((c,i) => (
-                  <button key={i} className="event-btn" onClick={() => handleEventChoice(c.effect)}>{c.label}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* مودال التخصيص */}
-          {showAlloc && (
-            <div className="modal-overlay" onClick={() => setShowAlloc(false)}>
-              <div className="modal" onClick={e => e.stopPropagation()}>
-                <h2>تخصيص الفائض ({fmt(d.surplus)} ريال)</h2>
-                {[
-                  ['emergency','🛡 صندوق الطوارئ'], ['savings','💰 ادخار عام'], ['investStocks','📈 أسهم'], ['investBonds','📋 سندات'], ['investReal','🏠 عقار'], ['investCrypto','₿ عملات رقمية'], ['leisure','🎉 إنفاق شخصي']
-                ].map(([key, label]) => (
-                  <div key={key} style={{marginBottom:12}}>
-                    <div className="slider-row"><span>{label}</span><span className="val">{fmt(alloc[key])}</span></div>
-                    <input type="range" min="0" max={d.surplus} value={alloc[key]} onChange={e => setAlloc({...alloc, [key]: +e.target.value})} />
-                  </div>
-                ))}
-                <button className="btn" onClick={applyAllocation}>تأكيد التخصيص</button>
-              </div>
-            </div>
-          )}
-
-          {/* مودال المصطلح */}
-          {termModal && (
-            <div className="modal-overlay" onClick={() => setTermModal(null)}>
-              <div className="modal" onClick={e => e.stopPropagation()}>
-                <h2>{termModal}</h2>
-                <p style={{lineHeight:2}}>{DICTIONARY[termModal]}</p>
-                <button className="btn" onClick={() => setTermModal(null)}>فهمت</button>
-              </div>
-            </div>
-          )}
-
-          {/* مودال سجل الأحداث */}
-          {logModal && (
-            <div className="modal-overlay" onClick={() => setLogModal(false)}>
-              <div className="modal" onClick={e => e.stopPropagation()}>
-                <h2>سجل الأحداث</h2>
-                {state.eventLog && state.eventLog.map((e,i) => <div key={i} style={{padding:'6px 0', borderBottom:'1px solid #1d3d35'}}>• {e}</div>)}
-                <button className="btn" style={{marginTop:16}} onClick={() => setLogModal(false)}>إغلاق</button>
-              </div>
-            </div>
-          )}
-
-          {/* شريط التنقل */}
-          <div className="nav">
-            <button className={`nav-btn ${screen==='dashboard'?'active':''}`} onClick={() => setScreen('dashboard')}>🏠 الرئيسية</button>
-            <button className={`nav-btn ${screen==='invest'?'active':''}`} onClick={() => setScreen('invest')}>📈 استثمار</button>
-            <button className={`nav-btn ${screen==='goals'?'active':''}`} onClick={() => setScreen('goals')}>🎯 أهداف</button>
-            <button className={`nav-btn ${screen==='reports'?'active':''}`} onClick={() => setScreen('reports')}>📋 تقارير</button>
-          </div>
-        </div>
-      );
+      });
     }
 
-    ReactDOM.render(<App />, document.getElementById("root"));
+    function openLibrary() {
+      const rows = Object.keys(DICTIONARY).map((t) => `<div class="term-row" data-term="${t}">${t}</div>`).join("");
+      pushModal(`<h2>📖 المكتبة</h2>${rows}<button class="btn btn-outline" style="margin-top:14px" data-close-all>خروج</button>`, (root) => {
+        root.querySelectorAll(".term-row").forEach((el) => {
+          el.addEventListener("click", () => {
+            const t = el.dataset.term;
+            pushModal(`<h2>${t}</h2><p style="line-height:2">${DICTIONARY[t]}</p><button class="btn" data-close>فهمت</button>`);
+          });
+        });
+      });
+    }
+
+    // ==================== المدينة (الخريطة والمباني) ====================
+    const TILE = 32, COLS = 16, ROWS = 20;
+    const WORLD_W = COLS * TILE, WORLD_H = ROWS * TILE;
+
+    function rect(tx, ty, tw, th) { return { x: tx * TILE, y: ty * TILE, w: tw * TILE, h: th * TILE }; }
+
+    const BUILDINGS = [
+      { id: "bank", name: "البنك", emoji: "🏦", color: "#c9974a", open: openBank, ...rect(1, 1, 4, 4) },
+      { id: "market", name: "البورصة", emoji: "📈", color: "#2ecc71", open: openMarket, ...rect(11, 1, 4, 4) },
+      { id: "goals", name: "لوحة الأهداف", emoji: "🎯", color: "#9b59b6", open: openGoals, ...rect(6, 4, 4, 3) },
+      { id: "work", name: "العمل", emoji: "💼", color: "#4a90c9", open: openWork, ...rect(1, 8, 4, 4) },
+      { id: "home", name: "المنزل", emoji: "🏠", color: "#d98c4a", open: openHome, ...rect(11, 8, 4, 4) },
+      { id: "townhall", name: "دار البلدية", emoji: "📰", color: "#7f8c8d", open: openTownHall, ...rect(1, 15, 4, 4) },
+      { id: "library", name: "المكتبة", emoji: "📖", color: "#16a085", open: openLibrary, ...rect(11, 15, 4, 4) },
+    ];
+
+    BUILDINGS.forEach((b) => { b.doorX = b.x + b.w / 2; b.doorY = b.y + b.h + 10; });
+
+    const player = { x: 224, y: 352, w: 22, h: 26, speed: 170 };
+    let currentBuilding = null;
+
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+    function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+      return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+    }
+
+    function collides(px, py) {
+      return BUILDINGS.some((b) => rectsOverlap(px, py, player.w, player.h, b.x, b.y, b.w, b.h));
+    }
+
+    const pressed = new Set();
+    function isMovingKeyActive() { return pressed.size > 0; }
+
+    function updatePlayer(dt) {
+      let dx = 0, dy = 0;
+      if (pressed.has("up")) dy -= 1;
+      if (pressed.has("down")) dy += 1;
+      if (pressed.has("left")) dx -= 1;
+      if (pressed.has("right")) dx += 1;
+      if (dx !== 0 && dy !== 0) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
+      const step = player.speed * dt;
+
+      let nx = clamp(player.x + dx * step, 0, WORLD_W - player.w);
+      if (!collides(nx, player.y)) player.x = nx;
+      let ny = clamp(player.y + dy * step, 0, WORLD_H - player.h);
+      if (!collides(player.x, ny)) player.y = ny;
+
+      const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
+      let nearest = null, nearestDist = 36;
+      for (const b of BUILDINGS) {
+        const d = Math.hypot(cx - b.doorX, cy - b.doorY);
+        if (d < nearestDist) { nearest = b; nearestDist = d; }
+      }
+      currentBuilding = nearest;
+      updateInteractBtn();
+    }
+
+    const interactBtn = document.getElementById("interactBtn");
+    function updateInteractBtn() {
+      if (currentBuilding) {
+        interactBtn.textContent = `${currentBuilding.emoji} ادخل ${currentBuilding.name}`;
+        interactBtn.classList.remove("hidden");
+      } else {
+        interactBtn.classList.add("hidden");
+      }
+    }
+    interactBtn.addEventListener("click", () => { if (currentBuilding) currentBuilding.open(); });
+
+    // ==================== الرسم ====================
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    function roundRect(c, x, y, w, h, r) {
+      c.beginPath();
+      c.moveTo(x + r, y);
+      c.arcTo(x + w, y, x + w, y + h, r);
+      c.arcTo(x + w, y + h, x, y + h, r);
+      c.arcTo(x, y + h, x, y, r);
+      c.arcTo(x, y, x + w, y, r);
+      c.closePath();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, WORLD_W, WORLD_H);
+      ctx.fillStyle = "#0d2621";
+      ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+      ctx.strokeStyle = "rgba(29,61,53,0.5)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= COLS; x++) { ctx.beginPath(); ctx.moveTo(x * TILE, 0); ctx.lineTo(x * TILE, WORLD_H); ctx.stroke(); }
+      for (let y = 0; y <= ROWS; y++) { ctx.beginPath(); ctx.moveTo(0, y * TILE); ctx.lineTo(WORLD_W, y * TILE); ctx.stroke(); }
+
+      for (const b of BUILDINGS) {
+        ctx.fillStyle = b.color + "33";
+        roundRect(ctx, b.x, b.y, b.w, b.h, 10); ctx.fill();
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = currentBuilding === b ? 3 : 2;
+        roundRect(ctx, b.x, b.y, b.w, b.h, 10); ctx.stroke();
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.font = "26px sans-serif";
+        ctx.fillText(b.emoji, b.x + b.w / 2, b.y + b.h / 2 - 8);
+        ctx.font = "11px 'Noto Kufi Arabic', sans-serif";
+        ctx.fillStyle = "#e0e8e4";
+        ctx.fillText(b.name, b.x + b.w / 2, b.y + b.h - 10);
+        if (currentBuilding === b) {
+          ctx.beginPath(); ctx.arc(b.doorX, b.doorY, 5, 0, Math.PI * 2);
+          ctx.fillStyle = "#c9974a"; ctx.fill();
+        }
+      }
+
+      ctx.font = "26px sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("🧍", player.x + player.w / 2, player.y + player.h / 2);
+    }
+
+    // ==================== الحلقة الرئيسية ====================
+    let lastTs = 0;
+    function loop(ts) {
+      const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0);
+      lastTs = ts;
+      if (!isModalOpen()) updatePlayer(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    // ==================== المدخلات ====================
+    const KEY_MAP = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", w: "up", s: "down", a: "left", d: "right" };
+    window.addEventListener("keydown", (e) => {
+      const dir = KEY_MAP[e.key];
+      if (dir) { pressed.add(dir); e.preventDefault(); }
+      if ((e.key === "Enter" || e.key === " " || e.key === "e") && currentBuilding && !isModalOpen()) currentBuilding.open();
+      if (e.key === "Escape" && isModalOpen()) popModal();
+    });
+    window.addEventListener("keyup", (e) => {
+      const dir = KEY_MAP[e.key];
+      if (dir) pressed.delete(dir);
+    });
+
+    function bindDpad(id, dir) {
+      const el = document.getElementById(id);
+      const start = (e) => { e.preventDefault(); pressed.add(dir); };
+      const end = (e) => { e.preventDefault(); pressed.delete(dir); };
+      el.addEventListener("pointerdown", start);
+      el.addEventListener("pointerup", end);
+      el.addEventListener("pointerleave", end);
+      el.addEventListener("pointercancel", end);
+    }
+    bindDpad("btnUp", "up"); bindDpad("btnDown", "down"); bindDpad("btnLeft", "left"); bindDpad("btnRight", "right");
+
+    document.getElementById("statsBtn").addEventListener("click", () => {
+      document.getElementById("statsPanel").classList.toggle("open");
+    });
+
+    // ==================== واجهة المستخدم العلوية ====================
+    function refreshHud() {
+      const d = derive(state);
+      document.getElementById("moodEmoji").textContent = state.emergency > 5000 ? "😊" : state.debt > 2000 ? "😰" : "🙂";
+      document.getElementById("hudDate").textContent = `السنة ${state.year} · شهر ${state.month}`;
+      document.getElementById("hudNet").innerHTML = `${fmt(d.netWorth)} <small>ريال</small>`;
+      document.getElementById("statCash").textContent = fmt(state.cash);
+      document.getElementById("statEmergency").textContent = fmt(state.emergency);
+      document.getElementById("statInvest").textContent = fmt(d.totalInv);
+      document.getElementById("statDebt").textContent = fmt(state.debt);
+    }
+    refreshHud();
+
+    if (isFirstVisit) {
+      pushModal(`
+        <h2>🏙️ أهلاً بك في مدينة المال</h2>
+        <p style="line-height:1.9;margin-bottom:14px">تحرّك بالأسهم أو أزرار الاتجاه، واقترب من أي مبنى للتفاعل معه:</p>
+        <p style="line-height:2.1">🏦 البنك — صندوق الطوارئ<br>📈 البورصة — الاستثمار<br>💼 العمل — استلام الراتب وتخصيصه<br>🏠 المنزل — المصروفات والديون<br>🎯 لوحة الأهداف<br>📰 دار البلدية — التقارير<br>📖 المكتبة — المصطلحات المالية</p>
+        <button class="btn" style="margin-top:16px" data-close-all>ابدأ</button>
+      `);
+    }
   </script>
 </body>
 </html>
