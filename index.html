@@ -194,6 +194,7 @@
     const SAVE_KEY = "zeroGameStateV1";
     let isFirstVisit = false;
     let lastStockDelta = 0; // آخر تغيّر في الأسهم، يُستخدم لسهم المؤشر فوق البورصة
+    const FLOATERS = [];    // أرقام تطفو عند تغيّر صافي الثروة
     let state = loadState();
 
     function loadState() {
@@ -208,9 +209,21 @@
     }
 
     function setState(next) {
+      const prevNetWorth = derive(state).netWorth;
       state = next;
       localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      const delta = derive(state).netWorth - prevNetWorth;
+      if (Math.abs(delta) >= 1) spawnFloater(delta);
       refreshHud();
+    }
+
+    // معرّفة كتصريح دالة (مرفوعة) كي يمكن استدعاؤها من setState قبل قسم الرسوميات
+    function spawnFloater(delta) {
+      FLOATERS.push({
+        text: `${delta > 0 ? "+" : "−"}${fmt(Math.abs(delta))}`,
+        color: delta > 0 ? "#2ecc71" : "#e74c3c",
+        life: 0, max: 1.6, dx: (Math.random() - 0.5) * 10,
+      });
     }
 
     // ==================== منطق الشهر والأحداث ====================
@@ -794,6 +807,99 @@
       }
     }
 
+    // ==================== أعمدة الإنارة ====================
+    const LAMPS = [];
+    for (const b of BUILDINGS) {
+      const dx = b.doorX - PLAZA_X, dy = b.doorY - PLAZA_Y;
+      const len = Math.hypot(dx, dy);
+      const t = 0.55;
+      const lx = PLAZA_X + dx * t - (dy / len) * 15;
+      const ly = PLAZA_Y + dy * t + (dx / len) * 15;
+      if (!nearAnyBuilding(lx, ly, 10)) LAMPS.push({ x: lx, y: ly });
+    }
+
+    // ==================== دورة الليل والنهار ====================
+    const DAY_MS = 150000; // دورة كاملة كل دقيقتين ونصف تقريبًا
+    function nightFactor(now) {
+      const phase = (now % DAY_MS) / DAY_MS;      // 0..1
+      const raw = (Math.cos(phase * Math.PI * 2) + 1) / 2; // 1 ليلاً، 0 نهارًا
+      return raw * raw * 0.62;                    // نُبقي الليل مقروءًا
+    }
+
+    // ==================== طقس حسب الفصل ====================
+    const WEATHER = [];
+    function weatherKindFor(seasonKey) {
+      if (seasonKey === "winter") return "snow";
+      if (seasonKey === "autumn") return "leaf";
+      if (seasonKey === "spring") return "petal";
+      return null;
+    }
+    function updateWeather(dt, seasonKey) {
+      const kind = weatherKindFor(seasonKey);
+      if (!kind) { WEATHER.length = 0; return; }
+      if (WEATHER.length && WEATHER[0].kind !== kind) WEATHER.length = 0;
+      const cap = kind === "snow" ? 46 : 26;
+      if (WEATHER.length < cap && Math.random() < 0.6) {
+        WEATHER.push({
+          kind, x: Math.random() * WORLD_W, y: -6,
+          vy: kind === "snow" ? 14 + Math.random() * 16 : 22 + Math.random() * 22,
+          sway: Math.random() * Math.PI * 2,
+          swaySpeed: 0.8 + Math.random() * 1.4,
+          size: kind === "snow" ? 1.4 + Math.random() * 1.6 : 2.2 + Math.random() * 2,
+          spin: Math.random() * Math.PI,
+        });
+      }
+      for (let i = WEATHER.length - 1; i >= 0; i--) {
+        const p = WEATHER[i];
+        p.sway += p.swaySpeed * dt;
+        p.y += p.vy * dt;
+        p.x += Math.sin(p.sway) * 10 * dt;
+        p.spin += dt * 1.6;
+        if (p.y > WORLD_H + 6) WEATHER.splice(i, 1);
+      }
+    }
+    const LEAF_COLORS = ["#c9772a", "#b5761f", "#d29434", "#a35a1c"];
+    function drawWeather(c) {
+      for (const p of WEATHER) {
+        if (p.kind === "snow") {
+          c.fillStyle = "rgba(226,240,245,0.75)";
+          c.beginPath(); c.arc(p.x, p.y, p.size, 0, Math.PI * 2); c.fill();
+        } else if (p.kind === "leaf") {
+          c.save(); c.translate(p.x, p.y); c.rotate(p.spin);
+          c.fillStyle = LEAF_COLORS[Math.floor(p.size) % LEAF_COLORS.length];
+          c.beginPath(); c.ellipse(0, 0, p.size * 1.5, p.size * 0.7, 0, 0, Math.PI * 2); c.fill();
+          c.restore();
+        } else {
+          c.save(); c.translate(p.x, p.y); c.rotate(p.spin);
+          c.fillStyle = "rgba(242,167,195,0.85)";
+          c.beginPath(); c.ellipse(0, 0, p.size * 1.2, p.size * 0.6, 0, 0, Math.PI * 2); c.fill();
+          c.restore();
+        }
+      }
+    }
+
+    // ==================== غبار الخطوات ====================
+    const DUST = [];
+    function updateDust(dt, moving) {
+      if (moving && Math.random() < 0.35) {
+        DUST.push({ x: player.x + player.w / 2 + (Math.random() - 0.5) * 6, y: player.y + player.h - 2, life: 0, max: 0.45, r: 1.5 + Math.random() * 1.5 });
+      }
+      for (let i = DUST.length - 1; i >= 0; i--) {
+        const d = DUST[i];
+        d.life += dt; d.r += dt * 3;
+        if (d.life > d.max) DUST.splice(i, 1);
+      }
+    }
+
+    // ==================== الأرقام الطائرة ====================
+    function updateFloaters(dt) {
+      for (let i = FLOATERS.length - 1; i >= 0; i--) {
+        const f = FLOATERS[i];
+        f.life += dt;
+        if (f.life > f.max) FLOATERS.splice(i, 1);
+      }
+    }
+
     // ==================== رذاذ النافورة ====================
     const DROPS = [];
     function updateFountain(dt) {
@@ -1115,6 +1221,7 @@
       const seasonKey = seasonForMonth(state.month);
       if (seasonKey !== renderedSeason) renderBackground();
       const season = SEASONS[seasonKey];
+      const night = nightFactor(now);
 
       ctx.clearRect(0, 0, WORLD_W, WORLD_H);
       ctx.drawImage(bgCanvas, 0, 0);
@@ -1124,6 +1231,14 @@
         const a = Math.max(0, 1 - dr.life / dr.max);
         ctx.fillStyle = `rgba(150,210,240,${a * 0.8})`;
         ctx.fillRect(dr.x, dr.y, 2, 2);
+      }
+
+      // غبار خطوات اللاعب
+      for (const d of DUST) {
+        ctx.globalAlpha = Math.max(0, 1 - d.life / d.max) * 0.35;
+        ctx.fillStyle = "#cfd8d3";
+        ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
       }
 
       drawBuildingIndicators(now);
@@ -1140,6 +1255,14 @@
         else drawCharacter(ctx, player.x + player.w / 2, player.y + player.h / 2, player.facing, player.animT, pressed.size > 0, PLAYER_PALETTE);
       }
 
+      // أعمدة الإنارة (العمود نفسه فوق المشهد، وهالته تُضاف بعد ستارة الليل)
+      for (const l of LAMPS) {
+        ctx.fillStyle = "#3b4a44";
+        ctx.fillRect(l.x - 1.5, l.y - 16, 3, 16);
+        ctx.fillStyle = night > 0.12 ? "#f4d58d" : "#6b7a72";
+        ctx.beginPath(); ctx.arc(l.x, l.y - 18, 3.4, 0, Math.PI * 2); ctx.fill();
+      }
+
       // سحب تمر فوق المدينة
       for (const cl of CLOUDS) {
         ctx.fillStyle = `rgba(220,235,230,${cl.alpha})`;
@@ -1148,10 +1271,42 @@
         ctx.beginPath(); ctx.arc(cl.x - cl.r * 0.7, cl.y + 5, cl.r * 0.6, 0, Math.PI * 2); ctx.fill();
       }
 
+      drawWeather(ctx);
+
       // صبغة الفصل فوق المشهد كله
       if (season.tint) {
         ctx.fillStyle = season.tint;
         ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+      }
+
+      // ستارة الليل ثم مصادر الضوء الدافئة فوقها
+      if (night > 0.02) {
+        ctx.fillStyle = `rgba(12,24,48,${night})`;
+        ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        for (const l of LAMPS) {
+          const g = ctx.createRadialGradient(l.x, l.y - 16, 2, l.x, l.y - 16, 46);
+          g.addColorStop(0, `rgba(255,214,140,${0.42 * night})`);
+          g.addColorStop(1, "rgba(255,214,140,0)");
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(l.x, l.y - 16, 46, 0, Math.PI * 2); ctx.fill();
+        }
+        for (const b of BUILDINGS) {
+          if (b.id === "goals") continue;
+          const g = ctx.createRadialGradient(b.doorX, b.doorY - 8, 2, b.doorX, b.doorY - 8, 34);
+          g.addColorStop(0, `rgba(255,206,128,${0.34 * night})`);
+          g.addColorStop(1, "rgba(255,206,128,0)");
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(b.doorX, b.doorY - 8, 34, 0, Math.PI * 2); ctx.fill();
+        }
+        const fg = ctx.createRadialGradient(PLAZA_X, PLAZA_Y, 2, PLAZA_X, PLAZA_Y, 40);
+        fg.addColorStop(0, `rgba(150,200,255,${0.22 * night})`);
+        fg.addColorStop(1, "rgba(150,200,255,0)");
+        ctx.fillStyle = fg;
+        ctx.beginPath(); ctx.arc(PLAZA_X, PLAZA_Y, 40, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
       }
 
       if (currentBuilding) {
@@ -1162,11 +1317,27 @@
         ctx.lineWidth = 2; ctx.stroke();
       }
 
-      // شارة الفصل
+      // أرقام تطفو فوق اللاعب عند تغيّر صافي الثروة
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      for (let i = 0; i < FLOATERS.length; i++) {
+        const f = FLOATERS[i];
+        const p = f.life / f.max;
+        const fx = player.x + player.w / 2 + f.dx;
+        const fy = player.y - 8 - p * 26 - i * 13;
+        ctx.globalAlpha = Math.max(0, 1 - p);
+        ctx.font = "bold 13px 'IBM Plex Mono', monospace";
+        ctx.lineWidth = 3; ctx.strokeStyle = "rgba(10,30,26,0.85)";
+        ctx.strokeText(f.text, fx, fy);
+        ctx.fillStyle = f.color;
+        ctx.fillText(f.text, fx, fy);
+        ctx.globalAlpha = 1;
+      }
+
+      // شارة الفصل والوقت
       ctx.font = "10px 'Noto Kufi Arabic', sans-serif";
       ctx.textAlign = "right"; ctx.textBaseline = "top";
       ctx.fillStyle = "rgba(224,232,228,0.55)";
-      ctx.fillText(season.name, WORLD_W - 8, 8);
+      ctx.fillText(`${season.name} · ${night > 0.3 ? "ليل" : "نهار"}`, WORLD_W - 8, 8);
     }
 
     // ==================== الحلقة الرئيسية ====================
@@ -1174,12 +1345,16 @@
     function loop(ts) {
       const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0);
       lastTs = ts;
-      if (!isModalOpen()) {
+      const active = !isModalOpen();
+      if (active) {
         updatePlayer(dt);
         updateNPCs(dt);
       }
       updateClouds(dt);
       updateFountain(dt);
+      updateWeather(dt, seasonForMonth(state.month));
+      updateDust(dt, active && pressed.size > 0);
+      updateFloaters(dt);
       draw();
       requestAnimationFrame(loop);
     }
