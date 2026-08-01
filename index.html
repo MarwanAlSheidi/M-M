@@ -1295,8 +1295,16 @@
     function openHome() {
       pushModal(`
         <h2>🏠 المنزل</h2>
-        <p class="muted" style="margin-bottom:4px">الدخل الشهري: <b>${fmt(state.monthlyIncome)}</b> ريال</p>
-        <p class="muted" style="margin-bottom:16px">المصروفات الشهرية: <b>${fmt(state.monthlyExpenses)}</b> ريال</p>
+        ${(() => {
+          // نعرض الأرقام الفعلية بعد الآثار المؤقتة (بطالة، أقساط) لا الأساسية،
+          // فقد كان اللاعب يرى دخله كاملاً وهو عاطل عن العمل.
+          const d = derive(state);
+          const incDiff = d.effIncome !== state.monthlyIncome;
+          const expDiff = d.effExpenses !== state.monthlyExpenses;
+          return `
+        <p class="muted" style="margin-bottom:4px">الدخل الشهري: <b style="color:${incDiff ? "#e67e22" : "inherit"}">${fmt(d.effIncome)}</b> ريال${incDiff ? ` <span style="font-size:11px">(الأساسي ${fmt(state.monthlyIncome)} — أثر مؤقت)</span>` : ""}</p>
+        <p class="muted" style="margin-bottom:16px">المصروفات الشهرية: <b style="color:${expDiff ? "#e67e22" : "inherit"}">${fmt(d.effExpenses)}</b> ريال${expDiff ? ` <span style="font-size:11px">(الأساسي ${fmt(state.monthlyExpenses)} — أثر مؤقت)</span>` : ""}</p>`;
+        })()}
         <div class="card" style="margin-bottom:14px;padding:12px">
           <div style="display:flex;justify-content:space-between;padding:3px 0">
             <span class="muted">${term("الدين إلى الدخل السنوي")}</span>
