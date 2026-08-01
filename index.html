@@ -193,6 +193,7 @@
     // ==================== الحالة والحفظ ====================
     const SAVE_KEY = "zeroGameStateV1";
     let isFirstVisit = false;
+    let lastStockDelta = 0; // آخر تغيّر في الأسهم، يُستخدم لسهم المؤشر فوق البورصة
     let state = loadState();
 
     function loadState() {
@@ -225,6 +226,7 @@
         s.monthlyExpenses = Math.round(s.monthlyExpenses * 1.015);
       }
       const stockR = (Math.random() * 0.24) - 0.10;
+      lastStockDelta = stockR;
       s.investments.stocks.amount = Math.round(s.investments.stocks.amount * (1 + stockR));
       s.investments.bonds.amount = Math.round(s.investments.bonds.amount * 1.003);
       if (s.investments.realEstate.amount > 0) {
@@ -714,6 +716,100 @@
       }
     }
 
+    // ==================== الفصول (تتبع الشهر داخل اللعبة) ====================
+    const SEASONS = {
+      winter: { name: "شتاء", leaf: "#4a7a68", leafHi: "#5f9180", ground: ["#12302c", "#0b2220"], dot: "rgba(120,160,170,0.30)", tint: "rgba(120,170,200,0.07)", blossom: null },
+      spring: { name: "ربيع", leaf: "#2f8a52", leafHi: "#46a86a", ground: ["#12332a", "#0a201c"], dot: "rgba(80,150,110,0.35)", tint: "rgba(140,220,160,0.05)", blossom: "#f2a7c3" },
+      summer: { name: "صيف", leaf: "#1f5c3f", leafHi: "#2f7a52", ground: ["#0f2b24", "#0a1e1a"], dot: "rgba(60,110,90,0.35)", tint: null, blossom: null },
+      autumn: { name: "خريف", leaf: "#b5761f", leafHi: "#d29434", ground: ["#2b2418", "#1c1710"], dot: "rgba(170,130,60,0.30)", tint: "rgba(220,160,70,0.06)", blossom: null },
+    };
+    function seasonForMonth(m) {
+      if (m === 12 || m === 1 || m === 2) return "winter";
+      if (m <= 5) return "spring";
+      if (m <= 8) return "summer";
+      return "autumn";
+    }
+    let renderedSeason = null;
+
+    // ==================== سكان المدينة (شخصيات غير قابلة للعب) ====================
+    const NPC_PALETTES = [
+      { shirt: "#4a90c9", sleeve: "#3d79a8", skin: "#e8b88a", hair: "#2a1c0d" },
+      { shirt: "#9b59b6", sleeve: "#82489a", skin: "#d9a072", hair: "#4a3520" },
+      { shirt: "#2ecc71", sleeve: "#26a75d", skin: "#f0c9a0", hair: "#1a1208" },
+      { shirt: "#e74c3c", sleeve: "#c2402f", skin: "#c98c5e", hair: "#33220f" },
+      { shirt: "#16a085", sleeve: "#128271", skin: "#e8b88a", hair: "#5a3d1f" },
+    ];
+    const NPCS = [];
+    function randomWalkableSpot(rand) {
+      for (let i = 0; i < 200; i++) {
+        const x = 16 + rand() * (WORLD_W - 32);
+        const y = 16 + rand() * (WORLD_H - 32);
+        if (!nearAnyBuilding(x, y, 14)) return { x, y };
+      }
+      return { x: PLAZA_X, y: PLAZA_Y };
+    }
+    for (let i = 0; i < 5; i++) {
+      const spot = randomWalkableSpot(rng);
+      NPCS.push({
+        x: spot.x, y: spot.y, target: randomWalkableSpot(rng),
+        speed: 26 + rng() * 20, animT: rng() * 10, facing: "down", moving: true,
+        pauseT: 0, palette: NPC_PALETTES[i % NPC_PALETTES.length],
+      });
+    }
+
+    function updateNPCs(dt) {
+      for (const n of NPCS) {
+        n.animT += dt;
+        if (n.pauseT > 0) { n.pauseT -= dt; n.moving = false; continue; }
+        const dx = n.target.x - n.x, dy = n.target.y - n.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 4) {
+          n.target = randomWalkableSpot(Math.random);
+          n.pauseT = 0.6 + Math.random() * 2.2;
+          n.moving = false;
+          continue;
+        }
+        n.moving = true;
+        const step = Math.min(dist, n.speed * dt);
+        const nx = n.x + (dx / dist) * step, ny = n.y + (dy / dist) * step;
+        if (nearAnyBuilding(nx, ny, 8)) {
+          n.target = randomWalkableSpot(Math.random);
+          continue;
+        }
+        n.x = nx; n.y = ny;
+        if (Math.abs(dx) > Math.abs(dy)) n.facing = dx < 0 ? "left" : "right";
+        else n.facing = dy < 0 ? "up" : "down";
+      }
+    }
+
+    // ==================== سحب متحركة ====================
+    const CLOUDS = [];
+    for (let i = 0; i < 4; i++) {
+      CLOUDS.push({ x: rng() * WORLD_W, y: 20 + rng() * (WORLD_H - 60), r: 22 + rng() * 20, speed: 5 + rng() * 7, alpha: 0.05 + rng() * 0.05 });
+    }
+    function updateClouds(dt) {
+      for (const cl of CLOUDS) {
+        cl.x += cl.speed * dt;
+        if (cl.x - cl.r * 2 > WORLD_W) { cl.x = -cl.r * 2; cl.y = 20 + Math.random() * (WORLD_H - 60); }
+      }
+    }
+
+    // ==================== رذاذ النافورة ====================
+    const DROPS = [];
+    function updateFountain(dt) {
+      if (DROPS.length < 26 && Math.random() < 0.5) {
+        const a = Math.random() * Math.PI * 2;
+        DROPS.push({ x: PLAZA_X, y: PLAZA_Y, vx: Math.cos(a) * 12, vy: Math.sin(a) * 12 - 22, life: 0, max: 0.9 + Math.random() * 0.4 });
+      }
+      for (let i = DROPS.length - 1; i >= 0; i--) {
+        const d = DROPS[i];
+        d.life += dt;
+        d.vy += 46 * dt;
+        d.x += d.vx * dt; d.y += d.vy * dt;
+        if (d.life > d.max) DROPS.splice(i, 1);
+      }
+    }
+
     // ==================== رسم المباني (تفصيلية حسب النوع) ====================
     function drawBank(c, b) {
       const { x, y, w, h, color } = b;
@@ -840,37 +936,49 @@
     const bgCtx = bgCanvas.getContext("2d");
 
     function renderBackground() {
+      const season = SEASONS[seasonForMonth(state.month)];
       const c = bgCtx;
       c.clearRect(0, 0, WORLD_W, WORLD_H);
       const grad = c.createLinearGradient(0, 0, 0, WORLD_H);
-      grad.addColorStop(0, "#0f2b24"); grad.addColorStop(1, "#0a1e1a");
+      grad.addColorStop(0, season.ground[0]); grad.addColorStop(1, season.ground[1]);
       c.fillStyle = grad; c.fillRect(0, 0, WORLD_W, WORLD_H);
 
       for (const d of GROUND_DOTS) {
-        c.fillStyle = d.tone < 0.5 ? "rgba(29,61,53,0.6)" : "rgba(60,110,90,0.35)";
+        c.fillStyle = d.tone < 0.5 ? "rgba(29,61,53,0.6)" : season.dot;
         c.fillRect(d.x, d.y, d.s, d.s);
       }
 
-      c.strokeStyle = "rgba(138,168,155,0.15)"; c.lineWidth = 14; c.lineCap = "round";
+      // ممرات مرصوفة من الساحة إلى كل باب
+      c.lineCap = "round";
+      c.strokeStyle = "rgba(160,190,175,0.18)"; c.lineWidth = 16;
       for (const b of BUILDINGS) {
         c.beginPath(); c.moveTo(PLAZA_X, PLAZA_Y); c.lineTo(b.doorX, b.doorY); c.stroke();
       }
-
-      for (const t of TREES) {
-        c.beginPath(); c.ellipse(t.x, t.y + 2, t.r * 0.5, t.r * 0.25, 0, 0, Math.PI * 2);
-        c.fillStyle = "rgba(0,0,0,0.25)"; c.fill();
-        c.fillStyle = "#3a2a1a";
-        c.fillRect(t.x - 2, t.y - t.r * 0.3, 4, t.r * 0.6);
-        c.beginPath(); c.arc(t.x, t.y - t.r * 0.5, t.r, 0, Math.PI * 2);
-        c.fillStyle = "#1f5c3f"; c.fill();
-        c.beginPath(); c.arc(t.x - t.r * 0.3, t.y - t.r * 0.7, t.r * 0.6, 0, Math.PI * 2);
-        c.fillStyle = "#2f7a52"; c.fill();
+      c.strokeStyle = "rgba(200,225,210,0.10)"; c.lineWidth = 12;
+      for (const b of BUILDINGS) {
+        c.beginPath(); c.moveTo(PLAZA_X, PLAZA_Y); c.lineTo(b.doorX, b.doorY); c.stroke();
+      }
+      // خطوط بلاط عرضية على الممرات
+      c.strokeStyle = "rgba(10,30,26,0.25)"; c.lineWidth = 1.5; c.lineCap = "butt";
+      for (const b of BUILDINGS) {
+        const dx = b.doorX - PLAZA_X, dy = b.doorY - PLAZA_Y;
+        const len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
+        for (let d = 14; d < len - 8; d += 13) {
+          const px = PLAZA_X + ux * d, py = PLAZA_Y + uy * d;
+          c.beginPath(); c.moveTo(px - uy * 6, py + ux * 6); c.lineTo(px + uy * 6, py - ux * 6); c.stroke();
+        }
       }
 
-      c.beginPath(); c.arc(PLAZA_X, PLAZA_Y, 26, 0, Math.PI * 2);
-      c.strokeStyle = "rgba(201,151,74,0.5)"; c.lineWidth = 3; c.stroke();
-      c.beginPath(); c.arc(PLAZA_X, PLAZA_Y, 10, 0, Math.PI * 2);
-      c.fillStyle = "rgba(74,144,201,0.35)"; c.fill();
+      // حوض النافورة في الساحة
+      c.beginPath(); c.arc(PLAZA_X, PLAZA_Y, 27, 0, Math.PI * 2);
+      c.fillStyle = "rgba(160,190,175,0.18)"; c.fill();
+      c.strokeStyle = "rgba(201,151,74,0.55)"; c.lineWidth = 3; c.stroke();
+      c.beginPath(); c.arc(PLAZA_X, PLAZA_Y, 15, 0, Math.PI * 2);
+      c.fillStyle = "rgba(74,144,201,0.40)"; c.fill();
+      c.strokeStyle = "rgba(140,200,230,0.35)"; c.lineWidth = 1.5; c.stroke();
+      c.fillStyle = "rgba(201,151,74,0.75)";
+      c.fillRect(PLAZA_X - 2.5, PLAZA_Y - 12, 5, 12);
+      c.beginPath(); c.arc(PLAZA_X, PLAZA_Y - 13, 4, 0, Math.PI * 2); c.fill();
 
       for (const b of BUILDINGS) {
         c.beginPath(); c.ellipse(b.x + b.w / 2, b.y + b.h + 4, b.w * 0.45, 6, 0, 0, Math.PI * 2);
@@ -881,71 +989,184 @@
         c.fillStyle = "#e0e8e4";
         c.fillText(b.name, b.x + b.w / 2, b.y + b.h + 16);
       }
+
+      renderedSeason = seasonForMonth(state.month);
     }
     renderBackground();
 
-    // ==================== الشخصية ====================
-    function drawPlayer() {
-      const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
-      const moving = pressed.size > 0;
-      const walk = moving ? Math.sin(player.animT * 12) : 0;
-      const legOffset = walk * 4, armOffset = -walk * 3;
-      ctx.save();
-      ctx.translate(cx, cy);
-      if (player.facing === "left") ctx.scale(-1, 1);
-      ctx.beginPath(); ctx.ellipse(0, 13, 9, 3, 0, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fill();
-      ctx.fillStyle = "#2a1c0d";
-      ctx.fillRect(-6, 4 + legOffset, 5, 10);
-      ctx.fillRect(1, 4 - legOffset, 5, 10);
-      ctx.fillStyle = "#c9974a";
-      roundRect(ctx, -8, -6, 16, 14, 4); ctx.fill();
-      ctx.fillStyle = "#b98a44";
-      ctx.fillRect(-10, -4 + armOffset, 4, 9);
-      ctx.fillRect(6, -4 - armOffset, 4, 9);
-      ctx.beginPath(); ctx.arc(0, -12, 7, 0, Math.PI * 2);
-      ctx.fillStyle = "#e8b88a"; ctx.fill();
-      ctx.beginPath(); ctx.arc(0, -15, 7.2, Math.PI, Math.PI * 2);
-      ctx.fillStyle = "#3a2a1a"; ctx.fill();
-      if (player.facing !== "up") {
-        ctx.fillStyle = "#2a1c0d";
-        ctx.beginPath(); ctx.arc(-2.5, -12, 1, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(2.5, -12, 1, 0, Math.PI * 2); ctx.fill();
+    function drawTree(c, t, season) {
+      c.beginPath(); c.ellipse(t.x, t.y + 2, t.r * 0.5, t.r * 0.25, 0, 0, Math.PI * 2);
+      c.fillStyle = "rgba(0,0,0,0.25)"; c.fill();
+      c.fillStyle = "#3a2a1a";
+      c.fillRect(t.x - 2, t.y - t.r * 0.3, 4, t.r * 0.6);
+      c.beginPath(); c.arc(t.x, t.y - t.r * 0.5, t.r, 0, Math.PI * 2);
+      c.fillStyle = season.leaf; c.fill();
+      c.beginPath(); c.arc(t.x - t.r * 0.3, t.y - t.r * 0.7, t.r * 0.6, 0, Math.PI * 2);
+      c.fillStyle = season.leafHi; c.fill();
+      if (season.blossom) {
+        c.fillStyle = season.blossom;
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + t.r;
+          c.beginPath(); c.arc(t.x + Math.cos(a) * t.r * 0.55, t.y - t.r * 0.5 + Math.sin(a) * t.r * 0.55, 1.6, 0, Math.PI * 2); c.fill();
+        }
       }
-      ctx.restore();
     }
 
-    function draw() {
-      ctx.clearRect(0, 0, WORLD_W, WORLD_H);
-      ctx.drawImage(bgCanvas, 0, 0);
+    // ==================== الشخصيات ====================
+    const PLAYER_PALETTE = { shirt: "#c9974a", sleeve: "#b98a44", skin: "#e8b88a", hair: "#3a2a1a" };
+
+    function drawCharacter(c, cx, cy, facing, animT, moving, palette) {
+      const walk = moving ? Math.sin(animT * 12) : 0;
+      const legOffset = walk * 4, armOffset = -walk * 3;
+      const bob = moving ? Math.abs(Math.sin(animT * 12)) * 1.2 : 0;
+      c.save();
+      c.translate(cx, cy - bob);
+      c.beginPath(); c.ellipse(0, 13 + bob, 9, 3, 0, 0, Math.PI * 2);
+      c.fillStyle = "rgba(0,0,0,0.35)"; c.fill();
+      if (facing === "left") c.scale(-1, 1);
+      c.fillStyle = "#2a1c0d";
+      c.fillRect(-6, 4 + legOffset, 5, 10);
+      c.fillRect(1, 4 - legOffset, 5, 10);
+      c.fillStyle = palette.shirt;
+      roundRect(c, -8, -6, 16, 14, 4); c.fill();
+      c.fillStyle = palette.sleeve;
+      c.fillRect(-10, -4 + armOffset, 4, 9);
+      c.fillRect(6, -4 - armOffset, 4, 9);
+      c.beginPath(); c.arc(0, -12, 7, 0, Math.PI * 2);
+      c.fillStyle = palette.skin; c.fill();
+      c.beginPath(); c.arc(0, -15, 7.2, Math.PI, Math.PI * 2);
+      c.fillStyle = palette.hair; c.fill();
+      if (facing !== "up") {
+        c.fillStyle = "#2a1c0d";
+        c.beginPath(); c.arc(-2.5, -12, 1, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(2.5, -12, 1, 0, Math.PI * 2); c.fill();
+      }
+      c.restore();
+    }
+
+    // ==================== مؤشرات حيّة فوق المباني تعكس وضعك المالي ====================
+    function drawBuildingIndicators(now) {
+      const d = derive(state);
+
+      const bankB = BUILDINGS.find((b) => b.id === "bank");
+      if (bankB) {
+        const pct = Math.max(0, Math.min(1, state.emergency / state.emergencyTarget));
+        const bw = bankB.w - 20, bx = bankB.x + 10, by = bankB.y + bankB.h - 26;
+        ctx.fillStyle = "rgba(10,30,26,0.75)"; ctx.fillRect(bx, by, bw, 5);
+        ctx.fillStyle = pct >= 1 ? "#2ecc71" : "#c9974a"; ctx.fillRect(bx, by, bw * pct, 5);
+        if (pct >= 1) {
+          const g = (Math.sin(now / 300) + 1) / 2;
+          ctx.strokeStyle = `rgba(46,204,113,${0.3 + g * 0.4})`; ctx.lineWidth = 1.5;
+          ctx.strokeRect(bx - 1.5, by - 1.5, bw + 3, 8);
+        }
+      }
 
       const marketB = BUILDINGS.find((b) => b.id === "market");
       if (marketB) {
-        const t = performance.now() / 400;
         for (let i = 0; i < 3; i++) {
-          const on = Math.sin(t + i) > 0;
+          const on = Math.sin(now / 400 + i) > 0;
           ctx.fillStyle = on ? "#2ecc71" : "#123b2a";
           ctx.fillRect(marketB.x + 12 + i * 10, marketB.y + 16, 6, 6);
         }
+        const up = lastStockDelta >= 0;
+        const ax = marketB.x + marketB.w - 20, ay = marketB.y + 23;
+        ctx.fillStyle = up ? "#2ecc71" : "#e74c3c";
+        ctx.beginPath();
+        if (up) { ctx.moveTo(ax, ay - 6); ctx.lineTo(ax + 6, ay + 4); ctx.lineTo(ax - 6, ay + 4); }
+        else { ctx.moveTo(ax, ay + 6); ctx.lineTo(ax + 6, ay - 4); ctx.lineTo(ax - 6, ay - 4); }
+        ctx.closePath(); ctx.fill();
       }
+
       const homeB = BUILDINGS.find((b) => b.id === "home");
       if (homeB) {
-        const t = (performance.now() / 1000) % 2;
+        const t = (now / 1000) % 2;
         ctx.globalAlpha = Math.max(0, 1 - t / 2) * 0.4;
         ctx.beginPath(); ctx.arc(homeB.x + homeB.w - 17, homeB.y - 10 - t * 14, 3 + t * 3, 0, Math.PI * 2);
         ctx.fillStyle = "#cfd8d3"; ctx.fill();
         ctx.globalAlpha = 1;
+        if (state.debt > 0) {
+          ctx.fillStyle = "rgba(231,76,60,0.85)";
+          roundRect(ctx, homeB.x + 4, homeB.y + 24, 20, 11, 3); ctx.fill();
+          ctx.fillStyle = "#fff"; ctx.font = "9px sans-serif";
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText("دين", homeB.x + 14, homeB.y + 30);
+        }
+      }
+
+      const goalsB = BUILDINGS.find((b) => b.id === "goals");
+      if (goalsB && state.goals.length) {
+        const best = Math.max(...state.goals.map((g) => Math.min(1, g.saved / g.target)));
+        const gx = goalsB.x + goalsB.w / 2, gy = goalsB.y + goalsB.h * 0.32;
+        ctx.beginPath(); ctx.arc(gx, gy, 10, -Math.PI / 2, -Math.PI / 2 + best * Math.PI * 2);
+        ctx.strokeStyle = "#2ecc71"; ctx.lineWidth = 3; ctx.stroke();
+      }
+
+      const workB = BUILDINGS.find((b) => b.id === "work");
+      if (workB && d.surplus > 0) {
+        const g = (Math.sin(now / 320) + 1) / 2;
+        ctx.fillStyle = `rgba(201,151,74,${0.55 + g * 0.45})`;
+        ctx.font = "13px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("💰", workB.x + workB.w / 2, workB.y - 12 - g * 3);
+      }
+    }
+
+    function draw() {
+      const now = performance.now();
+      const seasonKey = seasonForMonth(state.month);
+      if (seasonKey !== renderedSeason) renderBackground();
+      const season = SEASONS[seasonKey];
+
+      ctx.clearRect(0, 0, WORLD_W, WORLD_H);
+      ctx.drawImage(bgCanvas, 0, 0);
+
+      // رذاذ النافورة
+      for (const dr of DROPS) {
+        const a = Math.max(0, 1 - dr.life / dr.max);
+        ctx.fillStyle = `rgba(150,210,240,${a * 0.8})`;
+        ctx.fillRect(dr.x, dr.y, 2, 2);
+      }
+
+      drawBuildingIndicators(now);
+
+      // ترتيب حسب العمق: الأشجار والشخصيات تُرسم بترتيب موضعها الرأسي
+      const entities = [];
+      for (const t of TREES) entities.push({ footY: t.y, kind: "tree", ref: t });
+      for (const n of NPCS) entities.push({ footY: n.y + 14, kind: "npc", ref: n });
+      entities.push({ footY: player.y + player.h, kind: "player" });
+      entities.sort((a, b) => a.footY - b.footY);
+      for (const e of entities) {
+        if (e.kind === "tree") drawTree(ctx, e.ref, season);
+        else if (e.kind === "npc") drawCharacter(ctx, e.ref.x, e.ref.y, e.ref.facing, e.ref.animT, e.ref.moving, e.ref.palette);
+        else drawCharacter(ctx, player.x + player.w / 2, player.y + player.h / 2, player.facing, player.animT, pressed.size > 0, PLAYER_PALETTE);
+      }
+
+      // سحب تمر فوق المدينة
+      for (const cl of CLOUDS) {
+        ctx.fillStyle = `rgba(220,235,230,${cl.alpha})`;
+        ctx.beginPath(); ctx.arc(cl.x, cl.y, cl.r, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cl.x + cl.r * 0.8, cl.y + 4, cl.r * 0.7, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cl.x - cl.r * 0.7, cl.y + 5, cl.r * 0.6, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // صبغة الفصل فوق المشهد كله
+      if (season.tint) {
+        ctx.fillStyle = season.tint;
+        ctx.fillRect(0, 0, WORLD_W, WORLD_H);
       }
 
       if (currentBuilding) {
-        const glowT = (Math.sin(performance.now() / 220) + 1) / 2;
+        const glowT = (Math.sin(now / 220) + 1) / 2;
         ctx.beginPath();
         ctx.arc(currentBuilding.doorX, currentBuilding.doorY, 6 + glowT * 3, 0, Math.PI * 2);
         ctx.strokeStyle = `rgba(201,151,74,${0.4 + glowT * 0.4})`;
         ctx.lineWidth = 2; ctx.stroke();
       }
 
-      drawPlayer();
+      // شارة الفصل
+      ctx.font = "10px 'Noto Kufi Arabic', sans-serif";
+      ctx.textAlign = "right"; ctx.textBaseline = "top";
+      ctx.fillStyle = "rgba(224,232,228,0.55)";
+      ctx.fillText(season.name, WORLD_W - 8, 8);
     }
 
     // ==================== الحلقة الرئيسية ====================
@@ -953,7 +1174,12 @@
     function loop(ts) {
       const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0);
       lastTs = ts;
-      if (!isModalOpen()) updatePlayer(dt);
+      if (!isModalOpen()) {
+        updatePlayer(dt);
+        updateNPCs(dt);
+      }
+      updateClouds(dt);
+      updateFountain(dt);
       draw();
       requestAnimationFrame(loop);
     }
