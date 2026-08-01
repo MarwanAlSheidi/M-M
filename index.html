@@ -160,7 +160,6 @@
     const INITIAL_STATE = {
       cash: 700,
       emergency: 450,
-      emergencyTarget: 3600,        // 6 أشهر من المصروفات
       investments: {
         stocks: { amount: 0, cost: 0 },
         bonds: { amount: 0, cost: 0 },
@@ -264,8 +263,13 @@
       const housing = state.housing || INITIAL_STATE.housing;
       const homeEquity = (housing.built || 0) - (housing.loan || 0);
       const netWorth = state.cash + state.emergency + totalInv + homeEquity - state.debt;
+      // الثروة المُدِرّة للدخل: تستثني منزل السكن وقرضه، لأن البيت الذي تسكنه
+      // لا يموّل مصروفاتك. الاستقلال المالي يُقاس بها لا بصافي الثروة كاملًا.
+      const investableNetWorth = state.cash + state.emergency + totalInv - state.debt;
       const coverage = effExpenses > 0 ? state.emergency / effExpenses : 0;
-      return { surplus, netWorth, totalInv, coverage, effIncome, effExpenses };
+      // هدف صندوق الطوارئ يتبع مصروفاتك الفعلية (6 أشهر) بدل رقم ثابت يتقادم
+      const emergencyTarget = Math.round(effExpenses * 6);
+      return { surplus, netWorth, investableNetWorth, homeEquity, totalInv, coverage, effIncome, effExpenses, emergencyTarget };
     }
 
     // ==================== نموذج الأصول ====================
@@ -307,9 +311,10 @@
     ];
 
     function rankInfo(s) {
-      const nw = derive(s).netWorth;
+      const d = derive(s);
+      const nw = d.netWorth;
       const fi = fiTarget(s);
-      if (nw >= fi) return { name: "مستقل ماليًا 🏆", pct: 1, nextLabel: "اكتمل" };
+      if (d.investableNetWorth >= fi) return { name: "مستقل ماليًا 🏆", pct: 1, nextLabel: "اكتمل" };
       let idx = 0;
       for (let i = 0; i < RANKS.length; i++) if (nw >= RANKS[i].min) idx = i;
       const cur = RANKS[idx];
@@ -360,8 +365,10 @@
     // تُستدعى بعد كل تغيير؛ تعرض شاشة النهاية مرة واحدة فقط
     function checkEnding() {
       if (state.finished) return;
-      const nw = derive(state).netWorth;
-      if (nw >= fiTarget(state)) {
+      const d = derive(state);
+      const nw = d.netWorth;
+      // الفوز يقاس بالثروة المُدِرّة للدخل: امتلاك بيت السكن وحده لا يعني استقلالًا ماليًا
+      if (d.investableNetWorth >= fiTarget(state)) {
         state.finished = "win";
         localStorage.setItem(SAVE_KEY, JSON.stringify(state));
         showEnding("win");
@@ -667,10 +674,10 @@
     // ==================== مباني المدينة ====================
     function openBank() {
       const d = derive(state);
-      const pct = Math.min(100, (state.emergency / state.emergencyTarget) * 100);
+      const pct = Math.min(100, (state.emergency / d.emergencyTarget) * 100);
       pushModal(`
         <h2>🏦 البنك</h2>
-        <p class="muted" style="margin-bottom:6px">${term("صندوق الطوارئ")}: <b>${fmt(state.emergency)}</b> ريال (الهدف ${fmt(state.emergencyTarget)})</p>
+        <p class="muted" style="margin-bottom:6px">${term("صندوق الطوارئ")}: <b>${fmt(state.emergency)}</b> ريال (الهدف ${fmt(d.emergencyTarget)} = 6 أشهر من مصروفاتك)</p>
         <div class="progress"><div class="progress-fill" style="width:${pct}%;background:#c9974a"></div></div>
         <p class="muted" style="margin:10px 0 16px">${d.coverage.toFixed(1)} شهر من أصل 6 · النقد المتاح: ${fmt(state.cash)} ريال</p>
         <div class="slider-row"><span>إيداع من الجاري</span></div>
@@ -1089,11 +1096,13 @@
         <canvas class="celebrate-art" id="endArt" width="340" height="140"></canvas>
         <p style="line-height:1.9;text-align:center">
           ${win
-            ? `وصلت إلى ثروة تكفي لتغطية مصروفاتك دون الحاجة إلى راتب.`
+            ? `وصلت باستثماراتك إلى ما يكفي لتغطية مصروفاتك دون الحاجة إلى راتب.`
             : `تراكمت الديون وتجاوزت خسائرك ما تملك. جرّب توازنًا أفضل بين الطوارئ والاستثمار.`}
         </p>
         <div class="card" style="margin:14px 0;padding:12px">
           <div style="display:flex;justify-content:space-between;padding:4px 0"><span class="muted">صافي الثروة</span><b style="color:${win ? "#2ecc71" : "#e74c3c"}">${fmt(d.netWorth)}</b></div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0"><span class="muted">منها مُدِرّة للدخل</span><b>${fmt(d.investableNetWorth)}</b></div>
+          ${state.housing.stage === "owned" ? `<div style="display:flex;justify-content:space-between;padding:4px 0"><span class="muted">قيمة المنزل</span><b>${fmt(d.homeEquity)}</b></div>` : ""}
           <div style="display:flex;justify-content:space-between;padding:4px 0"><span class="muted">المدة</span><b>${months} شهرًا</b></div>
           <div style="display:flex;justify-content:space-between;padding:4px 0"><span class="muted">أهداف مكتملة</span><b>${doneGoals}</b></div>
           <div style="display:flex;justify-content:space-between;padding:4px 0"><span class="muted">أحداث مررت بها</span><b>${state.eventLog.length}</b></div>
@@ -1212,6 +1221,8 @@
         <div class="card" style="margin:10px 0;padding:12px">
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">الرتبة</span><b style="color:#c9974a">${rankInfo(state).name}</b></div>
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">هدف الاستقلال المالي</span><b>${fmt(fiTarget(state))}</b></div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">ثروتك المُدِرّة للدخل</span><b style="color:#c9974a">${fmt(derive(state).investableNetWorth)}</b></div>
+          <p class="muted" style="font-size:11px;margin-top:4px">لا يُحتسب بيت السكن هنا — فهو لا يموّل مصروفاتك، لكنه يدخل في صافي ثروتك.</p>
         </div>
         ${housingOfficeHtml()}
         <h3 style="font-size:14px;color:#c9974a;margin:6px 0">سجل الأحداث</h3>
@@ -1902,7 +1913,7 @@
 
       const bankB = BUILDINGS.find((b) => b.id === "bank");
       if (bankB) {
-        const pct = Math.max(0, Math.min(1, state.emergency / state.emergencyTarget));
+        const pct = Math.max(0, Math.min(1, state.emergency / d.emergencyTarget));
         const bw = bankB.w - 20, bx = bankB.x + 10, by = bankB.y + bankB.h - 26;
         ctx.fillStyle = "rgba(10,30,26,0.75)"; ctx.fillRect(bx, by, bw, 5);
         ctx.fillStyle = pct >= 1 ? "#2ecc71" : "#c9974a"; ctx.fillRect(bx, by, bw * pct, 5);
