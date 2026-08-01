@@ -747,7 +747,10 @@
     // ==================== شاشة الزكاة السنوية ====================
     function openZakat(due) {
       const wealth = zakatableWealth(state);
-      const canPay = state.cash >= due;
+      // المتأخرات جزء من الواجب: تأجيل سنة سابقة يبقى في الذمة حتى يُدفع فعلاً
+      const arrears = state.zakat?.unpaid ?? 0;
+      const total = due + arrears;
+      const canPay = state.cash >= total;
       SFX.alert();
       pushModal(`
         <h2>🤲 حَال الحول — الزكاة</h2>
@@ -759,23 +762,25 @@
         <div class="card" style="padding:12px;margin-bottom:12px">
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">وعاء الزكاة</span><b>${fmt(wealth)}</b></div>
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">النصاب</span><b>${fmt(ZAKAT_NISAB)}</b></div>
-          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">الواجب (2.5%)</span><b style="color:#c9974a">${fmt(due)}</b></div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">زكاة هذا العام (2.5%)</span><b style="color:#c9974a">${fmt(due)}</b></div>
+          ${arrears > 0 ? `<div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">متأخرات في ذمتك</span><b style="color:#e74c3c">${fmt(arrears)}</b></div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid rgba(29,61,53,0.8);margin-top:3px"><span class="muted">الإجمالي الواجب</span><b style="color:#c9974a">${fmt(total)}</b></div>` : ""}
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">النقد المتاح</span><b style="color:${canPay ? "#2ecc71" : "#e74c3c"}">${fmt(state.cash)}</b></div>
         </div>
         <div class="inline-error" id="zakatErr"></div>
-        <button class="btn" id="payZakat" ${canPay ? "" : "disabled"}>${canPay ? `أخرج الزكاة (${fmt(due)})` : "لا يوجد نقد كافٍ"}</button>
+        <button class="btn" id="payZakat" ${canPay ? "" : "disabled"}>${canPay ? `أخرج الزكاة (${fmt(total)})` : "لا يوجد نقد كافٍ"}</button>
         <button class="btn btn-outline" style="margin-top:10px" id="deferZakat">أجّلها (تبقى دينًا في ذمتك)</button>
       `, (root) => {
         const cv = root.querySelector("#zakatArt");
         if (cv) animateZakatArt(cv);
         root.querySelector("#payZakat").addEventListener("click", once(() => {
-          if (state.cash < due) { root.querySelector("#zakatErr").textContent = "النقد لا يكفي."; return; }
+          if (state.cash < total) { root.querySelector("#zakatErr").textContent = "النقد لا يكفي."; return; }
           const z = state.zakat || { paidCount: 0, totalPaid: 0, unpaid: 0 };
           SFX.success();
-          setState({ ...state, cash: state.cash - due,
+          setState({ ...state, cash: state.cash - total,
             morale: Math.min(100, (state.morale ?? 70) + 8),
-            zakat: { ...z, paidCount: z.paidCount + 1, totalPaid: z.totalPaid + due, lastDueYear: state.year, unpaid: 0 },
-            eventLog: [...state.eventLog, `🤲 أخرجت زكاة ${fmt(due)}`] });
+            zakat: { ...z, paidCount: z.paidCount + 1, totalPaid: z.totalPaid + total, lastDueYear: state.year, unpaid: 0 },
+            eventLog: [...state.eventLog, arrears > 0 ? `🤲 أخرجت زكاة ${fmt(total)} (منها ${fmt(arrears)} متأخرات)` : `🤲 أخرجت زكاة ${fmt(total)}`] });
           closeAllModals();
         }));
         root.querySelector("#deferZakat").addEventListener("click", once(() => {
