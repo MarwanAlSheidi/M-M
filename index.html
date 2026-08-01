@@ -91,6 +91,8 @@
       <div class="stat-box"><div class="label">🛡 الطوارئ</div><div class="value" id="statEmergency">0</div></div>
       <div class="stat-box"><div class="label">📈 استثمارات</div><div class="value" id="statInvest">0</div></div>
       <div class="stat-box"><div class="label">💳 ديون</div><div class="value" id="statDebt">0</div></div>
+      <div class="stat-box"><div class="label">😊 الرضا</div><div class="value" id="statMorale">0</div></div>
+      <div class="stat-box"><div class="label">🏅 ائتماني</div><div class="value" id="statCredit">0</div></div>
     </div>
 
     <div class="stage">
@@ -145,6 +147,7 @@
       monthlyIncome: 5000,
       monthlyExpenses: 3000,
       creditScore: 700,
+      morale: 70,
       month: 1,
       year: 1,
       goals: [],
@@ -182,11 +185,44 @@
     ];
 
     // ==================== الدوال المساعدة ====================
+    // ==================== الرضا (المعنويات) ====================
+    // الإنفاق الشخصي يشتري رضًا حقيقيًا: المال يذهب فعلاً، لكن إهماله يسبب إرهاقًا
+    // يخفض دخلك. فيصبح "ادخر كل شيء" استراتيجية لها ثمن، لا خيارًا مجانيًا.
+    const MORALE_BURNOUT = 25, MORALE_HIGH = 85;
+    function moraleModifier(morale) {
+      if (morale < MORALE_BURNOUT) return -0.12; // إرهاق: أداء أضعف ودخل أقل
+      if (morale >= MORALE_HIGH) return 0.04;    // اندفاع: أداء أفضل
+      return 0;
+    }
+    function moraleLabel(morale) {
+      if (morale < MORALE_BURNOUT) return { text: "مُرهَق", color: "#e74c3c", emoji: "😫" };
+      if (morale < 50) return { text: "متوتر", color: "#e67e22", emoji: "😟" };
+      if (morale < MORALE_HIGH) return { text: "مرتاح", color: "#c9974a", emoji: "🙂" };
+      return { text: "متحمّس", color: "#2ecc71", emoji: "😄" };
+    }
+
+    // ==================== التصنيف الائتماني ====================
+    // يتحرك مع نسبة الدين إلى الدخل، ويحدّد الفائدة الشهرية على ديونك.
+    function creditTarget(s) {
+      const dti = s.monthlyIncome > 0 ? s.debt / (s.monthlyIncome * 12) : 2;
+      return Math.max(300, Math.min(850, Math.round(850 - dti * 700)));
+    }
+    function debtMonthlyRate(score) {
+      return 0.004 + ((850 - score) / 550) * 0.010; // ~0.4% عند 850 و~1.4% عند 300
+    }
+    function creditLabel(score) {
+      if (score >= 750) return { text: "ممتاز", color: "#2ecc71" };
+      if (score >= 670) return { text: "جيد", color: "#c9974a" };
+      if (score >= 580) return { text: "متوسط", color: "#e67e22" };
+      return { text: "ضعيف", color: "#e74c3c" };
+    }
+
     function derive(state) {
       const tempEffects = state.tempEffects || [];
       const incomeAdj = tempEffects.filter((e) => e.type === "income").reduce((a, e) => a + e.amount, 0);
       const expenseAdj = tempEffects.filter((e) => e.type === "expense").reduce((a, e) => a + e.amount, 0);
-      const effIncome = state.monthlyIncome + incomeAdj;
+      const moraleMod = moraleModifier(state.morale ?? 70);
+      const effIncome = Math.round((state.monthlyIncome + incomeAdj) * (1 + moraleMod));
       const effExpenses = state.monthlyExpenses + expenseAdj;
       const surplus = effIncome - effExpenses;
       const totalInv = Object.values(state.investments).reduce((sum, inv) => sum + inv.amount, 0);
@@ -347,7 +383,22 @@
         if (crashed) s.eventLog = [...s.eventLog, `📉 انهيار مفاجئ في ${ASSETS[key].label}`];
       }
       lastStockDelta = lastAssetMoves.stocks.pct;
-      if (s.debt > 0) s.debt = Math.round(s.debt * 1.01);
+
+      // التصنيف الائتماني يتحرك تدريجيًا نحو ما تستحقه نسبة دينك إلى دخلك،
+      // وهو من يحدد فائدة الدين بدل النسبة الثابتة السابقة.
+      s.creditScore = Math.round(s.creditScore + (creditTarget(s) - s.creditScore) * 0.15);
+      if (s.debt > 0) s.debt = Math.round(s.debt * (1 + debtMonthlyRate(s.creditScore)));
+
+      // الرضا يتآكل شهريًا، ويتأثر بضغط الدين وبراحة صندوق الطوارئ
+      let morale = s.morale ?? 70;
+      morale -= 4;
+      if (s.debt > s.monthlyIncome * 3) morale -= 3;
+      if (s.monthlyExpenses > 0 && s.emergency / s.monthlyExpenses >= 3) morale += 2;
+      const wasBurntOut = (s.morale ?? 70) < MORALE_BURNOUT;
+      s.morale = Math.max(0, Math.min(100, morale));
+      if (!wasBurntOut && s.morale < MORALE_BURNOUT) {
+        s.eventLog = [...s.eventLog, "😫 وصلت إلى الإرهاق — دخلك ينخفض حتى ترفع رضاك"];
+      }
 
       const { surplus } = derive(s);
       s.cash += surplus;
@@ -591,7 +642,7 @@
       });
     }
 
-    const ASSET_LABELS = { stocks: "أسهم", bonds: "سندات", realEstate: "عقار", crypto: "عملات رقمية" };
+    const ASSET_LABELS = Object.fromEntries(Object.entries(ASSETS).map(([k, a]) => [k, a.label]));
 
     function openMarket() {
       const held = Object.values(state.investments).filter((i) => i.amount > 0).length;
@@ -668,7 +719,7 @@
 
     const ALLOC_FIELDS = [
       ["emergency", "🛡 صندوق الطوارئ"], ["savings", "💰 ادخار عام"], ["investStocks", "📈 أسهم"],
-      ["investBonds", "📋 سندات"], ["investReal", "🏠 عقار"], ["investCrypto", "₿ عملات رقمية"], ["leisure", "🎉 إنفاق شخصي"]
+      ["investBonds", "📋 سندات"], ["investReal", "🏠 عقار"], ["investCrypto", "₿ عملات رقمية"], ["leisure", "🎉 إنفاق شخصي (يُصرف، يرفع الرضا)"]
     ];
 
     function openAllocation(surplus) {
@@ -680,7 +731,12 @@
       `).join("");
       pushModal(`
         <h2>💼 يوم الراتب — تخصيص الفائض</h2>
-        <p class="muted" style="margin-bottom:10px">الفائض هذا الشهر: <b id="surplusLabel">${fmt(surplus)}</b> ريال · الموزّع: <span id="totalLabel">0</span></p>
+        <p class="muted" style="margin-bottom:6px">الفائض هذا الشهر: <b id="surplusLabel">${fmt(surplus)}</b> ريال · الموزّع: <span id="totalLabel">0</span></p>
+        <p class="muted" style="margin-bottom:12px;font-size:11px">
+          الرضا الآن <b id="moraleNow" style="color:${moraleLabel(state.morale ?? 70).color}">${Math.round(state.morale ?? 70)}</b>
+          → بعد التوزيع <b id="moraleAfter">${Math.round(state.morale ?? 70)}</b>
+          <span id="burnoutWarn" style="color:#e74c3c"></span>
+        </p>
         ${rows}
         <div class="inline-error" id="allocErr"></div>
         ${state.lastAlloc ? `<button class="btn btn-outline" style="margin-bottom:10px" id="repeatAlloc">↺ كرّر توزيع الشهر الماضي</button>` : ""}
@@ -689,13 +745,25 @@
         const alloc = Object.fromEntries(ALLOC_FIELDS.map(([k]) => [k, 0]));
         const totalLabel = root.querySelector("#totalLabel");
         const err = root.querySelector("#allocErr");
+        const moraleAfterEl = root.querySelector("#moraleAfter");
+        const burnoutWarn = root.querySelector("#burnoutWarn");
+        function refreshMoralePreview() {
+          // ‎-4 هو التآكل الشهري الأساسي؛ نعرض للاعب أثر خياره قبل أن يؤكده
+          const projected = Math.max(0, Math.min(100,
+            (state.morale ?? 70) + moraleFromLeisure(alloc.leisure, state.monthlyExpenses) - 4));
+          moraleAfterEl.textContent = Math.round(projected);
+          moraleAfterEl.style.color = moraleLabel(projected).color;
+          burnoutWarn.textContent = projected < MORALE_BURNOUT ? " ⚠ خطر الإرهاق (دخلك سينخفض)" : "";
+        }
         ALLOC_FIELDS.forEach(([key]) => {
           root.querySelector(`#range_${key}`).addEventListener("input", (e) => {
             alloc[key] = Number(e.target.value);
             root.querySelector(`#val_${key}`).textContent = fmt(alloc[key]);
             totalLabel.textContent = fmt(Object.values(alloc).reduce((a, b) => a + b, 0));
+            refreshMoralePreview();
           });
         });
+        refreshMoralePreview();
         root.querySelector("#confirmAlloc").addEventListener("click", () => {
           const total = Object.values(alloc).reduce((a, b) => a + b, 0);
           if (total !== surplus) { err.textContent = `يجب أن يساوي التخصيص الفائض بالكامل (${fmt(surplus)}).`; return; }
@@ -726,10 +794,18 @@
       return out;
     }
 
+    // كم رضًا يشتريه ريال واحد من الإنفاق الشخصي (نسبةً إلى مستوى معيشتك)
+    function moraleFromLeisure(amount, monthlyExpenses) {
+      const perPoint = Math.max(1, monthlyExpenses * 0.04);
+      return Math.min(30, Math.round(amount / perPoint));
+    }
+
     function applyAllocation(alloc, surplus) {
       let s = { ...state, investments: cloneInvestments(state.investments) };
       s.emergency += alloc.emergency;
-      s.cash += alloc.savings + alloc.leisure;
+      // الادخار العام يبقى نقدًا؛ أما الإنفاق الشخصي فيُصرف فعلاً ويشتري رضًا
+      s.cash += alloc.savings;
+      s.morale = Math.max(0, Math.min(100, (s.morale ?? 70) + moraleFromLeisure(alloc.leisure, s.monthlyExpenses)));
       s.investments.stocks.amount += alloc.investStocks; s.investments.stocks.cost += alloc.investStocks;
       s.investments.bonds.amount += alloc.investBonds; s.investments.bonds.cost += alloc.investBonds;
       s.investments.realEstate.amount += alloc.investReal; s.investments.realEstate.cost += alloc.investReal;
@@ -746,6 +822,21 @@
         <h2>🏠 المنزل</h2>
         <p class="muted" style="margin-bottom:4px">الدخل الشهري: <b>${fmt(state.monthlyIncome)}</b> ريال</p>
         <p class="muted" style="margin-bottom:16px">المصروفات الشهرية: <b>${fmt(state.monthlyExpenses)}</b> ريال</p>
+        <div class="card" style="margin-bottom:14px;padding:12px">
+          <div style="display:flex;justify-content:space-between;padding:3px 0">
+            <span class="muted">${term("نسبة الدين إلى الدخل")}</span>
+            <b>${state.monthlyIncome > 0 ? ((state.debt / (state.monthlyIncome * 12)) * 100).toFixed(0) : "—"}%</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0">
+            <span class="muted">التصنيف الائتماني</span>
+            <b style="color:${creditLabel(state.creditScore).color}">${state.creditScore} · ${creditLabel(state.creditScore).text}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0">
+            <span class="muted">فائدة الدين الحالية</span>
+            <b>${(debtMonthlyRate(state.creditScore) * 100).toFixed(2)}%/شهر</b>
+          </div>
+          <p class="muted" style="font-size:11px;margin-top:6px">كلما قلّ دينك مقابل دخلك ارتفع تصنيفك وانخفضت فائدتك.</p>
+        </div>
         <div class="slider-row"><span>سداد جزء من الدين (${fmt(state.debt)})</span></div>
         <div class="row-actions">
           <input type="number" id="payAmt" min="0" max="${Math.max(0, Math.min(state.cash, state.debt))}" value="0" />
@@ -1014,7 +1105,6 @@
     }
 
     const pressed = new Set();
-    function isMovingKeyActive() { return pressed.size > 0; }
 
     function updatePlayer(dt) {
       player.animT += dt;
@@ -1792,13 +1882,22 @@
     // ==================== واجهة المستخدم العلوية ====================
     function refreshHud() {
       const d = derive(state);
-      document.getElementById("moodEmoji").textContent = state.emergency > 5000 ? "😊" : state.debt > 2000 ? "😰" : "🙂";
+      const ml = moraleLabel(state.morale ?? 70);
+      const mood = document.getElementById("moodEmoji");
+      mood.textContent = ml.emoji;
+      mood.title = `الرضا: ${Math.round(state.morale ?? 70)} (${ml.text})`;
       document.getElementById("hudDate").textContent = `السنة ${state.year} · شهر ${state.month}`;
       document.getElementById("hudNet").innerHTML = `${fmt(d.netWorth)} <small>ريال</small>`;
       document.getElementById("statCash").textContent = fmt(state.cash);
       document.getElementById("statEmergency").textContent = fmt(state.emergency);
       document.getElementById("statInvest").textContent = fmt(d.totalInv);
       document.getElementById("statDebt").textContent = fmt(state.debt);
+      const mEl = document.getElementById("statMorale");
+      mEl.textContent = Math.round(state.morale ?? 70);
+      mEl.style.color = ml.color;
+      const cEl = document.getElementById("statCredit");
+      cEl.textContent = state.creditScore;
+      cEl.style.color = creditLabel(state.creditScore).color;
       const r = rankInfo(state);
       document.getElementById("rankName").textContent = r.name;
       document.getElementById("rankNext").textContent = r.nextLabel;
