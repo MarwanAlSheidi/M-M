@@ -22,10 +22,11 @@
     .rank-head span:first-child { color: #c9974a; font-weight: 700; }
     .rank-head .muted { font-size: 10px; }
     .stats-panel { display: none; margin: 10px 12px; }
-    .stats-panel.open { display: flex; gap: 8px; }
-    .stat-box { flex: 1; background: #122e27; border-radius: 12px; padding: 10px 6px; text-align: center; border: 1px solid #1d3d35; }
-    .stat-box .label { font-size: 10px; color: #8aa89b; margin-bottom: 4px; }
-    .stat-box .value { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 600; }
+    /* شبكة تلتفّ بدل صفّ واحد — سبعة صناديق لا تتّسع في عرض الهاتف */
+    .stats-panel.open { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .stat-box { background: #122e27; border-radius: 12px; padding: 8px 4px; text-align: center; border: 1px solid #1d3d35; min-width: 0; }
+    .stat-box .label { font-size: 9px; color: #8aa89b; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stat-box .value { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 
     .stage { position: relative; margin: 10px 12px; border-radius: 14px; overflow: hidden; border: 1px solid #1d3d35; }
     .stage canvas { display: block; width: 100%; height: auto; background: #0a1e1a; }
@@ -65,6 +66,7 @@
     .inline-error { color: #e74c3c; font-size: 13px; margin: -8px 0 12px; min-height: 16px; }
     .muted { color: #8aa89b; }
     .term-row { padding: 10px 0; border-bottom: 1px solid #1d3d35; cursor: pointer; }
+    @media (max-width: 380px) { .stats-panel.open { grid-template-columns: repeat(3, 1fr); } }
   </style>
 </head>
 <body>
@@ -716,7 +718,7 @@
             eventLog: [...state.eventLog, `⏳ أجّلت زكاة ${fmt(due)}`] });
           closeAllModals();
         });
-      });
+      }, { mandatory: true });
     }
 
     function animateZakatArt(canvas) {
@@ -767,7 +769,7 @@
             closeAllModals();
           });
         });
-      });
+      }, { mandatory: true });
     }
 
     // ==================== رسوم توضيحية متحركة لبطاقات الأحداث ====================
@@ -912,15 +914,26 @@
       root.querySelectorAll("[data-close-all]").forEach((el) => el.addEventListener("click", () => closeAllModals()));
     }
 
-    function pushModal(html, onMount) {
+    // mandatory: بطاقة لا تُغلق بالنقر خارجها ولا بمفتاح Escape.
+    // بدونها كان اللاعب يتفادى أي حدث سيئ (فقدان وظيفة، انهيار، طارئ صحي)
+    // أو يتخطى الزكاة بنقرة واحدة خارج البطاقة، فيفقد نظام العواقب معناه.
+    function pushModal(html, onMount, opts = {}) {
       const overlay = document.createElement("div");
       overlay.className = "modal-overlay";
       overlay.innerHTML = `<div class="modal">${html}</div>`;
-      overlay.addEventListener("click", (e) => { if (e.target === overlay) popModal(); });
+      overlay.dataset.mandatory = opts.mandatory ? "1" : "";
+      if (!opts.mandatory) {
+        overlay.addEventListener("click", (e) => { if (e.target === overlay) popModal(); });
+      }
       document.getElementById("modalRoot").appendChild(overlay);
       modalStack.push(overlay);
       mountCommon(overlay);
       if (onMount) onMount(overlay);
+    }
+
+    function topModalIsMandatory() {
+      const top = modalStack[modalStack.length - 1];
+      return !!(top && top.dataset.mandatory);
     }
 
     function popModal() {
@@ -1401,7 +1414,7 @@
         const cv = root.querySelector("#endArt");
         if (cv) win ? animateConfetti(cv) : drawEndSlump(cv);
         root.querySelector("#restartBtn").addEventListener("click", resetGame);
-      });
+      }, { mandatory: true });
     }
 
     function drawEndSlump(canvas) {
@@ -1472,6 +1485,37 @@
       })(last);
     }
 
+    // ==================== إحصاءات الجولة ====================
+    function statsRowsHtml() {
+      const d = derive(state);
+      const months = (state.year - 1) * 12 + state.month;
+      const hist = state.history || [];
+      const peak = hist.length ? Math.max(...hist.map((p) => p.netWorth)) : d.netWorth;
+      const trough = hist.length ? Math.min(...hist.map((p) => p.netWorth)) : d.netWorth;
+      const growth = hist.length > 1 ? d.netWorth - hist[0].netWorth : 0;
+      const invested = Object.values(state.investments).reduce((a, i) => a + i.cost, 0);
+      const gains = d.totalInv - invested;
+      const eduName = ["لا شيء", "دورة مهنية", "دبلوم تخصصي", "شهادة احترافية"][state.education?.level ?? 0] || "—";
+      const rows = [
+        ["المدة", `${months} شهرًا (${(months / 12).toFixed(1)} سنة)`],
+        ["الدخل الشهري", `${fmt(state.monthlyIncome)} (بدأت بـ1,000)`],
+        ["الفائض الشهري", fmt(d.surplus)],
+        ["أعلى ثروة بلغتها", fmt(peak)],
+        ["أدنى ثروة مررت بها", fmt(trough)],
+        ["نمو الثروة منذ البداية", (growth >= 0 ? "+" : "−") + fmt(Math.abs(growth))],
+        ["رأس المال المستثمر", fmt(invested)],
+        ["أرباح/خسائر الاستثمار", (gains >= 0 ? "+" : "−") + fmt(Math.abs(gains))],
+        ["مستواك التعليمي", eduName],
+        ["التأمين الصحي", state.insurance?.health ? "مفعّل" : "غير مفعّل"],
+        ["الحالة الاجتماعية", state.married ? `متزوج · ${state.children ?? 0} أبناء` : "أعزب"],
+        ["أحداث مررت بها", String((state.eventLog || []).length)],
+      ];
+      return rows.map(([k, v], i) => `
+        <div style="display:flex;justify-content:space-between;padding:4px 0${i < rows.length - 1 ? ";border-bottom:1px solid rgba(29,61,53,0.6)" : ""}">
+          <span class="muted" style="font-size:12px">${k}</span><b style="font-size:12px">${v}</b>
+        </div>`).join("");
+    }
+
     // ==================== مكتب الإسكان داخل البلدية ====================
     function housingOfficeHtml() {
       const h = state.housing;
@@ -1532,6 +1576,10 @@
           </div>
         </div>
         ${housingOfficeHtml()}
+        <div class="card" style="margin:10px 0;padding:12px">
+          <h3 style="font-size:14px;color:#c9974a;margin-bottom:8px">📊 إحصاءات الجولة</h3>
+          ${statsRowsHtml()}
+        </div>
         <h3 style="font-size:14px;color:#c9974a;margin:6px 0">سجل الأحداث</h3>
         ${logHtml}
         <button class="btn btn-outline" style="margin-top:14px" id="resetBtn">إعادة بدء اللعبة</button>
@@ -2539,7 +2587,7 @@
       const dir = KEY_MAP[e.key];
       if (dir) { pressed.add(dir); e.preventDefault(); }
       if ((e.key === "Enter" || e.key === " " || e.key === "e") && currentBuilding && !isModalOpen()) currentBuilding.open();
-      if (e.key === "Escape" && isModalOpen()) popModal();
+      if (e.key === "Escape" && isModalOpen() && !topModalIsMandatory()) popModal();
     });
     window.addEventListener("keyup", (e) => {
       const dir = KEY_MAP[e.key];
