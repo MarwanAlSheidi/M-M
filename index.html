@@ -507,9 +507,18 @@
         : saved;
     }
 
+    // قد يرمي التخزين استثناءً (تصفّح خاص، امتلاء الحصة، تعطيله من المستخدم).
+    // اللعبة تبقى قابلة للعب بلا حفظ، فنبتلع الخطأ بدل أن نُسقط الإجراء الجاري.
+    function saveState() {
+      try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch { /* اللعب يستمر بلا حفظ */ }
+    }
+    function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+    function lsSet(k, v) { try { localStorage.setItem(k, v); } catch { /* تجاهل */ } }
+    function lsRemove(k) { try { localStorage.removeItem(k); } catch { /* تجاهل */ } }
+
     function loadState() {
       try {
-        const saved = localStorage.getItem(SAVE_KEY);
+        const saved = lsGet(SAVE_KEY);
         if (!saved) { isFirstVisit = true; return structuredClone(INITIAL_STATE); }
         const parsed = JSON.parse(saved);
         if (!parsed || typeof parsed !== "object") throw new Error("bad save");
@@ -525,7 +534,7 @@
       state = next;
       // نتذكّر أنك حملت دينًا يومًا، ليصبح إنجاز السداد مستحقًا لا مجانيًا
       if (state.debt > 0) state.hadDebt = true;
-      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      saveState();
       const delta = derive(state).netWorth - prevNetWorth;
       if (Math.abs(delta) >= 1) {
         spawnFloater(delta);
@@ -551,7 +560,7 @@
           SFX.badge();
         }
       }
-      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      saveState();
     }
     const BADGES = [];
 
@@ -563,26 +572,26 @@
       // الفوز يقاس بالثروة المُدِرّة للدخل: امتلاك بيت السكن وحده لا يعني استقلالًا ماليًا
       if (d.investableNetWorth >= fiTarget(state)) {
         state.finished = "win";
-        localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+        saveState();
         showEnding("win");
       } else if (nw <= BANKRUPT_AT) {
         state.finished = "lose";
-        localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+        saveState();
         showEnding("lose");
       }
     }
 
     function resetGame() {
-      localStorage.removeItem(SAVE_KEY);
+      lsRemove(SAVE_KEY);
       state = structuredClone(INITIAL_STATE);
-      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      saveState();
       closeAllModals();
       refreshHud();
     }
 
     // ==================== الصوت (مولّد بالكامل، بلا ملفات خارجية) ====================
     let audioCtx = null;
-    let soundOn = localStorage.getItem("zeroSound") !== "off";
+    let soundOn = lsGet("zeroSound") !== "off";
     function ensureAudio() {
       if (!soundOn) return null;
       if (!audioCtx) {
@@ -2052,6 +2061,15 @@
       return "autumn";
     }
     let renderedSeason = null;
+    // بصمة كل ما تعتمد عليه الخلفية المُجهَّزة مسبقًا. الاكتفاء بالفصل كان
+    // يترك المنزل على حاله في الخريطة رغم تخصيص الأرض والبناء وحتى التملك،
+    // فلا يرى اللاعب بيته يُبنى إلا صدفةً عند تبدّل الفصل.
+    let renderedBgKey = null;
+    function bgKey(s) {
+      const h = s.housing || INITIAL_STATE.housing;
+      const step = Math.floor(Math.min(1, (h.built || 0) / HOME_COST) * 20);
+      return `${seasonForMonth(s.month)}|${h.stage}|${step}`;
+    }
 
     // ==================== سكان المدينة (شخصيات غير قابلة للعب) ====================
     const NPC_PALETTES = [
@@ -2495,6 +2513,7 @@
       }
 
       renderedSeason = seasonForMonth(state.month);
+      renderedBgKey = bgKey(state);
     }
     renderBackground();
 
@@ -2617,7 +2636,7 @@
     function draw() {
       const now = performance.now();
       const seasonKey = seasonForMonth(state.month);
-      if (seasonKey !== renderedSeason) renderBackground();
+      if (bgKey(state) !== renderedBgKey) renderBackground();
       const season = SEASONS[seasonKey];
       const night = nightFactor(now);
 
@@ -2837,7 +2856,7 @@
     refreshSoundBtn();
     soundBtn.addEventListener("click", () => {
       soundOn = !soundOn;
-      localStorage.setItem("zeroSound", soundOn ? "on" : "off");
+      lsSet("zeroSound", soundOn ? "on" : "off");
       refreshSoundBtn();
       if (soundOn) SFX.coin();
     });
