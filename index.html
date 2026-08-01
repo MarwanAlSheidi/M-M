@@ -195,9 +195,33 @@
       return { surplus, netWorth, totalInv, coverage, effIncome, effExpenses };
     }
 
+    // ==================== نموذج الأصول ====================
+    // عوائد شهرية واقعية: لا يوجد أصل يتفوّق على البقية في كل شيء.
+    // العملات الرقمية أعلى عائدًا متوقعًا لكنها تحمل تقلبًا هائلاً واحتمال انهيار مفاجئ،
+    // فيصبح التنويع خيارًا حقيقيًا بدل أن يكون نصيحة في القاموس فقط.
+    const ASSETS = {
+      bonds:      { label: "سندات",        mean: 0.0035, spread: 0.0015, income: 0,      crashP: 0,    crashMag: 0,    risk: "منخفضة جدًا" },
+      stocks:     { label: "أسهم",          mean: 0.0085, spread: 0.055,  income: 0,      crashP: 0,    crashMag: 0,    risk: "متوسطة" },
+      realEstate: { label: "عقار",          mean: 0.0035, spread: 0.012,  income: 0.0045, crashP: 0,    crashMag: 0,    risk: "منخفضة" },
+      crypto:     { label: "عملات رقمية",   mean: 0.022,  spread: 0.22,   income: 0,      crashP: 0.03, crashMag: 0.30, risk: "عالية جدًا" },
+    };
+    // العائد السنوي المتوقع بعد احتساب احتمال الانهيار، لعرضه للاعب
+    function expectedAnnual(key) {
+      const a = ASSETS[key];
+      const m = a.mean + a.income - a.crashP * a.crashMag;
+      return (Math.pow(1 + m, 12) - 1) * 100;
+    }
+    function drawAssetReturn(key) {
+      const a = ASSETS[key];
+      let r = a.mean + (Math.random() * 2 - 1) * a.spread;
+      let crashed = false;
+      if (a.crashP && Math.random() < a.crashP) { r -= a.crashMag; crashed = true; }
+      return { growth: r, income: a.income, crashed };
+    }
+
     // ==================== الرتب ونهاية اللعبة ====================
-    // هدف الاستقلال المالي: ثروة تعادل 12 ضعف المصروفات السنوية.
-    function fiTarget(s) { return s.monthlyExpenses * 12 * 12; }
+    // هدف الاستقلال المالي: ثروة تعادل 8 أضعاف المصروفات السنوية.
+    function fiTarget(s) { return s.monthlyExpenses * 12 * 8; }
     const BANKRUPT_AT = -10000;
 
     const RANKS = [
@@ -234,7 +258,8 @@
     // ==================== الحالة والحفظ ====================
     const SAVE_KEY = "zeroGameStateV1";
     let isFirstVisit = false;
-    let lastStockDelta = 0; // آخر تغيّر في الأسهم، يُستخدم لسهم المؤشر فوق البورصة
+    let lastStockDelta = 0;   // آخر تغيّر في الأسهم، يُستخدم لسهم المؤشر فوق البورصة
+    let lastAssetMoves = {};  // آخر تغيّر لكل أصل، لعرضه في البورصة
     const FLOATERS = [];    // أرقام تطفو عند تغيّر صافي الثروة
     let state = loadState();
 
@@ -307,15 +332,21 @@
         s.monthlyIncome = Math.round(s.monthlyIncome * 1.02);
         s.monthlyExpenses = Math.round(s.monthlyExpenses * 1.015);
       }
-      const stockR = (Math.random() * 0.24) - 0.10;
-      lastStockDelta = stockR;
-      s.investments.stocks.amount = Math.round(s.investments.stocks.amount * (1 + stockR));
-      s.investments.bonds.amount = Math.round(s.investments.bonds.amount * 1.003);
-      if (s.investments.realEstate.amount > 0) {
-        s.investments.realEstate.rentalIncome = Math.round(s.investments.realEstate.amount * 0.004);
-        s.cash += s.investments.realEstate.rentalIncome;
+      // كل أصل يسحب عائده الشهري مستقلاً عن الآخر، فيقلّ تقلّب المحفظة كلما نوّعت
+      lastAssetMoves = {};
+      for (const key of Object.keys(ASSETS)) {
+        const inv = s.investments[key];
+        const { growth, income, crashed } = drawAssetReturn(key);
+        lastAssetMoves[key] = { pct: growth + income, crashed };
+        if (inv.amount <= 0) continue;
+        if (income > 0) {
+          inv.rentalIncome = Math.round(inv.amount * income);
+          s.cash += inv.rentalIncome;
+        }
+        inv.amount = Math.max(0, Math.round(inv.amount * (1 + growth)));
+        if (crashed) s.eventLog = [...s.eventLog, `📉 انهيار مفاجئ في ${ASSETS[key].label}`];
       }
-      s.investments.crypto.amount = Math.round(s.investments.crypto.amount * (1 + (Math.random() * 0.6 - 0.25)));
+      lastStockDelta = lastAssetMoves.stocks.pct;
       if (s.debt > 0) s.debt = Math.round(s.debt * 1.01);
 
       const { surplus } = derive(s);
@@ -563,21 +594,34 @@
     const ASSET_LABELS = { stocks: "أسهم", bonds: "سندات", realEstate: "عقار", crypto: "عملات رقمية" };
 
     function openMarket() {
-      const rows = Object.entries(state.investments).map(([key, inv]) => `
+      const held = Object.values(state.investments).filter((i) => i.amount > 0).length;
+      const rows = Object.entries(state.investments).map(([key, inv]) => {
+        const mv = lastAssetMoves[key];
+        const mvHtml = mv
+          ? `<span style="color:${mv.pct >= 0 ? "#2ecc71" : "#e74c3c"};font-size:11px">${mv.pct >= 0 ? "▲" : "▼"} ${Math.abs(mv.pct * 100).toFixed(1)}%${mv.crashed ? " ⚠" : ""}</span>`
+          : `<span class="muted" style="font-size:11px">—</span>`;
+        return `
         <div class="card" style="margin:8px 0;padding:12px">
           <div style="display:flex;justify-content:space-between"><span>${ASSET_LABELS[key]}</span><span style="color:${inv.amount > inv.cost ? '#2ecc71' : inv.amount < inv.cost ? '#e74c3c' : '#8aa89b'}">${fmt(inv.amount)} <span class="muted" style="font-size:11px">(تكلفة ${fmt(inv.cost)})</span></span></div>
+          <div style="display:flex;justify-content:space-between;margin-top:6px">
+            <span class="muted" style="font-size:11px">متوقع ${expectedAnnual(key).toFixed(1)}%/سنة · مخاطرة ${ASSETS[key].risk}</span>
+            ${mvHtml}
+          </div>
           <div class="row-actions" style="margin-top:8px">
             <input type="number" min="0" id="amt_${key}" placeholder="مبلغ" />
             <button class="btn btn-sm" data-buy="${key}">شراء</button>
             <button class="btn btn-sm btn-outline" data-sell="${key}">بيع الكل</button>
           </div>
-        </div>
-      `).join("");
+        </div>`;
+      }).join("");
       pushModal(`
         <h2>📈 البورصة</h2>
         <p class="muted" style="margin-bottom:10px">النقد المتاح: ${fmt(state.cash)} ريال</p>
         ${rows}
-        <p style="margin:10px 0;font-size:13px">${term("التنويع")} يقلل ${term("المخاطر")}. انتبه إلى ${term("السيولة")}.</p>
+        <p style="margin:10px 0;font-size:13px">
+          ${term("التنويع")}: تملك حاليًا <b style="color:${held >= 3 ? "#2ecc71" : "#c9974a"}">${held}</b> من 4 أصول.
+          كل أصل يتحرك مستقلاً، فكلما نوّعت قلّ تذبذب محفظتك ${term("المخاطر")}.
+        </p>
         <div class="inline-error" id="marketErr"></div>
         <button class="btn btn-outline" data-close-all>خروج</button>
       `, (root) => {
@@ -639,6 +683,7 @@
         <p class="muted" style="margin-bottom:10px">الفائض هذا الشهر: <b id="surplusLabel">${fmt(surplus)}</b> ريال · الموزّع: <span id="totalLabel">0</span></p>
         ${rows}
         <div class="inline-error" id="allocErr"></div>
+        ${state.lastAlloc ? `<button class="btn btn-outline" style="margin-bottom:10px" id="repeatAlloc">↺ كرّر توزيع الشهر الماضي</button>` : ""}
         <button class="btn" id="confirmAlloc">تأكيد التخصيص</button>
       `, (root) => {
         const alloc = Object.fromEntries(ALLOC_FIELDS.map(([k]) => [k, 0]));
@@ -654,18 +699,46 @@
         root.querySelector("#confirmAlloc").addEventListener("click", () => {
           const total = Object.values(alloc).reduce((a, b) => a + b, 0);
           if (total !== surplus) { err.textContent = `يجب أن يساوي التخصيص الفائض بالكامل (${fmt(surplus)}).`; return; }
-          let s = { ...state, investments: cloneInvestments(state.investments) };
-          s.emergency += alloc.emergency;
-          s.cash += alloc.savings + alloc.leisure;
-          s.investments.stocks.amount += alloc.investStocks; s.investments.stocks.cost += alloc.investStocks;
-          s.investments.bonds.amount += alloc.investBonds; s.investments.bonds.cost += alloc.investBonds;
-          s.investments.realEstate.amount += alloc.investReal; s.investments.realEstate.cost += alloc.investReal;
-          s.investments.crypto.amount += alloc.investCrypto; s.investments.crypto.cost += alloc.investCrypto;
-          s.cash -= total;
-          closeAllModals();
-          advanceMonth(s);
+          applyAllocation(alloc, surplus);
         });
+
+        const repeatBtn = root.querySelector("#repeatAlloc");
+        if (repeatBtn) {
+          repeatBtn.addEventListener("click", () => {
+            applyAllocation(scaleAlloc(state.lastAlloc, surplus), surplus);
+          });
+        }
       });
+    }
+
+    // يحوّل نِسَب الشهر الماضي إلى مبالغ تساوي فائض هذا الشهر تمامًا،
+    // مع إسناد فروق التقريب إلى أكبر بند حتى لا يختلّ المجموع.
+    function scaleAlloc(ratios, surplus) {
+      const out = Object.fromEntries(ALLOC_FIELDS.map(([k]) => [k, 0]));
+      let running = 0, biggestKey = ALLOC_FIELDS[0][0], biggestRatio = -1;
+      for (const [key] of ALLOC_FIELDS) {
+        const r = ratios[key] || 0;
+        out[key] = Math.floor(r * surplus);
+        running += out[key];
+        if (r > biggestRatio) { biggestRatio = r; biggestKey = key; }
+      }
+      out[biggestKey] += surplus - running;
+      return out;
+    }
+
+    function applyAllocation(alloc, surplus) {
+      let s = { ...state, investments: cloneInvestments(state.investments) };
+      s.emergency += alloc.emergency;
+      s.cash += alloc.savings + alloc.leisure;
+      s.investments.stocks.amount += alloc.investStocks; s.investments.stocks.cost += alloc.investStocks;
+      s.investments.bonds.amount += alloc.investBonds; s.investments.bonds.cost += alloc.investBonds;
+      s.investments.realEstate.amount += alloc.investReal; s.investments.realEstate.cost += alloc.investReal;
+      s.investments.crypto.amount += alloc.investCrypto; s.investments.crypto.cost += alloc.investCrypto;
+      s.cash -= surplus;
+      // نحفظ التوزيع كنِسَب كي يصلح لفائض مختلف في الأشهر القادمة
+      s.lastAlloc = Object.fromEntries(ALLOC_FIELDS.map(([k]) => [k, surplus > 0 ? alloc[k] / surplus : 0]));
+      closeAllModals();
+      advanceMonth(s);
     }
 
     function openHome() {
