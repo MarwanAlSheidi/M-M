@@ -75,7 +75,10 @@
         <div class="hud-date" id="hudDate">السنة 1 · شهر 1</div>
         <div class="hud-net" id="hudNet">0 <small>ريال</small></div>
       </div>
-      <button class="btn btn-sm" id="statsBtn">📊</button>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm" id="soundBtn" title="الصوت">🔊</button>
+        <button class="btn btn-sm" id="statsBtn">📊</button>
+      </div>
     </div>
 
     <div class="rank-bar">
@@ -135,6 +138,12 @@
       "حقوق الملكية": "ما تملكه فعلاً من المنزل = ما أنفقته على بنائه ناقص ما تبقّى من قرضه.",
       "البناء التدريجي": "إنجاز المسكن على مراحل بحسب ما يتوفر من مال، بدل انتظار المبلغ كاملاً. شائع في عُمان ويقلل الحاجة للاقتراض.",
       "تضخّم نمط الحياة": "ارتفاع إنفاقك كلما ارتفع دخلك، فيبقى فائضك كما هو رغم زيادة الراتب.",
+      "الزكاة": "ركن من أركان الإسلام: 2.5% سنويًا من المال الزكوي إذا بلغ النصاب وحال عليه الحول. تُستثنى دار السكن وحاجاتك الأصلية، ويُخصم الدين.",
+      "النصاب": "الحد الأدنى للمال الذي تجب فيه الزكاة، ويُقدَّر بقيمة 85 جرامًا من الذهب.",
+      "الحول": "مرور سنة كاملة على بلوغ المال النصاب، وعندها تجب الزكاة.",
+      "التأمين": "دفع مبلغ صغير منتظم لتفادي خسارة كبيرة مفاجئة. لا يمنع الحدث لكنه يحدّ من أثره على مالك.",
+      "الاستثمار في الذات": "إنفاق على تعليمك ومهاراتك. عائده يظهر في دخلك مدى الحياة، وغالبًا يفوق عائد الأصول المالية.",
+      "تكلفة الفرصة البديلة": "ما تخسره من أفضل خيار تركته. كل ريال تنفقه اليوم هو ريال لم يُستثمر لينمو.",
       "صندوق الطوارئ": "مبلغ يعادل 3-6 أشهر من المصروفات، يستخدم فقط في الحالات الطارئة.",
       "العائد على الاستثمار": "الربح أو الخسارة من الاستثمار مقارنة بتكلفته الأصلية.",
       "السيولة": "سرعة تحويل الأصل إلى نقد بدون خسارة كبيرة في القيمة.",
@@ -143,6 +152,50 @@
     };
 
     // ==================== الحالة الأولية ====================
+    // ==================== الزكاة ====================
+    // 2.5% سنويًا على الأموال الزكوية إذا بلغت النصاب وحال عليها الحول.
+    // تُستثنى دار السكن وحاجاتك الأصلية، ويُخصم الدين.
+    const ZAKAT_RATE = 0.025;
+    const ZAKAT_NISAB = 3000; // نصاب تقديري بقيمة 85 جرامًا من الذهب
+
+    function zakatableWealth(s) {
+      const inv = Object.values(s.investments).reduce((a, i) => a + i.amount, 0);
+      // دار السكن ليست من أموال الزكاة، والدين يُخصم من الوعاء
+      return Math.max(0, s.cash + s.emergency + inv - s.debt);
+    }
+    function zakatDue(s) {
+      const w = zakatableWealth(s);
+      return w >= ZAKAT_NISAB ? Math.round(w * ZAKAT_RATE) : 0;
+    }
+
+    // ==================== التعليم والمهارات ====================
+    const COURSES = [
+      { level: 1, name: "دورة مهنية", cost: 400, months: 3, raise: 0.08, desc: "شهادة قصيرة ترفع دخلك 8%." },
+      { level: 2, name: "دبلوم تخصصي", cost: 1200, months: 5, raise: 0.15, desc: "دبلوم يرفع دخلك 15%." },
+      { level: 3, name: "شهادة احترافية", cost: 3000, months: 8, raise: 0.25, desc: "اعتماد مهني يرفع دخلك 25%." },
+    ];
+    function nextCourse(s) {
+      return COURSES.find((c) => c.level === (s.education?.level ?? 0) + 1) || null;
+    }
+
+    // ==================== الإنجازات ====================
+    const ACHIEVEMENTS = [
+      { id: "first_save",  name: "أول ألف",            icon: "💰", test: (s, d) => d.investableNetWorth >= 1000 },
+      { id: "emergency",   name: "طوارئ ٦ أشهر",       icon: "🛡", test: (s, d) => s.emergency >= d.emergencyTarget },
+      { id: "investor",    name: "أول استثمار",        icon: "📈", test: (s) => Object.values(s.investments).some((i) => i.cost > 0) },
+      { id: "diversified", name: "محفظة متنوعة",       icon: "🧺", test: (s) => Object.values(s.investments).filter((i) => i.amount > 0).length >= 3 },
+      { id: "debt_free",   name: "بلا ديون",           icon: "🕊", test: (s) => s.debt === 0 && s.eventLog.length > 3 },
+      { id: "landowner",   name: "صاحب أرض",           icon: "🏜", test: (s) => ["land", "building", "owned"].includes(s.housing.stage) },
+      { id: "homeowner",   name: "بيت تملكه",          icon: "🏡", test: (s) => s.housing.stage === "owned" },
+      { id: "zakat3",      name: "زكّى ٣ سنوات",       icon: "🤲", test: (s) => (s.zakat?.paidCount ?? 0) >= 3 },
+      { id: "educated",    name: "طوّر مهاراته",       icon: "🎓", test: (s) => (s.education?.level ?? 0) >= 1 },
+      { id: "scholar",     name: "شهادة احترافية",     icon: "🏅", test: (s) => (s.education?.level ?? 0) >= 3 },
+      { id: "insured",     name: "مؤمَّن",              icon: "☂", test: (s) => s.insurance?.health },
+      { id: "goal_done",   name: "حقق هدفًا",           icon: "🎯", test: (s) => s.goals.some((g) => g.done) },
+      { id: "excellent",   name: "ائتمان ممتاز",       icon: "⭐", test: (s) => s.creditScore >= 750 },
+      { id: "independent", name: "استقلال مالي",       icon: "🏆", test: (s, d) => d.investableNetWorth >= fiTarget(s) },
+    ];
+
     // ==================== الإسكان (المسار العُماني) ====================
     // في عُمان أغلب الأسر تمتلك مسكنها: منحة أرض سكنية، ثم بناء تدريجي
     // بتمويل جزئي من قرض إسكان مدعوم. متوسط بناء/شراء المنزل ~50,000 ريال.
@@ -181,6 +234,10 @@
       rent: 220,                    // جزء الإيجار، يسقط عند التملك
       creditScore: 700,
       morale: 70,
+      insurance: { health: false, premium: 25 },
+      education: { level: 0, studyingUntil: 0, pending: null },
+      zakat: { paidCount: 0, totalPaid: 0, lastDueYear: 0, unpaid: 0 },
+      achievements: [],
       housing: {
         stage: "renting",           // renting → waiting → land → building → owned
         waitMonths: 0,
@@ -215,9 +272,49 @@
         { label: "أقبل الزيادة", effect: (s) => ({ ...s, rent: Math.round(s.rent * 1.05), monthlyExpenses: Math.round(s.monthlyExpenses + s.rent * 0.05), eventLog: [...s.eventLog, "رفع إيجار - قبل"] }) },
         { label: "أنتقل لسكن أرخص (تكلفة 150)", effect: (s) => ({ ...s, cash: s.cash - 150, rent: Math.round(s.rent * 0.9), monthlyExpenses: Math.round(s.monthlyExpenses - s.rent * 0.1), eventLog: [...s.eventLog, "رفع إيجار - انتقل"] }) }
       ]},
-      { id: "medical", title: "طارئ صحي", desc: "علاج غير مغطى يكلف 220 ريالًا.", choices: [
-        { label: "ادفع من الطوارئ", effect: (s) => ({ ...s, emergency: s.emergency - 220, eventLog: [...s.eventLog, "طارئ صحي - طوارئ"] }) },
-        { label: "تقسيط على 6 أشهر", effect: (s) => ({ ...s, debt: s.debt + 220, tempEffects: [...s.tempEffects, { type: "expense", amount: 37, monthsLeft: 6 }], eventLog: [...s.eventLog, "طارئ صحي - تقسيط"] }) }
+      // التأمين لا يمنع الحدث لكنه يخفض كلفته إلى الربع
+      { id: "medical", title: "طارئ صحي",
+        desc: "علاج طارئ. التكلفة الكاملة 220 ريالًا — ومع التأمين الصحي تتحمل ربعها فقط.",
+        choices: [
+        { label: "ادفع من الطوارئ", effect: (s) => { const c = s.insurance?.health ? 55 : 220;
+            return { ...s, emergency: s.emergency - c, eventLog: [...s.eventLog, `طارئ صحي - دفع ${c}`] }; } },
+        { label: "تقسيط على 6 أشهر", effect: (s) => { const c = s.insurance?.health ? 55 : 220;
+            return { ...s, debt: s.debt + c, tempEffects: [...s.tempEffects, { type: "expense", amount: Math.ceil(c / 6), monthsLeft: 6 }], eventLog: [...s.eventLog, `طارئ صحي - تقسيط ${c}`] }; } }
+      ]},
+      { id: "car_repair", title: "عطل في السيارة", desc: "تحتاج سيارتك إصلاحًا عاجلاً بـ180 ريالًا.", choices: [
+        { label: "ادفع من الطوارئ", effect: (s) => ({ ...s, emergency: s.emergency - 180, eventLog: [...s.eventLog, "عطل سيارة - طوارئ"] }) },
+        { label: "أجّل الإصلاح (يرتفع لاحقًا)", effect: (s) => ({ ...s, tempEffects: [...s.tempEffects, { type: "expense", amount: 45, monthsLeft: 5 }], morale: Math.max(0, (s.morale ?? 70) - 5), eventLog: [...s.eventLog, "عطل سيارة - أجّل"] }) }
+      ]},
+      { id: "wedding", title: "زواج", desc: "تتزوج! تكاليف الزواج 2,500 ريال، ويصبح البيت بيتين من الدخل والمصروف.",
+        when: (s) => !s.married && s.year >= 2, choices: [
+        { label: "زواج متواضع (1,500)", effect: (s) => ({ ...s, married: true, cash: s.cash - 1500,
+            monthlyIncome: Math.round(s.monthlyIncome * 1.25), monthlyExpenses: Math.round(s.monthlyExpenses * 1.3),
+            morale: Math.min(100, (s.morale ?? 70) + 25), eventLog: [...s.eventLog, "💍 زواج متواضع"] }) },
+        { label: "زواج كبير (2,500، رضا أعلى)", effect: (s) => ({ ...s, married: true, cash: s.cash - 2500,
+            monthlyIncome: Math.round(s.monthlyIncome * 1.25), monthlyExpenses: Math.round(s.monthlyExpenses * 1.35),
+            morale: Math.min(100, (s.morale ?? 70) + 35), eventLog: [...s.eventLog, "💍 زواج كبير"] }) }
+      ]},
+      { id: "newborn", title: "مولود جديد", desc: "رُزقت بمولود! مصروفاتك ترتفع، ورضاك كذلك.",
+        when: (s) => s.married && (s.children ?? 0) < 4, choices: [
+        { label: "الحمد لله", effect: (s) => ({ ...s, children: (s.children ?? 0) + 1,
+            monthlyExpenses: Math.round(s.monthlyExpenses * 1.12),
+            morale: Math.min(100, (s.morale ?? 70) + 20), eventLog: [...s.eventLog, "👶 مولود جديد"] }) }
+      ]},
+      { id: "hajj", title: "فريضة الحج", desc: "تتوفر لك فرصة أداء الحج هذا العام بتكلفة 1,200 ريال.",
+        when: (s) => !s.didHajj && s.cash >= 1200, choices: [
+        { label: "أؤدي الفريضة", effect: (s) => ({ ...s, didHajj: true, cash: s.cash - 1200,
+            morale: Math.min(100, (s.morale ?? 70) + 30), eventLog: [...s.eventLog, "🕋 أديت فريضة الحج"] }) },
+        { label: "أؤجلها هذا العام", effect: (s) => ({ ...s, eventLog: [...s.eventLog, "أجّلت الحج"] }) }
+      ]},
+      { id: "side_business", title: "فرصة عمل حر", desc: "عرض للمشاركة في مشروع صغير برأس مال 800 ريال.",
+        when: (s) => s.cash >= 800, choices: [
+        { label: "أشارك (نتيجة غير مضمونة)", effect: (s) => {
+            const win = Math.random() < 0.55;
+            return { ...s, cash: s.cash - 800 + (win ? 1600 : 200),
+              morale: Math.min(100, Math.max(0, (s.morale ?? 70) + (win ? 8 : -8))),
+              eventLog: [...s.eventLog, win ? "💼 نجح المشروع الجانبي" : "💼 خسر المشروع الجانبي"] };
+          } },
+        { label: "أعتذر", effect: (s) => ({ ...s, eventLog: [...s.eventLog, "اعتذرت عن مشروع جانبي"] }) }
       ]},
       { id: "promotion", title: "ترقية وزيادة", desc: "تمت ترقيتك! دخلك يرتفع 15%.", choices: [
         { label: "احتفظ بنفس نمط الحياة", effect: (s) => ({ ...s, monthlyIncome: Math.round(s.monthlyIncome * 1.15), eventLog: [...s.eventLog, "ترقية - وفر الزيادة"] }) },
@@ -366,10 +463,33 @@
       state = next;
       localStorage.setItem(SAVE_KEY, JSON.stringify(state));
       const delta = derive(state).netWorth - prevNetWorth;
-      if (Math.abs(delta) >= 1) spawnFloater(delta);
+      if (Math.abs(delta) >= 1) {
+        spawnFloater(delta);
+        (delta > 0 ? SFX.coin : SFX.spend)();
+      }
+      checkAchievements();
       refreshHud();
       checkEnding();
     }
+
+    // تُفحص بعد كل تغيير؛ الإنجاز يُمنح مرة واحدة ويظهر كشارة طائرة
+    function checkAchievements() {
+      const d = derive(state);
+      if (!state.achievements) state.achievements = [];
+      for (const a of ACHIEVEMENTS) {
+        if (state.achievements.includes(a.id)) continue;
+        let ok = false;
+        try { ok = a.test(state, d); } catch { ok = false; }
+        if (ok) {
+          state.achievements.push(a.id);
+          state.eventLog = [...state.eventLog, `${a.icon} إنجاز: ${a.name}`];
+          BADGES.push({ icon: a.icon, name: a.name, life: 0, max: 2.6 });
+          SFX.badge();
+        }
+      }
+      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+    }
+    const BADGES = [];
 
     // تُستدعى بعد كل تغيير؛ تعرض شاشة النهاية مرة واحدة فقط
     function checkEnding() {
@@ -395,6 +515,44 @@
       closeAllModals();
       refreshHud();
     }
+
+    // ==================== الصوت (مولّد بالكامل، بلا ملفات خارجية) ====================
+    let audioCtx = null;
+    let soundOn = localStorage.getItem("zeroSound") !== "off";
+    function ensureAudio() {
+      if (!soundOn) return null;
+      if (!audioCtx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        audioCtx = new AC();
+      }
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      return audioCtx;
+    }
+    // نغمة بسيطة؛ تُتجاهل بصمت إن لم يدعم المتصفح الصوت
+    function tone(freq, dur = 0.12, type = "sine", gain = 0.05, delay = 0) {
+      const ac = ensureAudio();
+      if (!ac) return;
+      try {
+        const osc = ac.createOscillator(), g = ac.createGain();
+        osc.type = type; osc.frequency.value = freq;
+        const t0 = ac.currentTime + delay;
+        g.gain.setValueAtTime(0, t0);
+        g.gain.linearRampToValueAtTime(gain, t0 + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        osc.connect(g); g.connect(ac.destination);
+        osc.start(t0); osc.stop(t0 + dur + 0.02);
+      } catch { /* لا شيء: الصوت تحسين لا ضرورة */ }
+    }
+    const SFX = {
+      coin:    () => { tone(880, 0.09, "triangle", 0.05); tone(1320, 0.12, "triangle", 0.04, 0.06); },
+      spend:   () => tone(320, 0.14, "sine", 0.05),
+      error:   () => tone(180, 0.2, "sawtooth", 0.04),
+      success: () => { tone(523, 0.12, "triangle", 0.05); tone(659, 0.12, "triangle", 0.05, 0.1); tone(784, 0.2, "triangle", 0.05, 0.2); },
+      build:   () => { tone(200, 0.07, "square", 0.035); tone(260, 0.07, "square", 0.03, 0.08); },
+      alert:   () => { tone(400, 0.14, "sawtooth", 0.04); tone(300, 0.18, "sawtooth", 0.04, 0.12); },
+      badge:   () => { tone(1046, 0.1, "triangle", 0.05); tone(1568, 0.16, "triangle", 0.04, 0.09); },
+    };
 
     // معرّفة كتصريحات دوال (مرفوعة) كي يمكن استدعاؤها من setState قبل قسم الرسوميات
     let shake = 0; // شدة اهتزاز الشاشة الحالية
@@ -465,6 +623,21 @@
       s.creditScore = Math.round(s.creditScore + (creditTarget(s) - s.creditScore) * 0.15);
       if (s.debt > 0) s.debt = Math.round(s.debt * (1 + debtMonthlyRate(s.creditScore)));
 
+      // قسط التأمين الصحي
+      if (s.insurance?.health) s.cash -= s.insurance.premium;
+
+      // إتمام الدراسة: الزيادة تُصرف عند التخرّج لا عند الدفع
+      if (s.education?.pending) {
+        s.education.pending.monthsLeft -= 1;
+        if (s.education.pending.monthsLeft <= 0) {
+          const c = s.education.pending;
+          s.monthlyIncome = Math.round(s.monthlyIncome * (1 + c.raise));
+          s.education = { ...s.education, level: c.level, pending: null };
+          s.morale = Math.min(100, (s.morale ?? 70) + 10);
+          s.eventLog = [...s.eventLog, `🎓 أتممت ${c.name} — دخلك ارتفع ${Math.round(c.raise * 100)}%`];
+        }
+      }
+
       // الرضا يتآكل شهريًا، ويتأثر بضغط الدين وبراحة صندوق الطوارئ
       let morale = s.morale ?? 70;
       morale -= 4;
@@ -488,10 +661,94 @@
 
       setState(s);
 
+      // حلول الحول: تُعرض الزكاة مرة واحدة كل سنة
+      const due = zakatDue(s);
+      if (s.year > (s.zakat?.lastDueYear ?? 0) && s.month === 1 && due > 0) {
+        openZakat(due);
+        return;
+      }
+
       if (Math.random() < 0.5) {
         const pool = EVENTS.filter((e) => !e.when || e.when(s));
         if (pool.length) openEvent(pool[Math.floor(Math.random() * pool.length)]);
       }
+    }
+
+    // ==================== شاشة الزكاة السنوية ====================
+    function openZakat(due) {
+      const wealth = zakatableWealth(state);
+      const canPay = state.cash >= due;
+      SFX.alert();
+      pushModal(`
+        <h2>🤲 حَال الحول — الزكاة</h2>
+        <canvas class="event-art" id="zakatArt" width="340" height="110"></canvas>
+        <p style="margin:12px 0;line-height:1.9;font-size:13px">
+          مضت سنة على مالك. ${term("الزكاة")} واجبة بنسبة 2.5% على ما بلغ النصاب،
+          وتُستثنى دار سكنك وحاجاتك الأصلية، ويُخصم دينك.
+        </p>
+        <div class="card" style="padding:12px;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">وعاء الزكاة</span><b>${fmt(wealth)}</b></div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">النصاب</span><b>${fmt(ZAKAT_NISAB)}</b></div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">الواجب (2.5%)</span><b style="color:#c9974a">${fmt(due)}</b></div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">النقد المتاح</span><b style="color:${canPay ? "#2ecc71" : "#e74c3c"}">${fmt(state.cash)}</b></div>
+        </div>
+        <div class="inline-error" id="zakatErr"></div>
+        <button class="btn" id="payZakat" ${canPay ? "" : "disabled"}>${canPay ? `أخرج الزكاة (${fmt(due)})` : "لا يوجد نقد كافٍ"}</button>
+        <button class="btn btn-outline" style="margin-top:10px" id="deferZakat">أجّلها (تبقى دينًا في ذمتك)</button>
+      `, (root) => {
+        const cv = root.querySelector("#zakatArt");
+        if (cv) animateZakatArt(cv);
+        root.querySelector("#payZakat").addEventListener("click", () => {
+          if (state.cash < due) { root.querySelector("#zakatErr").textContent = "النقد لا يكفي."; return; }
+          const z = state.zakat || { paidCount: 0, totalPaid: 0, unpaid: 0 };
+          SFX.success();
+          setState({ ...state, cash: state.cash - due,
+            morale: Math.min(100, (state.morale ?? 70) + 8),
+            zakat: { ...z, paidCount: z.paidCount + 1, totalPaid: z.totalPaid + due, lastDueYear: state.year, unpaid: 0 },
+            eventLog: [...state.eventLog, `🤲 أخرجت زكاة ${fmt(due)}`] });
+          closeAllModals();
+        });
+        root.querySelector("#deferZakat").addEventListener("click", () => {
+          const z = state.zakat || { paidCount: 0, totalPaid: 0, unpaid: 0 };
+          setState({ ...state,
+            morale: Math.max(0, (state.morale ?? 70) - 6),
+            zakat: { ...z, lastDueYear: state.year, unpaid: (z.unpaid || 0) + due },
+            eventLog: [...state.eventLog, `⏳ أجّلت زكاة ${fmt(due)}`] });
+          closeAllModals();
+        });
+      });
+    }
+
+    function animateZakatArt(canvas) {
+      const c = canvas.getContext("2d");
+      const W = canvas.width, H = canvas.height;
+      const t0 = performance.now();
+      (function frame() {
+        if (!canvas.isConnected) return;
+        const t = (performance.now() - t0) / 1000;
+        c.clearRect(0, 0, W, H);
+        // كفّان مفتوحتان
+        c.fillStyle = "#e8b88a";
+        for (const s of [-1, 1]) {
+          c.save(); c.translate(W / 2 + s * 26, H - 26); c.rotate(s * 0.3);
+          c.beginPath(); c.ellipse(0, 0, 22, 11, 0, Math.PI, 0); c.fill();
+          c.restore();
+        }
+        // عملات تتساقط من الأعلى إلى الكفّين
+        for (let i = 0; i < 7; i++) {
+          const p = ((t * 0.55 + i / 7) % 1);
+          const x = W / 2 + Math.sin(i * 2.1) * 34;
+          const y = 8 + p * (H - 44);
+          c.globalAlpha = p < 0.85 ? 1 : (1 - p) / 0.15;
+          c.fillStyle = i % 2 ? "#c9974a" : "#f4d58d";
+          c.beginPath(); c.ellipse(x, y, 6, 5, 0, 0, Math.PI * 2); c.fill();
+          c.globalAlpha = 1;
+        }
+        c.fillStyle = "#c9974a"; c.font = "bold 13px sans-serif";
+        c.textAlign = "center"; c.textBaseline = "middle";
+        c.fillText("2.5%", W / 2, 18);
+        requestAnimationFrame(frame);
+      })();
     }
 
     function openEvent(ev) {
@@ -700,9 +957,27 @@
           <button class="btn btn-sm btn-outline" id="withdrawBtn">سحب</button>
         </div>
         <div class="inline-error" id="bankErr"></div>
+        <div class="card" style="margin-top:12px;padding:12px${state.insurance?.health ? ";border-color:#2ecc71" : ""}">
+          <h3 style="font-size:14px;color:${state.insurance?.health ? "#2ecc71" : "#c9974a"};margin-bottom:4px">☂ ${term("التأمين")} الصحي</h3>
+          <p class="muted" style="font-size:12px;line-height:1.8">
+            ${state.insurance?.health
+              ? `مؤمَّن — قسط <b>${fmt(state.insurance.premium)}</b> ريالًا شهريًا، ويتحمل التأمين 75% من الطوارئ الصحية.`
+              : `قسط <b>${fmt(state.insurance?.premium ?? 25)}</b> ريالًا شهريًا يخفض كلفة الطارئ الصحي من 220 إلى 55.`}
+          </p>
+          <button class="btn btn-sm ${state.insurance?.health ? "btn-outline" : ""}" style="margin-top:8px" id="insBtn">
+            ${state.insurance?.health ? "إلغاء التأمين" : "اشترك في التأمين"}
+          </button>
+        </div>
         <button class="btn btn-outline" style="margin-top:10px" data-close-all>خروج</button>
       `, (root) => {
         const err = root.querySelector("#bankErr");
+        root.querySelector("#insBtn").addEventListener("click", () => {
+          const on = !state.insurance?.health;
+          SFX.build();
+          setState({ ...state, insurance: { ...(state.insurance || { premium: 25 }), health: on },
+            eventLog: [...state.eventLog, on ? "☂ اشتركت في التأمين الصحي" : "ألغيت التأمين الصحي"] });
+          popModal(); openBank();
+        });
         root.querySelector("#depositBtn").addEventListener("click", () => {
           const amt = Math.floor(Number(root.querySelector("#depositAmt").value));
           if (!amt || amt <= 0 || amt > state.cash) { err.textContent = "مبلغ غير صالح."; return; }
@@ -1237,6 +1512,25 @@
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">${term("الثروة المُدِرّة للدخل")}</span><b style="color:#c9974a">${fmt(derive(state).investableNetWorth)}</b></div>
           <p class="muted" style="font-size:11px;margin-top:4px">لا يُحتسب بيت السكن هنا — فهو لا يموّل مصروفاتك، لكنه يدخل في صافي ثروتك. اعرف أكثر: ${term("الاستقلال المالي")}</p>
         </div>
+        <div class="card" style="margin:10px 0;padding:12px">
+          <h3 style="font-size:14px;color:#c9974a;margin-bottom:6px">🤲 ${term("الزكاة")}</h3>
+          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">وعاء الزكاة الحالي</span><b>${fmt(zakatableWealth(state))}</b></div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">سنوات زكّيت فيها</span><b>${state.zakat?.paidCount ?? 0}</b></div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">مجموع ما أخرجت</span><b style="color:#2ecc71">${fmt(state.zakat?.totalPaid ?? 0)}</b></div>
+          ${(state.zakat?.unpaid ?? 0) > 0 ? `<div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">مؤجّلة في ذمتك</span><b style="color:#e74c3c">${fmt(state.zakat.unpaid)}</b></div>` : ""}
+        </div>
+        <div class="card" style="margin:10px 0;padding:12px">
+          <h3 style="font-size:14px;color:#c9974a;margin-bottom:8px">🏅 الإنجازات (${(state.achievements || []).length}/${ACHIEVEMENTS.length})</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${ACHIEVEMENTS.map((a) => {
+              const got = (state.achievements || []).includes(a.id);
+              return `<div title="${a.name}" style="width:calc(25% - 5px);text-align:center;padding:6px 2px;border-radius:8px;background:${got ? "rgba(201,151,74,0.15)" : "rgba(29,61,53,0.5)"};opacity:${got ? 1 : 0.4}">
+                <div style="font-size:18px">${got ? a.icon : "🔒"}</div>
+                <div style="font-size:9px;margin-top:2px;color:${got ? "#c9974a" : "#8aa89b"}">${a.name}</div>
+              </div>`;
+            }).join("")}
+          </div>
+        </div>
         ${housingOfficeHtml()}
         <h3 style="font-size:14px;color:#c9974a;margin:6px 0">سجل الأحداث</h3>
         ${logHtml}
@@ -1285,6 +1579,55 @@
       });
     }
 
+    // ==================== المعهد: الاستثمار في الذات ====================
+    function openInstitute() {
+      const edu = state.education || { level: 0, pending: null };
+      const nc = nextCourse(state);
+      let body;
+      if (edu.pending) {
+        const c = edu.pending;
+        const done = c.months - c.monthsLeft;
+        body = `<div class="card" style="padding:12px">
+            <h3 style="font-size:14px;color:#c9974a;margin-bottom:6px">📚 ${c.name}</h3>
+            <div style="display:flex;justify-content:space-between;font-size:12px"><span class="muted">التقدّم</span><b>${done} / ${c.months} أشهر</b></div>
+            <div class="progress"><div class="progress-fill" style="width:${(done / c.months) * 100}%;background:#8e6bc9"></div></div>
+            <p class="muted" style="font-size:11px;margin-top:8px">الزيادة (${Math.round(c.raise * 100)}%) تُصرف عند التخرّج.</p>
+          </div>`;
+      } else if (nc) {
+        const affordable = state.cash >= nc.cost;
+        body = `<div class="card" style="padding:12px">
+            <h3 style="font-size:14px;color:#c9974a;margin-bottom:4px">${nc.name}</h3>
+            <p class="muted" style="font-size:12px;line-height:1.8">${nc.desc} مدة الدراسة ${nc.months} أشهر، والتكلفة <b>${fmt(nc.cost)}</b> ريالًا تُدفع الآن.</p>
+            <div class="inline-error" id="eduErr"></div>
+            <button class="btn btn-sm" id="enrollBtn" ${affordable ? "" : "disabled"}>${affordable ? "التحق بالدورة" : "النقد لا يكفي"}</button>
+          </div>`;
+      } else {
+        body = `<p class="muted" style="margin-bottom:10px">أتممت جميع المسارات التعليمية المتاحة 🎓</p>`;
+      }
+      pushModal(`
+        <h2>🎓 المعهد</h2>
+        <p class="muted" style="font-size:12px;line-height:1.8;margin-bottom:10px">
+          ${term("الاستثمار في الذات")} عائده يلازم دخلك مدى الحياة، لكنه يستهلك نقدًا وصبرًا الآن —
+          وهذه ${term("تكلفة الفرصة البديلة")}.
+        </p>
+        <p class="muted" style="font-size:12px;margin-bottom:10px">مستواك: <b style="color:#c9974a">${["لا شيء","دورة مهنية","دبلوم تخصصي","شهادة احترافية"][edu.level] || "—"}</b> · دخلك ${fmt(state.monthlyIncome)}</p>
+        ${body}
+        <button class="btn btn-outline" style="margin-top:12px" data-close-all>خروج</button>
+      `, (root) => {
+        const btn = root.querySelector("#enrollBtn");
+        if (btn) {
+          btn.addEventListener("click", () => {
+            if (state.cash < nc.cost) { root.querySelector("#eduErr").textContent = "النقد لا يكفي."; return; }
+            SFX.build();
+            setState({ ...state, cash: state.cash - nc.cost,
+              education: { ...edu, pending: { ...nc, monthsLeft: nc.months } },
+              eventLog: [...state.eventLog, `📚 التحقت بـ${nc.name}`] });
+            popModal(); openInstitute();
+          });
+        }
+      });
+    }
+
     function openLibrary() {
       const rows = Object.keys(DICTIONARY).map((t) => `<div class="term-row" data-term="${t}">${t}</div>`).join("");
       pushModal(`<h2>📖 المكتبة</h2>${rows}<button class="btn btn-outline" style="margin-top:14px" data-close-all>خروج</button>`, (root) => {
@@ -1311,6 +1654,7 @@
       { id: "home", name: "المنزل", emoji: "🏠", color: "#d98c4a", open: openHome, ...rect(11, 8, 4, 4) },
       { id: "townhall", name: "دار البلدية", emoji: "📰", color: "#7f8c8d", open: openTownHall, ...rect(1, 15, 4, 4) },
       { id: "library", name: "المكتبة", emoji: "📖", color: "#16a085", open: openLibrary, ...rect(11, 15, 4, 4) },
+      { id: "institute", name: "المعهد", emoji: "🎓", color: "#8e6bc9", open: openInstitute, ...rect(6, 15, 4, 3) },
     ];
 
     BUILDINGS.forEach((b) => { b.doorX = b.x + b.w / 2; b.doorY = b.y + b.h + 10; });
@@ -1804,7 +2148,29 @@
       c.fillRect(x + w / 2 - 9, y + h - 18, 18, 18);
     }
 
-    const BUILDING_DRAW = { bank: drawBank, market: drawMarket, goals: drawGoals, work: drawWork, home: drawHome, townhall: drawTownHall, library: drawLibrary };
+    function drawInstitute(c, b) {
+      const { x, y, w, h, color } = b;
+      c.fillStyle = shade(color, -20);
+      c.fillRect(x, y + 10, w, h - 10);
+      // سقف مسطّح وشرفة
+      c.fillStyle = shade(color, 10);
+      c.fillRect(x - 3, y + 4, w + 6, 8);
+      // نوافذ صف واحد
+      c.fillStyle = "#f4d58d";
+      for (let i = 0; i < 4; i++) c.fillRect(x + 8 + i * ((w - 16) / 4), y + 20, (w - 16) / 4 - 5, 12);
+      // قبعة التخرّج فوق المدخل
+      c.fillStyle = "#1d1430";
+      c.beginPath();
+      c.moveTo(x + w / 2, y + h - 30); c.lineTo(x + w / 2 + 13, y + h - 24);
+      c.lineTo(x + w / 2, y + h - 18); c.lineTo(x + w / 2 - 13, y + h - 24);
+      c.closePath(); c.fill();
+      c.strokeStyle = "#c9974a"; c.lineWidth = 1.5;
+      c.beginPath(); c.moveTo(x + w / 2 + 11, y + h - 25); c.lineTo(x + w / 2 + 11, y + h - 17); c.stroke();
+      c.fillStyle = "#2a1c0d";
+      c.fillRect(x + w / 2 - 8, y + h - 16, 16, 16);
+    }
+
+    const BUILDING_DRAW = { bank: drawBank, market: drawMarket, goals: drawGoals, work: drawWork, home: drawHome, townhall: drawTownHall, library: drawLibrary, institute: drawInstitute };
 
     // ==================== الخلفية المُجهَّزة مسبقًا (لتفادي إعادة رسم التفاصيل الثابتة كل إطار) ====================
     const bgCanvas = document.createElement("canvas");
@@ -2091,6 +2457,26 @@
         ctx.lineWidth = 2; ctx.stroke();
       }
 
+      // شارات الإنجاز تنزلق من أعلى المشهد
+      for (let i = BADGES.length - 1; i >= 0; i--) {
+        const bd = BADGES[i];
+        const p = bd.life / bd.max;
+        const slide = p < 0.15 ? p / 0.15 : (p > 0.85 ? (1 - p) / 0.15 : 1);
+        const by = 14 + i * 34;
+        ctx.globalAlpha = Math.max(0, Math.min(1, slide));
+        ctx.fillStyle = "rgba(18,46,39,0.95)";
+        roundRect(ctx, WORLD_W / 2 - 92, by, 184, 28, 8); ctx.fill();
+        ctx.strokeStyle = "#c9974a"; ctx.lineWidth = 1.5;
+        roundRect(ctx, WORLD_W / 2 - 92, by, 184, 28, 8); ctx.stroke();
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.font = "14px sans-serif";
+        ctx.fillText(bd.icon, WORLD_W / 2 - 70, by + 14);
+        ctx.font = "11px 'Noto Kufi Arabic', sans-serif";
+        ctx.fillStyle = "#e0e8e4";
+        ctx.fillText(bd.name, WORLD_W / 2 + 8, by + 14);
+        ctx.globalAlpha = 1;
+      }
+
       // أرقام تطفو فوق اللاعب عند تغيّر صافي الثروة
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       for (let i = 0; i < FLOATERS.length; i++) {
@@ -2137,6 +2523,10 @@
       updateWeather(dt, seasonForMonth(state.month));
       updateDust(dt, active && pressed.size > 0);
       updateFloaters(dt);
+      for (let i = BADGES.length - 1; i >= 0; i--) {
+        BADGES[i].life += dt;
+        if (BADGES[i].life > BADGES[i].max) BADGES.splice(i, 1);
+      }
       if (shake > 0) shake = Math.max(0, shake - dt * 9);
       draw();
       requestAnimationFrame(loop);
@@ -2169,6 +2559,19 @@
 
     document.getElementById("statsBtn").addEventListener("click", () => {
       document.getElementById("statsPanel").classList.toggle("open");
+    });
+
+    const soundBtn = document.getElementById("soundBtn");
+    function refreshSoundBtn() {
+      soundBtn.textContent = soundOn ? "🔊" : "🔇";
+      soundBtn.style.opacity = soundOn ? "1" : "0.55";
+    }
+    refreshSoundBtn();
+    soundBtn.addEventListener("click", () => {
+      soundOn = !soundOn;
+      localStorage.setItem("zeroSound", soundOn ? "on" : "off");
+      refreshSoundBtn();
+      if (soundOn) SFX.coin();
     });
 
     // ==================== واجهة المستخدم العلوية ====================
@@ -2212,10 +2615,14 @@
         </p>
         <p style="line-height:2.1;margin-bottom:12px">
           💼 العمل — استلام الراتب وتخصيص الفائض<br>
-          🏦 البنك — صندوق الطوارئ<br>
+          🏦 البنك — صندوق الطوارئ والتأمين<br>
           📈 البورصة — الاستثمار في أربعة أصول<br>
           🏠 المنزل — الديون وبناء مسكنك<br>
+          🎓 المعهد — دورات ترفع دخلك مدى الحياة<br>
           🎯 لوحة الأهداف &nbsp;·&nbsp; 📰 دار البلدية &nbsp;·&nbsp; 📖 المكتبة
+        </p>
+        <p class="muted" style="font-size:12px;line-height:1.8;margin-bottom:10px">
+          🤲 وكل عام تُعرض عليك <b>الزكاة</b> (2.5%) على ما بلغ النصاب وحال عليه الحول.
         </p>
         <div class="card" style="padding:12px;margin-bottom:6px">
           <h3 style="font-size:14px;color:#c9974a;margin-bottom:6px">🏡 طريقك إلى بيت تملكه</h3>
