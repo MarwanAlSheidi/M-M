@@ -91,6 +91,7 @@
       <div class="stat-box"><div class="label">🛡 الطوارئ</div><div class="value" id="statEmergency">0</div></div>
       <div class="stat-box"><div class="label">📈 استثمارات</div><div class="value" id="statInvest">0</div></div>
       <div class="stat-box"><div class="label">💳 ديون</div><div class="value" id="statDebt">0</div></div>
+      <div class="stat-box"><div class="label">🏠 المنزل</div><div class="value" id="statHome">0</div></div>
       <div class="stat-box"><div class="label">😊 الرضا</div><div class="value" id="statMorale">0</div></div>
       <div class="stat-box"><div class="label">🏅 ائتماني</div><div class="value" id="statCredit">0</div></div>
     </div>
@@ -133,10 +134,33 @@
     };
 
     // ==================== الحالة الأولية ====================
+    // ==================== الإسكان (المسار العُماني) ====================
+    // في عُمان أغلب الأسر تمتلك مسكنها: منحة أرض سكنية، ثم بناء تدريجي
+    // بتمويل جزئي من قرض إسكان مدعوم. متوسط بناء/شراء المنزل ~50,000 ريال.
+    const HOME_COST = 50000;        // كلفة البناء الكاملة
+    const LAND_WAIT_MONTHS = 6;     // انتظار تخصيص منحة الأرض
+    const MAX_HOUSING_LOAN = 30000; // سقف قرض الإسكان
+    const HOUSING_LOAN_RATE = 0.0025; // ~3% سنويًا (مدعوم)
+    const HOUSING_LOAN_TERM = 180;  // 15 سنة
+
+    const BUILD_PHASES = [
+      { at: 0.00, name: "أرض فضاء" },
+      { at: 0.15, name: "أساسات" },
+      { at: 0.40, name: "هيكل وجدران" },
+      { at: 0.70, name: "سقف ونوافذ" },
+      { at: 0.90, name: "تشطيبات" },
+      { at: 1.00, name: "مكتمل" },
+    ];
+    function buildPhase(progress) {
+      let p = BUILD_PHASES[0];
+      for (const ph of BUILD_PHASES) if (progress >= ph.at) p = ph;
+      return p;
+    }
+
     const INITIAL_STATE = {
-      cash: 3000,
-      emergency: 2000,
-      emergencyTarget: 18000,
+      cash: 700,
+      emergency: 450,
+      emergencyTarget: 3600,        // 6 أشهر من المصروفات
       investments: {
         stocks: { amount: 0, cost: 0 },
         bonds: { amount: 0, cost: 0 },
@@ -144,10 +168,18 @@
         crypto: { amount: 0, cost: 0 },
       },
       debt: 0,
-      monthlyIncome: 5000,
-      monthlyExpenses: 3000,
+      monthlyIncome: 1000,          // متوسط الأجور في عُمان
+      monthlyExpenses: 600,         // منها إيجار
+      rent: 220,                    // جزء الإيجار، يسقط عند التملك
       creditScore: 700,
       morale: 70,
+      housing: {
+        stage: "renting",           // renting → waiting → land → building → owned
+        waitMonths: 0,
+        built: 0,                   // ما أُنفق على البناء
+        loan: 0,                    // رصيد قرض الإسكان
+        loanPayment: 0,             // القسط الشهري
+      },
       month: 1,
       year: 1,
       goals: [],
@@ -159,24 +191,25 @@
     // ==================== الأحداث المالية ====================
     const EVENTS = [
       { id: "job_loss", title: "فقدان الوظيفة", desc: "تم تسريحك! دخلك ينخفض 60% لمدة 3 أشهر.", choices: [
-        { label: "استخدم صندوق الطوارئ", effect: (s) => ({ ...s, emergency: s.emergency - 1000, tempEffects: [...s.tempEffects, { type: "income", amount: -Math.round(s.monthlyIncome * 0.6), monthsLeft: 3 }], eventLog: [...s.eventLog, "فقدان وظيفة - استخدم الطوارئ"] }) },
-        { label: "اقترض لتغطية المصروفات", effect: (s) => ({ ...s, debt: s.debt + 3000, cash: s.cash + 3000, tempEffects: [...s.tempEffects, { type: "income", amount: -Math.round(s.monthlyIncome * 0.6), monthsLeft: 3 }], eventLog: [...s.eventLog, "فقدان وظيفة - اقترض"] }) }
+        { label: "استخدم صندوق الطوارئ", effect: (s) => ({ ...s, emergency: s.emergency - 250, tempEffects: [...s.tempEffects, { type: "income", amount: -Math.round(s.monthlyIncome * 0.6), monthsLeft: 3 }], eventLog: [...s.eventLog, "فقدان وظيفة - استخدم الطوارئ"] }) },
+        { label: "اقترض لتغطية المصروفات", effect: (s) => ({ ...s, debt: s.debt + 750, cash: s.cash + 750, tempEffects: [...s.tempEffects, { type: "income", amount: -Math.round(s.monthlyIncome * 0.6), monthsLeft: 3 }], eventLog: [...s.eventLog, "فقدان وظيفة - اقترض"] }) }
       ]},
       { id: "market_crash", title: "انهيار سوق الأسهم", desc: "الأسهم تنخفض 25%! هل تبيع أم تشتري المزيد؟", choices: [
         { label: "أبيع وأحمي رأس المال", effect: (s) => ({ ...s, cash: s.cash + s.investments.stocks.amount, investments: { ...s.investments, stocks: { amount: 0, cost: 0 } }, eventLog: [...s.eventLog, "انهيار أسهم - باع"] }) },
-        { label: "أشتري المزيد (انخفاض مؤقت)", effect: (s) => ({ ...s, cash: s.cash - 500, investments: { ...s.investments, stocks: { amount: s.investments.stocks.amount + 500, cost: s.investments.stocks.cost + 500 } }, eventLog: [...s.eventLog, "انهيار أسهم - اشترى"] }) }
+        { label: "أشتري المزيد (انخفاض مؤقت)", effect: (s) => ({ ...s, cash: s.cash - 125, investments: { ...s.investments, stocks: { amount: s.investments.stocks.amount + 125, cost: s.investments.stocks.cost + 125 } }, eventLog: [...s.eventLog, "انهيار أسهم - اشترى"] }) }
       ]},
-      { id: "bonus", title: "مكافأة عمل", desc: "حصلت على 800 ريال مكافأة.", choices: [
-        { label: "أضف للاستثمار", effect: (s) => ({ ...s, investments: { ...s.investments, stocks: { amount: s.investments.stocks.amount + 800, cost: s.investments.stocks.cost + 800 } }, eventLog: [...s.eventLog, "مكافأة - استثمر"] }) },
-        { label: "أضف للطوارئ", effect: (s) => ({ ...s, emergency: s.emergency + 800, eventLog: [...s.eventLog, "مكافأة - طوارئ"] }) }
+      { id: "bonus", title: "مكافأة عمل", desc: "حصلت على 200 ريال مكافأة.", choices: [
+        { label: "أضف للاستثمار", effect: (s) => ({ ...s, investments: { ...s.investments, stocks: { amount: s.investments.stocks.amount + 200, cost: s.investments.stocks.cost + 200 } }, eventLog: [...s.eventLog, "مكافأة - استثمر"] }) },
+        { label: "أضف للطوارئ", effect: (s) => ({ ...s, emergency: s.emergency + 200, eventLog: [...s.eventLog, "مكافأة - طوارئ"] }) }
       ]},
-      { id: "rent_increase", title: "رفع الإيجار", desc: "المالك يرفع الإيجار 5% بشكل دائم.", choices: [
-        { label: "أقبل الزيادة", effect: (s) => ({ ...s, monthlyExpenses: Math.round(s.monthlyExpenses * 1.05), eventLog: [...s.eventLog, "رفع إيجار - قبل"] }) },
-        { label: "أنتقل لسكن أرخص (تكلفة 600)", effect: (s) => ({ ...s, cash: s.cash - 600, monthlyExpenses: Math.round(s.monthlyExpenses * 0.95), eventLog: [...s.eventLog, "رفع إيجار - انتقل"] }) }
+      // يظهر فقط ما دمت مستأجرًا — بعد التملك لا معنى لرفع الإيجار
+      { id: "rent_increase", title: "رفع الإيجار", desc: "المالك يرفع الإيجار 5% بشكل دائم.", when: (s) => s.housing.stage !== "owned", choices: [
+        { label: "أقبل الزيادة", effect: (s) => ({ ...s, rent: Math.round(s.rent * 1.05), monthlyExpenses: Math.round(s.monthlyExpenses + s.rent * 0.05), eventLog: [...s.eventLog, "رفع إيجار - قبل"] }) },
+        { label: "أنتقل لسكن أرخص (تكلفة 150)", effect: (s) => ({ ...s, cash: s.cash - 150, rent: Math.round(s.rent * 0.9), monthlyExpenses: Math.round(s.monthlyExpenses - s.rent * 0.1), eventLog: [...s.eventLog, "رفع إيجار - انتقل"] }) }
       ]},
-      { id: "medical", title: "طارئ صحي", desc: "عملية غير مغطاة تكلف 900 ريال.", choices: [
-        { label: "ادفع من الطوارئ", effect: (s) => ({ ...s, emergency: s.emergency - 900, eventLog: [...s.eventLog, "طارئ صحي - طوارئ"] }) },
-        { label: "تقسيط على 6 أشهر", effect: (s) => ({ ...s, debt: s.debt + 900, tempEffects: [...s.tempEffects, { type: "expense", amount: 150, monthsLeft: 6 }], eventLog: [...s.eventLog, "طارئ صحي - تقسيط"] }) }
+      { id: "medical", title: "طارئ صحي", desc: "علاج غير مغطى يكلف 220 ريالًا.", choices: [
+        { label: "ادفع من الطوارئ", effect: (s) => ({ ...s, emergency: s.emergency - 220, eventLog: [...s.eventLog, "طارئ صحي - طوارئ"] }) },
+        { label: "تقسيط على 6 أشهر", effect: (s) => ({ ...s, debt: s.debt + 220, tempEffects: [...s.tempEffects, { type: "expense", amount: 37, monthsLeft: 6 }], eventLog: [...s.eventLog, "طارئ صحي - تقسيط"] }) }
       ]},
       { id: "promotion", title: "ترقية وزيادة", desc: "تمت ترقيتك! دخلك يرتفع 15%.", choices: [
         { label: "احتفظ بنفس نمط الحياة", effect: (s) => ({ ...s, monthlyIncome: Math.round(s.monthlyIncome * 1.15), eventLog: [...s.eventLog, "ترقية - وفر الزيادة"] }) },
@@ -226,7 +259,11 @@
       const effExpenses = state.monthlyExpenses + expenseAdj;
       const surplus = effIncome - effExpenses;
       const totalInv = Object.values(state.investments).reduce((sum, inv) => sum + inv.amount, 0);
-      const netWorth = state.cash + state.emergency + totalInv - state.debt;
+      // ما بنيته من المنزل أصل تملكه، وقرض الإسكان التزام عليك — وإلا بدا البناء
+      // وكأنه تبديد لثروتك بينما هو تحويلها من نقد إلى عقار.
+      const housing = state.housing || INITIAL_STATE.housing;
+      const homeEquity = (housing.built || 0) - (housing.loan || 0);
+      const netWorth = state.cash + state.emergency + totalInv + homeEquity - state.debt;
       const coverage = effExpenses > 0 ? state.emergency / effExpenses : 0;
       return { surplus, netWorth, totalInv, coverage, effIncome, effExpenses };
     }
@@ -258,15 +295,15 @@
     // ==================== الرتب ونهاية اللعبة ====================
     // هدف الاستقلال المالي: ثروة تعادل 8 أضعاف المصروفات السنوية.
     function fiTarget(s) { return s.monthlyExpenses * 12 * 8; }
-    const BANKRUPT_AT = -10000;
+    const BANKRUPT_AT = -2500;
 
     const RANKS = [
       { min: -Infinity, name: "متعثّر" },
       { min: 0, name: "مبتدئ" },
-      { min: 10000, name: "مدّخر" },
-      { min: 50000, name: "مستثمر" },
-      { min: 150000, name: "مستثمر متمرّس" },
-      { min: 400000, name: "قريب من الاستقلال" },
+      { min: 2500, name: "مدّخر" },
+      { min: 12000, name: "مستثمر" },
+      { min: 30000, name: "مالك ومستثمر" },
+      { min: 50000, name: "قريب من الاستقلال" },
     ];
 
     function rankInfo(s) {
@@ -353,7 +390,7 @@
         life: 0, max: 1.6, dx: (Math.random() - 0.5) * 10,
       });
       // الخسائر الكبيرة فقط تهزّ الشاشة، حتى لا يهتزّ كل راتب شهري
-      if (delta <= -300) shake = Math.min(7, 2 + Math.abs(delta) / 700);
+      if (delta <= -75) shake = Math.min(7, 2 + Math.abs(delta) / 175);
     }
 
     // ==================== منطق الشهر والأحداث ====================
@@ -363,7 +400,30 @@
         ...source,
         investments: cloneInvestments(source.investments),
         tempEffects: (source.tempEffects || []).map((e) => ({ ...e })),
+        housing: { ...(source.housing || INITIAL_STATE.housing) },
       };
+
+      // منحة الأرض: انتظار التخصيص من البلدية
+      if (s.housing.stage === "waiting") {
+        s.housing.waitMonths -= 1;
+        if (s.housing.waitMonths <= 0) {
+          s.housing.stage = "land";
+          s.housing.waitMonths = 0;
+          s.eventLog = [...s.eventLog, "🏜️ تم تخصيص منحة أرض سكنية لك"];
+        }
+      }
+
+      // قسط قرض الإسكان
+      if (s.housing.loan > 0) {
+        const interest = Math.round(s.housing.loan * HOUSING_LOAN_RATE);
+        const pay = Math.min(s.housing.loanPayment, s.housing.loan + interest);
+        s.housing.loan = Math.max(0, s.housing.loan + interest - pay);
+        s.cash -= pay;
+        if (s.housing.loan === 0) {
+          s.housing.loanPayment = 0;
+          s.eventLog = [...s.eventLog, "✅ سُدّد قرض الإسكان بالكامل"];
+        }
+      }
       if (s.month % 12 === 0) {
         s.monthlyIncome = Math.round(s.monthlyIncome * 1.02);
         s.monthlyExpenses = Math.round(s.monthlyExpenses * 1.015);
@@ -413,8 +473,8 @@
       setState(s);
 
       if (Math.random() < 0.5) {
-        const ev = EVENTS[Math.floor(Math.random() * EVENTS.length)];
-        openEvent(ev);
+        const pool = EVENTS.filter((e) => !e.when || e.when(s));
+        if (pool.length) openEvent(pool[Math.floor(Math.random() * pool.length)]);
       }
     }
 
@@ -837,13 +897,16 @@
           </div>
           <p class="muted" style="font-size:11px;margin-top:6px">كلما قلّ دينك مقابل دخلك ارتفع تصنيفك وانخفضت فائدتك.</p>
         </div>
+        ${housingPanelHtml()}
         <div class="slider-row"><span>سداد جزء من الدين (${fmt(state.debt)})</span></div>
         <div class="row-actions">
           <input type="number" id="payAmt" min="0" max="${Math.max(0, Math.min(state.cash, state.debt))}" value="0" />
           <button class="btn btn-sm" id="payBtn">سداد</button>
         </div>
         <div class="inline-error" id="homeErr"></div>
-        <button class="btn btn-outline" id="downsizeBtn" ${state.cash < 600 ? "disabled" : ""}>الانتقال لسكن أرخص (تكلفة 600، يخفض المصروفات 5%)</button>
+        ${state.housing.stage !== "owned"
+          ? `<button class="btn btn-outline" id="downsizeBtn" ${state.cash < 150 ? "disabled" : ""}>الانتقال لسكن أرخص (تكلفة 150، يخفض الإيجار 10%)</button>`
+          : ""}
         <button class="btn btn-outline" style="margin-top:10px" data-close-all>خروج</button>
       `, (root) => {
         const err = root.querySelector("#homeErr");
@@ -853,11 +916,114 @@
           setState({ ...state, cash: state.cash - amt, debt: state.debt - amt });
           popModal(); openHome();
         });
-        root.querySelector("#downsizeBtn").addEventListener("click", () => {
-          if (state.cash < 600) return;
-          setState({ ...state, cash: state.cash - 600, monthlyExpenses: Math.round(state.monthlyExpenses * 0.95) });
+        const downsize = root.querySelector("#downsizeBtn");
+        if (downsize) {
+          downsize.addEventListener("click", () => {
+            if (state.cash < 150) return;
+            const cut = Math.round(state.rent * 0.1);
+            setState({ ...state, cash: state.cash - 150, rent: state.rent - cut, monthlyExpenses: state.monthlyExpenses - cut });
+            popModal(); openHome();
+          });
+        }
+        wireHousingPanel(root, err);
+      });
+    }
+
+    // ==================== لوحة البناء داخل المنزل ====================
+    function housingPanelHtml() {
+      const h = state.housing;
+      if (h.stage === "renting" || h.stage === "waiting") {
+        return `<div class="card" style="margin-bottom:14px;padding:12px">
+          <h3 style="font-size:14px;color:#c9974a;margin-bottom:6px">🏠 السكن</h3>
+          <p class="muted" style="font-size:12px;line-height:1.8">
+            أنت مستأجر — <b>${fmt(state.rent)}</b> ريالًا شهريًا من أصل ${fmt(state.monthlyExpenses)}.
+            ${h.stage === "waiting"
+              ? `طلب منحة الأرض قيد المعالجة (متبقٍ ${h.waitMonths} أشهر).`
+              : `تقدّم بطلب منحة أرض من دار البلدية لتبدأ مسار التملك.`}
+          </p>
+        </div>`;
+      }
+      const progress = Math.min(1, h.built / HOME_COST);
+      const remaining = Math.max(0, HOME_COST - h.built);
+      const owned = h.stage === "owned";
+      const maxLoan = Math.max(0, MAX_HOUSING_LOAN - h.loan);
+      return `<div class="card" style="margin-bottom:14px;padding:12px${owned ? ";border-color:#2ecc71" : ""}">
+        <h3 style="font-size:14px;color:${owned ? "#2ecc71" : "#c9974a"};margin-bottom:6px">🏠 ${owned ? "منزلك (مملوك)" : "بناء المنزل"}</h3>
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span class="muted">${buildPhase(progress).name}</span>
+          <b>${fmt(h.built)} / ${fmt(HOME_COST)}</b>
+        </div>
+        <div class="progress"><div class="progress-fill" style="width:${progress * 100}%;background:${owned ? "#2ecc71" : "#c9974a"}"></div></div>
+        ${owned
+          ? `<p class="muted" style="font-size:11px;margin-top:8px">لم تعد تدفع إيجارًا — وفّرت ${fmt(state.housing.savedRent || 0)} ريالًا شهريًا.</p>`
+          : `<div class="row-actions" style="margin-top:10px">
+               <input type="number" min="0" id="buildAmt" placeholder="مبلغ البناء (متبقٍ ${fmt(remaining)})" />
+               <button class="btn btn-sm" id="buildBtn">ابنِ</button>
+             </div>`}
+        ${h.loan > 0
+          ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-top:10px">
+               <span class="muted">قرض الإسكان المتبقي</span><b>${fmt(h.loan)} · قسط ${fmt(h.loanPayment)}/شهر</b>
+             </div>`
+          : (!owned && maxLoan > 0
+              ? `<div class="row-actions" style="margin-top:10px">
+                   <input type="number" min="0" max="${maxLoan}" id="loanAmt" placeholder="قرض إسكان (حتى ${fmt(maxLoan)})" />
+                   <button class="btn btn-sm btn-outline" id="loanBtn">اقترض</button>
+                 </div>
+                 <p class="muted" style="font-size:11px;margin-top:6px">قرض مدعوم ${(HOUSING_LOAN_RATE * 1200).toFixed(1)}% سنويًا على ${HOUSING_LOAN_TERM / 12} سنة.</p>`
+              : "")}
+      </div>`;
+    }
+
+    function wireHousingPanel(root, err) {
+      const buildBtn = root.querySelector("#buildBtn");
+      if (buildBtn) {
+        buildBtn.addEventListener("click", () => {
+          const remaining = HOME_COST - state.housing.built;
+          const amt = Math.floor(Number(root.querySelector("#buildAmt").value));
+          if (!amt || amt <= 0 || amt > state.cash || amt > remaining) { err.textContent = "مبلغ غير صالح."; return; }
+          const built = state.housing.built + amt;
+          const finished = built >= HOME_COST;
+          let s = { ...state, cash: state.cash - amt, housing: { ...state.housing, built, stage: finished ? "owned" : "building" } };
+          if (finished) {
+            // التملك يُسقط الإيجار من المصروفات نهائيًا
+            s.housing.savedRent = state.rent;
+            s.monthlyExpenses = Math.max(0, state.monthlyExpenses - state.rent);
+            s.rent = 0;
+            s.morale = Math.min(100, (state.morale ?? 70) + 20);
+            s.eventLog = [...state.eventLog, "🏡 اكتمل منزلك — لا إيجار بعد اليوم"];
+          }
+          setState(s);
+          popModal();
+          if (finished) celebrateHome(); else openHome();
+        });
+      }
+      const loanBtn = root.querySelector("#loanBtn");
+      if (loanBtn) {
+        loanBtn.addEventListener("click", () => {
+          const maxLoan = MAX_HOUSING_LOAN - state.housing.loan;
+          const amt = Math.floor(Number(root.querySelector("#loanAmt").value));
+          if (!amt || amt <= 0 || amt > maxLoan) { err.textContent = "مبلغ غير صالح."; return; }
+          const payment = Math.ceil(amt / HOUSING_LOAN_TERM) + Math.ceil(amt * HOUSING_LOAN_RATE);
+          setState({ ...state, cash: state.cash + amt,
+            housing: { ...state.housing, loan: state.housing.loan + amt, loanPayment: state.housing.loanPayment + payment },
+            eventLog: [...state.eventLog, `🏦 حصلت على قرض إسكان ${fmt(amt)}`] });
           popModal(); openHome();
         });
+      }
+    }
+
+    function celebrateHome() {
+      pushModal(`
+        <h2>🏡 أصبح لك بيت!</h2>
+        <canvas class="celebrate-art" id="homeArt" width="340" height="140"></canvas>
+        <p style="line-height:1.9;text-align:center">
+          اكتمل بناء منزلك على أرض المنحة. توقّف الإيجار نهائيًا،
+          وانخفضت مصروفاتك الشهرية إلى <b style="color:#2ecc71">${fmt(state.monthlyExpenses)}</b> ريالًا.
+        </p>
+        <button class="btn" style="margin-top:14px" data-close-all>الحمد لله</button>
+      `, (root) => {
+        const cv = root.querySelector("#homeArt");
+        if (cv) animateConfetti(cv);
       });
     }
 
@@ -1009,6 +1175,32 @@
       })(last);
     }
 
+    // ==================== مكتب الإسكان داخل البلدية ====================
+    function housingOfficeHtml() {
+      const h = state.housing;
+      if (h.stage === "renting") {
+        return `<div class="card" style="margin:10px 0;padding:12px">
+          <h3 style="font-size:14px;color:#c9974a;margin-bottom:6px">🏜️ مكتب الإسكان</h3>
+          <p class="muted" style="font-size:12px;line-height:1.8;margin-bottom:10px">
+            بصفتك مواطنًا يحق لك التقدّم بطلب منحة أرض سكنية. التخصيص يستغرق نحو ${LAND_WAIT_MONTHS} أشهر،
+            وبعدها تستطيع البناء تدريجيًا. تدفع حاليًا <b>${fmt(state.rent)}</b> ريالًا إيجارًا شهريًا.
+          </p>
+          <button class="btn btn-sm" id="applyLandBtn">تقديم طلب منحة أرض</button>
+        </div>`;
+      }
+      if (h.stage === "waiting") {
+        return `<div class="card" style="margin:10px 0;padding:12px">
+          <h3 style="font-size:14px;color:#c9974a;margin-bottom:6px">🏜️ مكتب الإسكان</h3>
+          <p class="muted" style="font-size:12px">طلبك قيد المعالجة — متبقٍ <b style="color:#c9974a">${h.waitMonths}</b> أشهر على التخصيص.</p>
+        </div>`;
+      }
+      const progress = Math.min(1, h.built / HOME_COST);
+      return `<div class="card" style="margin:10px 0;padding:12px">
+        <h3 style="font-size:14px;color:#c9974a;margin-bottom:6px">🏜️ مكتب الإسكان</h3>
+        <p class="muted" style="font-size:12px">${h.stage === "owned" ? "منزلك مكتمل ومسجّل باسمك ✅" : `أرضك مخصّصة. المرحلة: <b>${buildPhase(progress).name}</b> (${Math.round(progress * 100)}%) — أكمل البناء من نافذة المنزل.`}</p>
+      </div>`;
+    }
+
     function openTownHall() {
       const logHtml = state.eventLog.length
         ? state.eventLog.slice().reverse().map((e) => `<div style="padding:6px 0;border-bottom:1px solid #1d3d35">• ${e}</div>`).join("")
@@ -1021,11 +1213,20 @@
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">الرتبة</span><b style="color:#c9974a">${rankInfo(state).name}</b></div>
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">هدف الاستقلال المالي</span><b>${fmt(fiTarget(state))}</b></div>
         </div>
+        ${housingOfficeHtml()}
         <h3 style="font-size:14px;color:#c9974a;margin:6px 0">سجل الأحداث</h3>
         ${logHtml}
         <button class="btn btn-outline" style="margin-top:14px" id="resetBtn">إعادة بدء اللعبة</button>
         <button class="btn btn-outline" style="margin-top:10px" data-close-all>خروج</button>
       `, (root) => {
+        const applyBtn = root.querySelector("#applyLandBtn");
+        if (applyBtn) {
+          applyBtn.addEventListener("click", () => {
+            setState({ ...state, housing: { ...state.housing, stage: "waiting", waitMonths: LAND_WAIT_MONTHS },
+              eventLog: [...state.eventLog, "📝 قدّمت طلب منحة أرض سكنية"] });
+            popModal(); openTownHall();
+          });
+        }
         root.querySelector("#resetBtn").addEventListener("click", () => {
           pushModal(`
             <h2>إعادة بدء اللعبة</h2>
@@ -1461,6 +1662,9 @@
     }
 
     function drawHome(c, b) {
+      const hs = state.housing || INITIAL_STATE.housing;
+      // ما دمت مستأجرًا نرسم بيت الإيجار؛ وبعد منحة الأرض نرسم الأرض ثم البناء وهو يرتفع
+      if (hs.stage === "land" || hs.stage === "building") return drawHomeUnderConstruction(c, b, Math.min(1, hs.built / HOME_COST));
       const { x, y, w, h, color } = b;
       const roofH = 20;
       c.fillStyle = shade(color, -35);
@@ -1477,6 +1681,70 @@
       c.strokeRect(x + w - 26, y + roofH + 10, 16, 16);
       c.fillStyle = "#2a1c0d";
       c.fillRect(x + w / 2 - 9, y + h - 18, 18, 18);
+      // بعد التملك: سور ونخلة وعلامة ملكية
+      if (hs.stage === "owned") {
+        c.strokeStyle = "#c9974a"; c.lineWidth = 1.5;
+        c.beginPath(); c.moveTo(x - 6, y + h + 2); c.lineTo(x + w + 6, y + h + 2); c.stroke();
+        for (let i = 0; i <= 6; i++) {
+          const px = x - 6 + i * ((w + 12) / 6);
+          c.beginPath(); c.moveTo(px, y + h + 2); c.lineTo(px, y + h - 4); c.stroke();
+        }
+        c.fillStyle = "#3a2a1a";
+        c.fillRect(x - 16, y + h - 18, 3, 18);
+        c.fillStyle = "#2f7a52";
+        for (let i = 0; i < 5; i++) {
+          const a = Math.PI + (i / 4) * Math.PI;
+          c.beginPath();
+          c.ellipse(x - 14.5 + Math.cos(a) * 7, y + h - 20 + Math.sin(a) * 4, 7, 2.6, a, 0, Math.PI * 2);
+          c.fill();
+        }
+        c.fillStyle = "#2ecc71";
+        c.beginPath(); c.arc(x + w - 6, y + roofH - 6, 4, 0, Math.PI * 2); c.fill();
+      }
+    }
+
+    // الأرض ثم المبنى وهو يرتفع مرحلة بعد مرحلة
+    function drawHomeUnderConstruction(c, b, progress) {
+      const { x, y, w, h } = b;
+      // أرض المنحة: تراب وحدود قطعة الأرض
+      c.fillStyle = "#3a3226";
+      c.fillRect(x, y + h * 0.35, w, h * 0.65);
+      c.strokeStyle = "rgba(201,151,74,0.7)"; c.lineWidth = 2;
+      c.setLineDash([5, 4]);
+      c.strokeRect(x + 1, y + h * 0.35, w - 2, h * 0.65 - 1);
+      c.setLineDash([]);
+
+      if (progress > 0) {
+        // الجدران ترتفع مع التقدّم
+        const maxH = h * 0.62;
+        const wallH = Math.max(4, maxH * Math.min(1, progress / 0.9));
+        const wy = y + h - wallH;
+        c.fillStyle = progress >= 0.9 ? "#d98c4a" : "#8a7a63";
+        c.fillRect(x + 6, wy, w - 12, wallH);
+        // أعمدة خرسانية
+        c.fillStyle = "#6e6252";
+        for (let i = 0; i < 3; i++) c.fillRect(x + 8 + i * ((w - 20) / 2), wy, 4, wallH);
+        // السقف يظهر بعد 70%
+        if (progress >= 0.7) {
+          c.fillStyle = "#a86a33";
+          c.beginPath(); c.moveTo(x + 2, wy); c.lineTo(x + w / 2, wy - 14); c.lineTo(x + w - 2, wy); c.closePath(); c.fill();
+        }
+        // النوافذ والباب في التشطيب
+        if (progress >= 0.9) {
+          c.fillStyle = "#f4d58d";
+          c.fillRect(x + 12, wy + 8, 12, 12);
+          c.fillRect(x + w - 24, wy + 8, 12, 12);
+          c.fillStyle = "#2a1c0d";
+          c.fillRect(x + w / 2 - 8, y + h - 16, 16, 16);
+        }
+      }
+      // سقالة ورافعة ما دام البناء جاريًا
+      if (progress < 1) {
+        c.strokeStyle = "#c9974a"; c.lineWidth = 1.5;
+        c.beginPath(); c.moveTo(x + w - 6, y + h); c.lineTo(x + w - 6, y + 4); c.lineTo(x + w - 22, y + 4); c.stroke();
+        c.beginPath(); c.moveTo(x + w - 22, y + 4); c.lineTo(x + w - 22, y + 12); c.stroke();
+        c.fillStyle = "#c9974a"; c.fillRect(x + w - 26, y + 12, 8, 5);
+      }
     }
 
     function drawTownHall(c, b) {
@@ -1892,6 +2160,10 @@
       document.getElementById("statEmergency").textContent = fmt(state.emergency);
       document.getElementById("statInvest").textContent = fmt(d.totalInv);
       document.getElementById("statDebt").textContent = fmt(state.debt);
+      const hEl = document.getElementById("statHome");
+      const hs = state.housing || INITIAL_STATE.housing;
+      hEl.textContent = fmt((hs.built || 0) - (hs.loan || 0));
+      hEl.style.color = hs.stage === "owned" ? "#2ecc71" : "#e0e8e4";
       const mEl = document.getElementById("statMorale");
       mEl.textContent = Math.round(state.morale ?? 70);
       mEl.style.color = ml.color;
