@@ -1428,13 +1428,16 @@
                <button class="btn btn-sm btn-outline" id="repayHousingBtn">سدّد</button>
              </div>
              <p class="muted" style="font-size:11px;margin-top:6px">السداد المبكر يقلّل رصيد القرض وفائدته، ويخفض قسطك الشهري تناسبيًا.</p>`
-          : (!owned && maxLoan > 0
-              ? `<div class="row-actions" style="margin-top:10px">
-                   <input type="number" min="0" max="${maxLoan}" id="loanAmt" placeholder="قرض إسكان (حتى ${fmt(maxLoan)})" />
-                   <button class="btn btn-sm btn-outline" id="loanBtn">اقترض</button>
-                 </div>
-                 <p class="muted" style="font-size:11px;margin-top:6px">${term("قرض الإسكان")}: مدعوم ${(HOUSING_LOAN_RATE * 1200).toFixed(1)}% سنويًا على ${HOUSING_LOAN_TERM / 12} سنة.</p>`
-              : "")}
+          : ""}
+        ${/* المتبقي من سقف التمويل يبقى متاحًا ما دام البناء جاريًا: كان الحقل
+             يختفي بمجرد وجود أي قرض، فمن اقترض 5,000 يفقد 25,000 يستحقها. */""}
+        ${!owned && maxLoan > 0
+          ? `<div class="row-actions" style="margin-top:10px">
+               <input type="number" min="0" max="${maxLoan}" id="loanAmt" placeholder="${h.loan > 0 ? "اقترض المتبقي" : "قرض إسكان"} (حتى ${fmt(maxLoan)})" />
+               <button class="btn btn-sm btn-outline" id="loanBtn">اقترض</button>
+             </div>
+             <p class="muted" style="font-size:11px;margin-top:6px">${term("قرض الإسكان")}: مدعوم ${(HOUSING_LOAN_RATE * 1200).toFixed(1)}% سنويًا على ${HOUSING_LOAN_TERM / 12} سنة${h.loan > 0 ? ` · المتاح من السقف ${fmt(maxLoan)} من ${fmt(MAX_HOUSING_LOAN)}` : ""}.</p>`
+          : ""}
       </div>`;
     }
 
