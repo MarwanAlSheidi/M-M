@@ -1277,14 +1277,27 @@
     // مع إسناد فروق التقريب إلى أكبر بند حتى لا يختلّ المجموع.
     function scaleAlloc(ratios, surplus) {
       const out = Object.fromEntries(ALLOC_FIELDS.map(([k]) => [k, 0]));
+      // نُطهّر النِّسَب أولاً: lastAlloc يُحفظ في المتصفح ولا يمرّ بتحقّق
+      // القيم الافتراضية، فحفظ معدَّل أو تالف قد يحمل نِسَبًا سالبة أو مجموعًا
+      // مخالفًا للواحد، فينتج توزيع سالب يخصم من نقدك بدل أن يضيف إليه.
+      const clean = {};
+      let sum = 0;
+      for (const [key] of ALLOC_FIELDS) {
+        const r = Number(ratios?.[key]);
+        const v = Number.isFinite(r) && r > 0 ? r : 0;
+        clean[key] = v;
+        sum += v;
+      }
+      if (sum <= 0) { out.savings = surplus; return out; }
+
       let running = 0, biggestKey = ALLOC_FIELDS[0][0], biggestRatio = -1;
       for (const [key] of ALLOC_FIELDS) {
-        const r = ratios[key] || 0;
-        out[key] = Math.floor(r * surplus);
+        const share = clean[key] / sum;                 // نُعيد التطبيع ليكون المجموع 1
+        out[key] = Math.max(0, Math.floor(share * surplus));
         running += out[key];
-        if (r > biggestRatio) { biggestRatio = r; biggestKey = key; }
+        if (share > biggestRatio) { biggestRatio = share; biggestKey = key; }
       }
-      out[biggestKey] += surplus - running;
+      out[biggestKey] = Math.max(0, out[biggestKey] + surplus - running);
       return out;
     }
 
