@@ -1916,7 +1916,11 @@
 
     function openLibrary() {
       const rows = Object.keys(DICTIONARY).map((t) => `<div class="term-row" data-term="${t}">${t}</div>`).join("");
-      pushModal(`<h2>📖 المكتبة</h2>${rows}<button class="btn btn-outline" style="margin-top:14px" data-close-all>خروج</button>`, (root) => {
+      pushModal(`<h2>📖 المكتبة</h2>
+        <button class="btn btn-outline" style="margin-bottom:12px" id="howToBtn">🏙️ كيف تلعب — شرح اللعبة</button>
+        ${rows}
+        <button class="btn btn-outline" style="margin-top:14px" data-close-all>خروج</button>`, (root) => {
+        root.querySelector("#howToBtn").addEventListener("click", () => openHowToPlay());
         root.querySelectorAll(".term-row").forEach((el) => {
           el.addEventListener("click", () => {
             const t = el.dataset.term;
@@ -2908,8 +2912,9 @@
     }
     refreshHud();
 
-    if (isFirstVisit) {
-      pushModal(`
+    // الشرح متاح دائمًا من المكتبة، لا في أول زيارة فقط
+    function howToPlayHtml(isIntro) {
+      return `
         <h2>🏙️ أهلاً بك في مدينة المال</h2>
         <p style="line-height:1.9;margin-bottom:12px">
           تبدأ براتب <b>1,000</b> ريال ومصروفات <b>600</b> (منها <b>220</b> إيجارًا)، أي فائض <b>400</b> شهريًا.
@@ -2938,8 +2943,16 @@
           الفوز: أن تبلغ ثروتك المُدِرّة للدخل ما يكفي لتغطية مصروفاتك دون راتب.
           بيت السكن لا يُحتسب فيها — فهو لا يموّل مصروفاتك.
         </p>
-        <button class="btn" style="margin-top:16px" data-close-all>ابدأ</button>
-      `);
+        ${isIntro ? '<button class="btn" style="margin-top:16px" data-close-all>ابدأ</button>' : '<button class="btn" style="margin-top:16px" data-close>فهمت</button>'}
+      `;
+    }
+    function openHowToPlay() { pushModal(howToPlayHtml(false)); }
+
+    if (isFirstVisit) {
+      // نحفظ فورًا وإلا اعتُبرت أي إعادة تحميل قبل أول إجراء زيارةً أولى جديدة
+      // فتتكرر بطاقة الشرح على من لم يفعل شيئًا بعد.
+      saveState();
+      pushModal(howToPlayHtml(true));
     }
   </script>
 </body>
