@@ -296,7 +296,10 @@
             morale: Math.min(100, (s.morale ?? 70) + 25), eventLog: [...s.eventLog, "💍 زواج متواضع"] }) },
         { label: "زواج كبير (2,500، رضا أعلى)", effect: (s) => ({ ...s, married: true, cash: s.cash - 2500,
             monthlyIncome: Math.round(s.monthlyIncome * 1.25), monthlyExpenses: Math.round(s.monthlyExpenses * 1.35),
-            morale: Math.min(100, (s.morale ?? 70) + 35), eventLog: [...s.eventLog, "💍 زواج كبير"] }) }
+            morale: Math.min(100, (s.morale ?? 70) + 35), eventLog: [...s.eventLog, "💍 زواج كبير"] }) },
+        // خيار التأجيل ضروري: الزواج يرفع مصروفاتك دائمًا، ومعها يرتفع هدف
+        // الاستقلال المالي — فلا يصح فرضه على اللاعب بلا مخرج.
+        { label: "أؤجّل الأمر الآن", effect: (s) => ({ ...s, morale: Math.max(0, (s.morale ?? 70) - 4), eventLog: [...s.eventLog, "أجّلت الزواج"] }) }
       ]},
       { id: "newborn", title: "مولود جديد", desc: "رُزقت بمولود! مصروفاتك ترتفع، ورضاك كذلك.",
         when: (s) => s.married && (s.children ?? 0) < 4, choices: [
@@ -1595,6 +1598,10 @@
         <div class="card" style="margin:10px 0;padding:12px">
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">الرتبة</span><b style="color:#c9974a">${rankInfo(state).name}</b></div>
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">هدف الاستقلال المالي</span><b>${fmt(fiTarget(state))}</b></div>
+          ${state.monthlyExpenses > 600 ? `<div style="display:flex;justify-content:space-between;padding:3px 0">
+            <span class="muted">${term("تضخّم نمط الحياة")}</span>
+            <b style="color:#e67e22">الهدف بدأ 57,600 · +${Math.round((fiTarget(state) / 57600 - 1) * 100)}%</b>
+          </div>` : ""}
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">${term("الثروة المُدِرّة للدخل")}</span><b style="color:#c9974a">${fmt(derive(state).investableNetWorth)}</b></div>
           <p class="muted" style="font-size:11px;margin-top:4px">لا يُحتسب بيت السكن هنا — فهو لا يموّل مصروفاتك، لكنه يدخل في صافي ثروتك. اعرف أكثر: ${term("الاستقلال المالي")}</p>
         </div>
