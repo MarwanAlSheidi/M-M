@@ -686,6 +686,9 @@
           s.cash += inv.rentalIncome;
         }
         inv.amount = Math.max(0, Math.round(inv.amount * (1 + growth)));
+        // إن أفنى الانهيار المركز بالكامل فقد تحققت الخسارة وأُغلق المركز:
+        // إبقاء التكلفة كان يجعل أي شراء جديد يظهر خاسرًا بمبلغ قديم إلى الأبد.
+        if (inv.amount === 0) inv.cost = 0;
         if (crashed) s.eventLog = [...s.eventLog, `📉 انهيار مفاجئ في ${ASSETS[key].label}`];
       }
       lastStockDelta = lastAssetMoves.stocks.pct;
