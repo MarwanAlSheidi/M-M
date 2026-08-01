@@ -1162,6 +1162,14 @@
           → بعد التوزيع <b id="moraleAfter">${Math.round(state.morale ?? 70)}</b>
           <span id="burnoutWarn" style="color:#e74c3c"></span>
         </p>
+        ${(() => {
+          // أهم تحذير واحد عند لحظة القرار نفسها، لا بعد فوات الأوان
+          const top = currentAdvice(1)[0];
+          return top ? `<div class="card" style="padding:10px;margin-bottom:12px;border-color:${SEV_COLOR[top.sev]}">
+            <div style="font-size:11px;color:${SEV_COLOR[top.sev]};margin-bottom:3px">${top.icon} ${SEV_LABEL[top.sev]}</div>
+            <p style="font-size:12px;line-height:1.7;margin:0">${top.body}</p>
+          </div>` : "";
+        })()}
         ${rows}
         <div class="inline-error" id="allocErr"></div>
         ${state.lastAlloc ? `<button class="btn btn-outline" style="margin-bottom:10px" id="repeatAlloc">↺ كرّر توزيع الشهر الماضي</button>` : ""}
@@ -1546,6 +1554,86 @@
       })(last);
     }
 
+    // ==================== المستشار المالي ====================
+    // قواعد تقرأ حالتك الحالية وتُظهر أهم ما يستحق انتباهك الآن.
+    // الترتيب بالخطورة: خطر (3) ثم تنبيه (2) ثم فرصة (1).
+    const ADVICE_RULES = [
+      { id: "no_emergency", sev: 3, icon: "🛡", term: "صندوق الطوارئ",
+        test: (s, d) => d.coverage < 1,
+        text: (s, d) => `صندوق طوارئك يغطي ${d.coverage.toFixed(1)} شهر فقط. أي طارئ سيدفعك للاقتراض — اجعله ٣ أشهر على الأقل.` },
+      { id: "burnout", sev: 3, icon: "😫", term: "الاستثمار في الذات",
+        test: (s) => (s.morale ?? 70) < MORALE_BURNOUT,
+        text: () => `أنت في حالة إرهاق ودخلك منخفض 12%. خصّص جزءًا من فائضك للإنفاق الشخصي حتى يتعافى رضاك.` },
+      { id: "debt_heavy", sev: 3, icon: "💳", term: "الدين إلى الدخل السنوي",
+        test: (s) => s.monthlyIncome > 0 && s.debt / (s.monthlyIncome * 12) > 0.4,
+        text: (s) => `دينك يعادل ${Math.round(s.debt / (s.monthlyIncome * 12) * 100)}% من دخلك السنوي، وفائدته ${(debtMonthlyRate(s.creditScore) * 100).toFixed(2)}%/شهر. سداده أعلى عائد مضمون متاح لك.` },
+      { id: "zakat_due", sev: 3, icon: "🤲", term: "الزكاة",
+        test: (s) => (s.zakat?.unpaid ?? 0) > 0,
+        text: (s) => `عليك زكاة مؤجّلة قدرها ${fmt(s.zakat.unpaid)} ريالًا في ذمتك.` },
+      { id: "morale_falling", sev: 2, icon: "😟", term: null,
+        test: (s) => (s.morale ?? 70) >= MORALE_BURNOUT && (s.morale ?? 70) < 45,
+        test2: true,
+        text: (s) => `رضاك ${Math.round(s.morale)} ويتآكل ٤ نقاط شهريًا. اقتربت من الإرهاق الذي يخفض دخلك.` },
+      { id: "concentrated", sev: 2, icon: "🧺", term: "التنويع",
+        test: (s, d) => { const held = Object.values(s.investments).filter(i => i.amount > 0); return d.totalInv > 800 && held.length === 1; },
+        text: (s) => { const k = Object.entries(s.investments).find(([, i]) => i.amount > 0)?.[0]; return `كل استثمارك في ${ASSETS[k]?.label ?? "أصل واحد"}. توزيعه على أصول تتحرك مستقلة يقلّل تذبذب محفظتك دون خفض عائدك كثيرًا.`; } },
+      { id: "idle_cash", sev: 2, icon: "💤", term: "تكلفة الفرصة البديلة",
+        test: (s, d) => s.cash > d.effExpenses * 6 && d.totalInv < s.cash * 0.5,
+        text: (s, d) => `لديك ${fmt(s.cash)} ريالًا نقدًا خاملاً — أكثر من ٦ أشهر مصروفات. النقد الزائد يتآكل بالتضخم بدل أن ينمو.` },
+      { id: "no_insurance", sev: 2, icon: "☂", term: "التأمين",
+        test: (s, d) => !s.insurance?.health && d.coverage < 4,
+        text: () => `لا تأمين صحي لديك وصندوق طوارئك ضعيف. قسط ٢٥ ريالًا يخفض الطارئ الصحي من ٢٢٠ إلى ٥٥.` },
+      { id: "no_land", sev: 1, icon: "🏜", term: "منحة الأرض",
+        test: (s) => s.housing.stage === "renting" && s.year >= 1,
+        text: (s) => `ما زلت تدفع ${fmt(s.rent)} ريالًا إيجارًا شهريًا. طلب منحة الأرض مجاني ويستغرق ٦ أشهر — كلما بكّرت بكّر توقّف الإيجار.` },
+      { id: "no_education", sev: 1, icon: "🎓", term: "الاستثمار في الذات",
+        test: (s) => (s.education?.level ?? 0) === 0 && !s.education?.pending && s.cash >= 400,
+        text: () => `لم تلتحق بأي دورة بعد. أول دورة تكلف ٤٠٠ وترفع دخلك 8% مدى الحياة — عائدها يفوق أي أصل مالي.` },
+      { id: "lifestyle", sev: 1, icon: "📈", term: "تضخّم نمط الحياة",
+        test: (s) => s.monthlyExpenses > 780,
+        text: (s) => `مصروفاتك ارتفعت إلى ${fmt(s.monthlyExpenses)}، وهدف استقلالك ارتفع معها إلى ${fmt(fiTarget(s))}.` },
+      { id: "no_goal", sev: 1, icon: "🎯", term: null,
+        test: (s) => s.goals.length === 0 && s.year >= 1,
+        text: () => `لم تحدّد أي هدف ادخاري. الأهداف تجعل الادخار ملموسًا بدل أن يكون رقمًا مجردًا.` },
+    ];
+
+    function currentAdvice(limit = 3) {
+      const d = derive(state);
+      const hits = [];
+      for (const r of ADVICE_RULES) {
+        let ok = false;
+        try { ok = r.test(state, d); } catch { ok = false; }
+        if (ok) hits.push({ ...r, body: r.text(state, d) });
+      }
+      hits.sort((a, b) => b.sev - a.sev);
+      return hits.slice(0, limit);
+    }
+
+    const SEV_COLOR = { 3: "#e74c3c", 2: "#e67e22", 1: "#c9974a" };
+    const SEV_LABEL = { 3: "خطر", 2: "تنبيه", 1: "فرصة" };
+
+    function adviceHtml() {
+      const list = currentAdvice();
+      if (!list.length) {
+        return `<div class="card" style="margin:10px 0;padding:12px;border-color:#2ecc71">
+          <h3 style="font-size:14px;color:#2ecc71;margin-bottom:4px">✅ المستشار المالي</h3>
+          <p class="muted" style="font-size:12px">وضعك سليم حاليًا: طوارئ كافية، دين محدود، ومحفظة متوازنة.</p>
+        </div>`;
+      }
+      return `<div class="card" style="margin:10px 0;padding:12px">
+        <h3 style="font-size:14px;color:#c9974a;margin-bottom:8px">💡 المستشار المالي</h3>
+        ${list.map((a) => `
+          <div style="padding:8px 0;border-bottom:1px solid rgba(29,61,53,0.6)">
+            <div style="display:flex;gap:6px;align-items:baseline;margin-bottom:3px">
+              <span>${a.icon}</span>
+              <b style="font-size:11px;color:${SEV_COLOR[a.sev]}">${SEV_LABEL[a.sev]}</b>
+              ${a.term ? `<span style="font-size:11px">${term(a.term)}</span>` : ""}
+            </div>
+            <p style="font-size:12px;line-height:1.8;margin:0">${a.body}</p>
+          </div>`).join("")}
+      </div>`;
+    }
+
     // ==================== إحصاءات الجولة ====================
     function statsRowsHtml() {
       const d = derive(state);
@@ -1646,6 +1734,7 @@
           </div>
         </div>
         ${housingOfficeHtml()}
+        ${adviceHtml()}
         <div class="card" style="margin:10px 0;padding:12px">
           <h3 style="font-size:14px;color:#c9974a;margin-bottom:8px">📊 إحصاءات الجولة</h3>
           ${statsRowsHtml()}
