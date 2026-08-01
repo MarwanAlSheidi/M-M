@@ -1861,6 +1861,15 @@
           ctx.font = "10px sans-serif";
           ctx.fillText(fmt(minVal), 5, h - 5);
           ctx.fillText(fmt(maxVal), 5, 15);
+        } else {
+          // بلا هذه الرسالة يظهر مربع أسود فارغ للاعب الجديد بلا تفسير
+          ctx.fillStyle = "#8aa89b";
+          ctx.font = "12px 'Noto Kufi Arabic', sans-serif";
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText("لا توجد بيانات بعد", canvas.width / 2, canvas.height / 2 - 8);
+          ctx.font = "10px 'Noto Kufi Arabic', sans-serif";
+          ctx.fillStyle = "rgba(138,168,155,0.7)";
+          ctx.fillText("يُرسم المنحنى بعد أول شهر من اللعب", canvas.width / 2, canvas.height / 2 + 12);
         }
       });
     }
