@@ -585,6 +585,13 @@
       lsRemove(SAVE_KEY);
       state = structuredClone(INITIAL_STATE);
       saveState();
+      // نعيد اللاعب إلى الساحة أيضًا؛ بدونها تبدأ الجولة الجديدة وأنت واقف
+      // عند باب مبنى من الجولة السابقة وزر الدخول ظاهر.
+      if (typeof player !== "undefined") {
+        player.x = 224; player.y = 352;
+        player.facing = "down";
+        if (typeof pressed !== "undefined") pressed.clear();
+      }
       closeAllModals();
       refreshHud();
     }
