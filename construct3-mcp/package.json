@@ -1,0 +1,27 @@
+{
+  "name": "construct3-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for reading, searching, and editing Construct 3 projects saved in the Folder project format",
+  "type": "module",
+  "bin": {
+    "construct3-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsc -w -p tsconfig.json"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3"
+  }
+}
