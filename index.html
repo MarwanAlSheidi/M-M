@@ -690,9 +690,13 @@
       s.month += 1;
       if (s.month > 12) { s.month = 1; s.year += 1; }
 
-      const totalInv = Object.values(s.investments).reduce((a, i) => a + i.amount, 0);
-      const nw = s.cash + s.emergency + totalInv - s.debt;
+      // نستخدم derive نفسها كي يطابق المنحنى ما يعرضه الشريط العلوي؛
+      // الحساب اليدوي السابق كان يُسقط قيمة المنزل فيختلف الرسم عن الواقع.
+      const nw = derive(s).netWorth;
       s.history = [...s.history, { month: s.month + (s.year - 1) * 12, netWorth: nw }];
+      // نحدّ من نمو الحفظ: يكفي آخر 600 شهر و400 حدث لأي جولة واقعية
+      if (s.history.length > 600) s.history = s.history.slice(-600);
+      if (s.eventLog.length > 400) s.eventLog = s.eventLog.slice(-400);
 
       setState(s);
 
@@ -1576,8 +1580,13 @@
     }
 
     function openTownHall() {
-      const logHtml = state.eventLog.length
-        ? state.eventLog.slice().reverse().map((e) => `<div style="padding:6px 0;border-bottom:1px solid #1d3d35">• ${e}</div>`).join("")
+      // نعرض الأحدث فقط: سجلّ طويل لا يُقرأ ويثقل الصفحة بلا فائدة
+      const LOG_SHOWN = 60;
+      const total = state.eventLog.length;
+      const shown = state.eventLog.slice(-LOG_SHOWN).reverse();
+      const logHtml = total
+        ? (total > LOG_SHOWN ? `<p class="muted" style="font-size:11px;margin-bottom:6px">أحدث ${LOG_SHOWN} من أصل ${total}</p>` : "")
+          + shown.map((e) => `<div style="padding:6px 0;border-bottom:1px solid #1d3d35">• ${e}</div>`).join("")
         : `<p class="muted">لا توجد أحداث بعد</p>`;
       pushModal(`
         <h2>📰 دار البلدية</h2>
