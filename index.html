@@ -761,7 +761,7 @@
       `, (root) => {
         const cv = root.querySelector("#zakatArt");
         if (cv) animateZakatArt(cv);
-        root.querySelector("#payZakat").addEventListener("click", () => {
+        root.querySelector("#payZakat").addEventListener("click", once(() => {
           if (state.cash < due) { root.querySelector("#zakatErr").textContent = "النقد لا يكفي."; return; }
           const z = state.zakat || { paidCount: 0, totalPaid: 0, unpaid: 0 };
           SFX.success();
@@ -770,15 +770,15 @@
             zakat: { ...z, paidCount: z.paidCount + 1, totalPaid: z.totalPaid + due, lastDueYear: state.year, unpaid: 0 },
             eventLog: [...state.eventLog, `🤲 أخرجت زكاة ${fmt(due)}`] });
           closeAllModals();
-        });
-        root.querySelector("#deferZakat").addEventListener("click", () => {
+        }));
+        root.querySelector("#deferZakat").addEventListener("click", once(() => {
           const z = state.zakat || { paidCount: 0, totalPaid: 0, unpaid: 0 };
           setState({ ...state,
             morale: Math.max(0, (state.morale ?? 70) - 6),
             zakat: { ...z, lastDueYear: state.year, unpaid: (z.unpaid || 0) + due },
             eventLog: [...state.eventLog, `⏳ أجّلت زكاة ${fmt(due)}`] });
           closeAllModals();
-        });
+        }));
       }, { mandatory: true });
     }
 
@@ -824,11 +824,11 @@
         const artCanvas = root.querySelector("#eventArt");
         if (artCanvas) animateEventArt(artCanvas, ev.id);
         root.querySelectorAll("[data-choice]").forEach((btn) => {
-          btn.addEventListener("click", () => {
+          btn.addEventListener("click", once(() => {
             const choice = ev.choices[Number(btn.dataset.choice)];
             setState(choice.effect(state));
             closeAllModals();
-          });
+          }));
         });
       }, { mandatory: true });
     }
@@ -992,6 +992,18 @@
       if (onMount) onMount(overlay);
     }
 
+    // يمنع تنفيذ الإجراء مرتين عند النقر/اللمس السريع مرّتين. المعالج يبني
+    // النافذة من جديد، لكن النقرة الثانية تصل إلى الزر القديم المنفصل ومعه
+    // قيم الحقول السابقة — فكان الإيداع يتضاعف والتخصيص يقدّم شهرين.
+    function once(handler) {
+      let used = false;
+      return function (ev) {
+        if (used) return;
+        used = true;
+        handler.call(this, ev);
+      };
+    }
+
     function topModalIsMandatory() {
       const top = modalStack[modalStack.length - 1];
       return !!(top && top.dataset.mandatory);
@@ -1045,25 +1057,25 @@
         <button class="btn btn-outline" style="margin-top:10px" data-close-all>خروج</button>
       `, (root) => {
         const err = root.querySelector("#bankErr");
-        root.querySelector("#insBtn").addEventListener("click", () => {
+        root.querySelector("#insBtn").addEventListener("click", once(() => {
           const on = !state.insurance?.health;
           SFX.build();
           setState({ ...state, insurance: { ...(state.insurance || { premium: 25 }), health: on },
             eventLog: [...state.eventLog, on ? "☂ اشتركت في التأمين الصحي" : "ألغيت التأمين الصحي"] });
           popModal(); openBank();
-        });
-        root.querySelector("#depositBtn").addEventListener("click", () => {
+        }));
+        root.querySelector("#depositBtn").addEventListener("click", once(() => {
           const amt = Math.floor(Number(root.querySelector("#depositAmt").value));
           if (!amt || amt <= 0 || amt > state.cash) { err.textContent = "مبلغ غير صالح."; return; }
           setState({ ...state, cash: state.cash - amt, emergency: state.emergency + amt });
           popModal(); openBank();
-        });
-        root.querySelector("#withdrawBtn").addEventListener("click", () => {
+        }));
+        root.querySelector("#withdrawBtn").addEventListener("click", once(() => {
           const amt = Math.floor(Number(root.querySelector("#withdrawAmt").value));
           if (!amt || amt <= 0 || amt > state.emergency) { err.textContent = "مبلغ غير صالح."; return; }
           setState({ ...state, cash: state.cash + amt, emergency: state.emergency - amt });
           popModal(); openBank();
-        });
+        }));
       });
     }
 
@@ -1103,23 +1115,23 @@
       `, (root) => {
         const err = root.querySelector("#marketErr");
         root.querySelectorAll("[data-buy]").forEach((btn) => {
-          btn.addEventListener("click", () => {
+          btn.addEventListener("click", once(() => {
             const key = btn.dataset.buy;
             const amt = Math.floor(Number(root.querySelector(`#amt_${key}`).value));
             if (!amt || amt <= 0 || amt > state.cash) { err.textContent = "مبلغ غير صالح."; return; }
             const inv = { ...state.investments[key], amount: state.investments[key].amount + amt, cost: state.investments[key].cost + amt };
             setState({ ...state, cash: state.cash - amt, investments: { ...state.investments, [key]: inv } });
             popModal(); openMarket();
-          });
+          }));
         });
         root.querySelectorAll("[data-sell]").forEach((btn) => {
-          btn.addEventListener("click", () => {
+          btn.addEventListener("click", once(() => {
             const key = btn.dataset.sell;
             const amount = state.investments[key].amount;
             if (amount <= 0) { err.textContent = "لا يوجد رصيد لبيعه."; return; }
             setState({ ...state, cash: state.cash + amount, investments: { ...state.investments, [key]: { ...state.investments[key], amount: 0, cost: 0 } } });
             popModal(); openMarket();
-          });
+          }));
         });
       });
     }
@@ -1197,11 +1209,11 @@
           });
         });
         refreshMoralePreview();
-        root.querySelector("#confirmAlloc").addEventListener("click", () => {
+        root.querySelector("#confirmAlloc").addEventListener("click", once(() => {
           const total = Object.values(alloc).reduce((a, b) => a + b, 0);
           if (total !== surplus) { err.textContent = `يجب أن يساوي التخصيص الفائض بالكامل (${fmt(surplus)}).`; return; }
           applyAllocation(alloc, surplus);
-        });
+        }));
 
         const repeatBtn = root.querySelector("#repeatAlloc");
         if (repeatBtn) {
@@ -1287,12 +1299,12 @@
         <button class="btn btn-outline" style="margin-top:10px" data-close-all>خروج</button>
       `, (root) => {
         const err = root.querySelector("#homeErr");
-        root.querySelector("#payBtn").addEventListener("click", () => {
+        root.querySelector("#payBtn").addEventListener("click", once(() => {
           const amt = Math.floor(Number(root.querySelector("#payAmt").value));
           if (!amt || amt <= 0 || amt > state.cash || amt > state.debt) { err.textContent = "مبلغ غير صالح."; return; }
           setState({ ...state, cash: state.cash - amt, debt: state.debt - amt });
           popModal(); openHome();
-        });
+        }));
         const downsize = root.querySelector("#downsizeBtn");
         if (downsize) {
           downsize.addEventListener("click", () => {
@@ -1354,7 +1366,7 @@
     function wireHousingPanel(root, err) {
       const buildBtn = root.querySelector("#buildBtn");
       if (buildBtn) {
-        buildBtn.addEventListener("click", () => {
+        buildBtn.addEventListener("click", once(() => {
           const remaining = HOME_COST - state.housing.built;
           const amt = Math.floor(Number(root.querySelector("#buildAmt").value));
           if (!amt || amt <= 0 || amt > state.cash || amt > remaining) { err.textContent = "مبلغ غير صالح."; return; }
@@ -1372,11 +1384,11 @@
           setState(s);
           popModal();
           if (finished) celebrateHome(); else openHome();
-        });
+        }));
       }
       const loanBtn = root.querySelector("#loanBtn");
       if (loanBtn) {
-        loanBtn.addEventListener("click", () => {
+        loanBtn.addEventListener("click", once(() => {
           const maxLoan = MAX_HOUSING_LOAN - state.housing.loan;
           const amt = Math.floor(Number(root.querySelector("#loanAmt").value));
           if (!amt || amt <= 0 || amt > maxLoan) { err.textContent = "مبلغ غير صالح."; return; }
@@ -1385,7 +1397,7 @@
             housing: { ...state.housing, loan: state.housing.loan + amt, loanPayment: state.housing.loanPayment + payment },
             eventLog: [...state.eventLog, `🏦 حصلت على قرض إسكان ${fmt(amt)}`] });
           popModal(); openHome();
-        });
+        }));
       }
     }
 
@@ -1430,7 +1442,7 @@
       `, (root) => {
         const err = root.querySelector("#goalsErr");
         root.querySelectorAll("[data-contrib]").forEach((btn) => {
-          btn.addEventListener("click", () => {
+          btn.addEventListener("click", once(() => {
             const id = Number(btn.dataset.contrib);
             const goal = state.goals.find((g) => g.id === id);
             const amt = Math.floor(Number(root.querySelector(`#contrib_${id}`).value));
@@ -1444,15 +1456,15 @@
             setState({ ...state, cash: state.cash - amt, goals, eventLog: log });
             popModal();
             if (justCompleted) celebrateGoal(goal.name); else openGoals();
-          });
+          }));
         });
-        root.querySelector("#addGoalBtn").addEventListener("click", () => {
+        root.querySelector("#addGoalBtn").addEventListener("click", once(() => {
           const name = root.querySelector("#newGoalName").value.trim();
           const target = Math.floor(Number(root.querySelector("#newGoalTarget").value));
           if (!name || !target || target <= 0) { err.textContent = "أدخل اسمًا ومبلغًا صحيحين."; return; }
           setState({ ...state, goals: [...state.goals, { id: Date.now(), name, target, saved: 0 }] });
           popModal(); openGoals();
-        });
+        }));
       });
     }
 
@@ -1482,7 +1494,7 @@
       `, (root) => {
         const cv = root.querySelector("#endArt");
         if (cv) win ? animateConfetti(cv) : drawEndSlump(cv);
-        root.querySelector("#restartBtn").addEventListener("click", resetGame);
+        root.querySelector("#restartBtn").addEventListener("click", once(resetGame));
       }, { mandatory: true });
     }
 
@@ -1746,11 +1758,11 @@
       `, (root) => {
         const applyBtn = root.querySelector("#applyLandBtn");
         if (applyBtn) {
-          applyBtn.addEventListener("click", () => {
+          applyBtn.addEventListener("click", once(() => {
             setState({ ...state, housing: { ...state.housing, stage: "waiting", waitMonths: LAND_WAIT_MONTHS },
               eventLog: [...state.eventLog, "📝 قدّمت طلب منحة أرض سكنية"] });
             popModal(); openTownHall();
-          });
+          }));
         }
         root.querySelector("#resetBtn").addEventListener("click", () => {
           pushModal(`
@@ -1758,7 +1770,7 @@
             <p style="line-height:1.9">سيُمحى تقدّمك بالكامل ويعود كل شيء إلى البداية. هل أنت متأكد؟</p>
             <button class="btn" style="margin-top:14px" id="confirmReset">نعم، ابدأ من جديد</button>
             <button class="btn btn-outline" style="margin-top:10px" data-close>تراجع</button>
-          `, (r2) => { r2.querySelector("#confirmReset").addEventListener("click", resetGame); });
+          `, (r2) => { r2.querySelector("#confirmReset").addEventListener("click", once(resetGame)); });
         });
         const canvas = root.querySelector("#chartCanvas");
         const ctx = canvas.getContext("2d");
@@ -1823,14 +1835,14 @@
       `, (root) => {
         const btn = root.querySelector("#enrollBtn");
         if (btn) {
-          btn.addEventListener("click", () => {
+          btn.addEventListener("click", once(() => {
             if (state.cash < nc.cost) { root.querySelector("#eduErr").textContent = "النقد لا يكفي."; return; }
             SFX.build();
             setState({ ...state, cash: state.cash - nc.cost,
               education: { ...edu, pending: { ...nc, monthsLeft: nc.months } },
               eventLog: [...state.eventLog, `📚 التحقت بـ${nc.name}`] });
             popModal(); openInstitute();
-          });
+          }));
         }
       });
     }
