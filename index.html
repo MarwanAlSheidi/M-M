@@ -2765,6 +2765,12 @@
       if (dir) pressed.delete(dir);
     });
 
+    // إن غادر التركيز النافذة أثناء ضغط مفتاح حركة فلن تصل رسالة keyup أبدًا،
+    // فتظل الشخصية تمشي بلا توقف عند العودة. نُفرغ المفاتيح عند فقدان التركيز.
+    const releaseAllKeys = () => pressed.clear();
+    window.addEventListener("blur", releaseAllKeys);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) releaseAllKeys(); });
+
     function bindDpad(id, dir) {
       const el = document.getElementById(id);
       const start = (e) => { e.preventDefault(); pressed.add(dir); };
