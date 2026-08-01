@@ -125,7 +125,16 @@
       "الفائدة المركبة": "الفائدة التي تُحسب على أصل المبلغ + الفوائد السابقة. قوتها تظهر مع الزمن.",
       "التضخم": "ارتفاع عام في الأسعار يقلل من القوة الشرائية للنقود مع الوقت.",
       "التنويع": "توزيع الاستثمارات على أصول مختلفة لتقليل المخاطر.",
-      "نسبة الدين إلى الدخل": "إجمالي الأقساط الشهرية ÷ الدخل الشهري. يجب ألا تتجاوز 35%.",
+      "نسبة الدين إلى الدخل": "إجمالي الأقساط الشهرية ÷ الدخل الشهري. يُنصح ألا تتجاوز 35%.",
+      "الدين إلى الدخل السنوي": "إجمالي دينك ÷ دخلك السنوي. مقياس لحجم الدين نفسه لا لعبء قسطه، وهو ما يحرّك تصنيفك الائتماني في اللعبة.",
+      "التصنيف الائتماني": "درجة من 300 إلى 850 تعكس انضباطك في الدين. كلما ارتفعت انخفضت الفائدة التي تدفعها على قروضك.",
+      "الاستقلال المالي": "أن تكفي عوائد أصولك المُدِرّة للدخل مصروفاتك دون حاجة إلى راتب. لا يُحتسب فيه بيت السكن لأنه لا يولّد دخلاً.",
+      "الثروة المُدِرّة للدخل": "الأصول التي تنتج عائدًا: النقد والطوارئ والاستثمارات. تُستثنى منها دار السكن لأنك تعيش فيها ولا تبيعها لتغطية مصروفاتك.",
+      "منحة الأرض": "أرض سكنية تُخصَّص للمواطن العُماني بناءً على طلبه. تختصر أكبر بند في كلفة التملك، ويبقى عليك تمويل البناء.",
+      "قرض الإسكان": "تمويل مدعوم طويل الأجل لبناء المسكن بفائدة منخفضة. قسطه ثابت شهريًا، ويقلّ رصيده مع كل دفعة.",
+      "حقوق الملكية": "ما تملكه فعلاً من المنزل = ما أنفقته على بنائه ناقص ما تبقّى من قرضه.",
+      "البناء التدريجي": "إنجاز المسكن على مراحل بحسب ما يتوفر من مال، بدل انتظار المبلغ كاملاً. شائع في عُمان ويقلل الحاجة للاقتراض.",
+      "تضخّم نمط الحياة": "ارتفاع إنفاقك كلما ارتفع دخلك، فيبقى فائضك كما هو رغم زيادة الراتب.",
       "صندوق الطوارئ": "مبلغ يعادل 3-6 أشهر من المصروفات، يستخدم فقط في الحالات الطارئة.",
       "العائد على الاستثمار": "الربح أو الخسارة من الاستثمار مقارنة بتكلفته الأصلية.",
       "السيولة": "سرعة تحويل الأصل إلى نقد بدون خسارة كبيرة في القيمة.",
@@ -891,11 +900,15 @@
         <p class="muted" style="margin-bottom:16px">المصروفات الشهرية: <b>${fmt(state.monthlyExpenses)}</b> ريال</p>
         <div class="card" style="margin-bottom:14px;padding:12px">
           <div style="display:flex;justify-content:space-between;padding:3px 0">
-            <span class="muted">${term("نسبة الدين إلى الدخل")}</span>
+            <span class="muted">${term("الدين إلى الدخل السنوي")}</span>
             <b>${state.monthlyIncome > 0 ? ((state.debt / (state.monthlyIncome * 12)) * 100).toFixed(0) : "—"}%</b>
           </div>
           <div style="display:flex;justify-content:space-between;padding:3px 0">
-            <span class="muted">التصنيف الائتماني</span>
+            <span class="muted">${term("نسبة الدين إلى الدخل")} (قسطك)</span>
+            <b>${state.monthlyIncome > 0 ? (((state.housing.loanPayment || 0) + (state.tempEffects || []).filter(e => e.type === "expense").reduce((a, e) => a + e.amount, 0)) / state.monthlyIncome * 100).toFixed(0) : "—"}%</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0">
+            <span class="muted">${term("التصنيف الائتماني")}</span>
             <b style="color:${creditLabel(state.creditScore).color}">${state.creditScore} · ${creditLabel(state.creditScore).text}</b>
           </div>
           <div style="display:flex;justify-content:space-between;padding:3px 0">
@@ -976,7 +989,7 @@
                    <input type="number" min="0" max="${maxLoan}" id="loanAmt" placeholder="قرض إسكان (حتى ${fmt(maxLoan)})" />
                    <button class="btn btn-sm btn-outline" id="loanBtn">اقترض</button>
                  </div>
-                 <p class="muted" style="font-size:11px;margin-top:6px">قرض مدعوم ${(HOUSING_LOAN_RATE * 1200).toFixed(1)}% سنويًا على ${HOUSING_LOAN_TERM / 12} سنة.</p>`
+                 <p class="muted" style="font-size:11px;margin-top:6px">${term("قرض الإسكان")}: مدعوم ${(HOUSING_LOAN_RATE * 1200).toFixed(1)}% سنويًا على ${HOUSING_LOAN_TERM / 12} سنة.</p>`
               : "")}
       </div>`;
     }
@@ -1191,8 +1204,8 @@
         return `<div class="card" style="margin:10px 0;padding:12px">
           <h3 style="font-size:14px;color:#c9974a;margin-bottom:6px">🏜️ مكتب الإسكان</h3>
           <p class="muted" style="font-size:12px;line-height:1.8;margin-bottom:10px">
-            بصفتك مواطنًا يحق لك التقدّم بطلب منحة أرض سكنية. التخصيص يستغرق نحو ${LAND_WAIT_MONTHS} أشهر،
-            وبعدها تستطيع البناء تدريجيًا. تدفع حاليًا <b>${fmt(state.rent)}</b> ريالًا إيجارًا شهريًا.
+            بصفتك مواطنًا يحق لك التقدّم بطلب ${term("منحة الأرض")}. التخصيص يستغرق نحو ${LAND_WAIT_MONTHS} أشهر،
+            وبعدها تستطيع ${term("البناء التدريجي")}. تدفع حاليًا <b>${fmt(state.rent)}</b> ريالًا إيجارًا شهريًا.
           </p>
           <button class="btn btn-sm" id="applyLandBtn">تقديم طلب منحة أرض</button>
         </div>`;
@@ -1221,8 +1234,8 @@
         <div class="card" style="margin:10px 0;padding:12px">
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">الرتبة</span><b style="color:#c9974a">${rankInfo(state).name}</b></div>
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">هدف الاستقلال المالي</span><b>${fmt(fiTarget(state))}</b></div>
-          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">ثروتك المُدِرّة للدخل</span><b style="color:#c9974a">${fmt(derive(state).investableNetWorth)}</b></div>
-          <p class="muted" style="font-size:11px;margin-top:4px">لا يُحتسب بيت السكن هنا — فهو لا يموّل مصروفاتك، لكنه يدخل في صافي ثروتك.</p>
+          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">${term("الثروة المُدِرّة للدخل")}</span><b style="color:#c9974a">${fmt(derive(state).investableNetWorth)}</b></div>
+          <p class="muted" style="font-size:11px;margin-top:4px">لا يُحتسب بيت السكن هنا — فهو لا يموّل مصروفاتك، لكنه يدخل في صافي ثروتك. اعرف أكثر: ${term("الاستقلال المالي")}</p>
         </div>
         ${housingOfficeHtml()}
         <h3 style="font-size:14px;color:#c9974a;margin:6px 0">سجل الأحداث</h3>
@@ -2193,8 +2206,29 @@
     if (isFirstVisit) {
       pushModal(`
         <h2>🏙️ أهلاً بك في مدينة المال</h2>
-        <p style="line-height:1.9;margin-bottom:14px">تحرّك بالأسهم أو أزرار الاتجاه، واقترب من أي مبنى للتفاعل معه:</p>
-        <p style="line-height:2.1">🏦 البنك — صندوق الطوارئ<br>📈 البورصة — الاستثمار<br>💼 العمل — استلام الراتب وتخصيصه<br>🏠 المنزل — المصروفات والديون<br>🎯 لوحة الأهداف<br>📰 دار البلدية — التقارير<br>📖 المكتبة — المصطلحات المالية</p>
+        <p style="line-height:1.9;margin-bottom:12px">
+          تبدأ براتب <b>1,000</b> ريال ومصروفات <b>600</b> (منها <b>220</b> إيجارًا)، أي فائض <b>400</b> شهريًا.
+          تحرّك بالأسهم أو أزرار الاتجاه، واقترب من أي مبنى للتفاعل معه.
+        </p>
+        <p style="line-height:2.1;margin-bottom:12px">
+          💼 العمل — استلام الراتب وتخصيص الفائض<br>
+          🏦 البنك — صندوق الطوارئ<br>
+          📈 البورصة — الاستثمار في أربعة أصول<br>
+          🏠 المنزل — الديون وبناء مسكنك<br>
+          🎯 لوحة الأهداف &nbsp;·&nbsp; 📰 دار البلدية &nbsp;·&nbsp; 📖 المكتبة
+        </p>
+        <div class="card" style="padding:12px;margin-bottom:6px">
+          <h3 style="font-size:14px;color:#c9974a;margin-bottom:6px">🏡 طريقك إلى بيت تملكه</h3>
+          <p style="line-height:1.9;font-size:13px">
+            قدّم طلب <b>منحة أرض</b> من دار البلدية (التخصيص خلال 6 أشهر)، ثم ابنِ على مراحل
+            بكلفة <b>50,000</b> ريال — بمدخراتك أو بـ<b>قرض إسكان</b> مدعوم. عند اكتماله يتوقف
+            الإيجار نهائيًا فتنخفض مصروفاتك، ويقترب هدفك من الطرفين.
+          </p>
+        </div>
+        <p class="muted" style="font-size:12px;line-height:1.8">
+          الفوز: أن تبلغ ثروتك المُدِرّة للدخل ما يكفي لتغطية مصروفاتك دون راتب.
+          بيت السكن لا يُحتسب فيها — فهو لا يموّل مصروفاتك.
+        </p>
         <button class="btn" style="margin-top:16px" data-close-all>ابدأ</button>
       `);
     }
