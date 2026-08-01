@@ -146,6 +146,12 @@
   <script>
     const fmt = (n) => Math.round(n).toLocaleString("en-US");
 
+    // كل نص يكتبه اللاعب (أسماء الأهداف مثلاً) يمرّ عبر هذه قبل الحقن في innerHTML.
+    // بدونها كان اسم هدف مثل <img onerror=...> يُحقن كعنصر حقيقي في الصفحة.
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => (
+      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+    ));
+
     // ==================== القاموس المالي ====================
     const DICTIONARY = {
       "الفائدة المركبة": "الفائدة التي تُحسب على أصل المبلغ + الفوائد السابقة. قوتها تظهر مع الزمن.",
@@ -1364,7 +1370,12 @@
         ${h.loan > 0
           ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-top:10px">
                <span class="muted">قرض الإسكان المتبقي</span><b>${fmt(h.loan)} · قسط ${fmt(h.loanPayment)}/شهر</b>
-             </div>`
+             </div>
+             <div class="row-actions" style="margin-top:8px">
+               <input type="number" min="0" id="repayHousing" placeholder="سداد مبكر (حتى ${fmt(Math.min(state.cash, h.loan))})" />
+               <button class="btn btn-sm btn-outline" id="repayHousingBtn">سدّد</button>
+             </div>
+             <p class="muted" style="font-size:11px;margin-top:6px">السداد المبكر يقلّل رصيد القرض وفائدته، ويخفض قسطك الشهري تناسبيًا.</p>`
           : (!owned && maxLoan > 0
               ? `<div class="row-actions" style="margin-top:10px">
                    <input type="number" min="0" max="${maxLoan}" id="loanAmt" placeholder="قرض إسكان (حتى ${fmt(maxLoan)})" />
@@ -1396,6 +1407,23 @@
           setState(s);
           popModal();
           if (finished) celebrateHome(); else openHome();
+        }));
+      }
+      const repayBtn = root.querySelector("#repayHousingBtn");
+      if (repayBtn) {
+        repayBtn.addEventListener("click", once(() => {
+          const h = state.housing;
+          const max = Math.min(state.cash, h.loan);
+          const amt = Math.floor(Number(root.querySelector("#repayHousing").value));
+          if (!amt || amt <= 0 || amt > max) { err.textContent = "مبلغ غير صالح."; return; }
+          const remaining = h.loan - amt;
+          // القسط ينكمش بنفس نسبة انكماش الرصيد، ويصفر عند السداد الكامل
+          const payment = remaining <= 0 ? 0 : Math.max(1, Math.round(h.loanPayment * (remaining / h.loan)));
+          SFX.spend();
+          setState({ ...state, cash: state.cash - amt,
+            housing: { ...h, loan: Math.max(0, remaining), loanPayment: payment },
+            eventLog: [...state.eventLog, remaining <= 0 ? "✅ سدّدت قرض الإسكان بالكامل" : `🏦 سداد مبكر ${fmt(amt)} من قرض الإسكان`] });
+          popModal(); openHome();
         }));
       }
       const loanBtn = root.querySelector("#loanBtn");
@@ -1431,7 +1459,7 @@
     function openGoals() {
       const goalsHtml = state.goals.length ? state.goals.map((g) => `
         <div class="card" style="margin:8px 0;padding:12px${g.done ? ";border-color:#2ecc71" : ""}">
-          <div style="display:flex;justify-content:space-between"><span>${g.done ? "✅ " : ""}${g.name}</span><span>${fmt(g.saved)} / ${fmt(g.target)}</span></div>
+          <div style="display:flex;justify-content:space-between"><span>${g.done ? "✅ " : ""}${esc(g.name)}</span><span>${fmt(g.saved)} / ${fmt(g.target)}</span></div>
           <div class="progress"><div class="progress-fill" style="width:${Math.min(100, (g.saved / g.target) * 100)}%;background:#2ecc71"></div></div>
           ${g.done
             ? `<p class="muted" style="margin-top:8px;font-size:13px;color:#2ecc71">مكتمل 🎉</p>`
@@ -1535,7 +1563,7 @@
       pushModal(`
         <h2>🎉 تحقق الهدف!</h2>
         <canvas class="celebrate-art" id="confettiArt" width="340" height="140"></canvas>
-        <p style="line-height:1.9;text-align:center;font-size:16px">أكملت هدف <b style="color:#2ecc71">${goalName}</b> بالكامل.</p>
+        <p style="line-height:1.9;text-align:center;font-size:16px">أكملت هدف <b style="color:#2ecc71">${esc(goalName)}</b> بالكامل.</p>
         <button class="btn" style="margin-top:14px" id="backToGoals">عودة إلى الأهداف</button>
       `, (root) => {
         const canvas = root.querySelector("#confettiArt");
@@ -1722,7 +1750,7 @@
       const shown = state.eventLog.slice(-LOG_SHOWN).reverse();
       const logHtml = total
         ? (total > LOG_SHOWN ? `<p class="muted" style="font-size:11px;margin-bottom:6px">أحدث ${LOG_SHOWN} من أصل ${total}</p>` : "")
-          + shown.map((e) => `<div style="padding:6px 0;border-bottom:1px solid #1d3d35">• ${e}</div>`).join("")
+          + shown.map((e) => `<div style="padding:6px 0;border-bottom:1px solid #1d3d35">• ${esc(e)}</div>`).join("")
         : `<p class="muted">لا توجد أحداث بعد</p>`;
       pushModal(`
         <h2>📰 دار البلدية</h2>
