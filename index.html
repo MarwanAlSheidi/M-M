@@ -203,11 +203,15 @@
 
     // ==================== الإنجازات ====================
     const ACHIEVEMENTS = [
-      { id: "first_save",  name: "أول ألف",            icon: "💰", test: (s, d) => d.investableNetWorth >= 1000 },
+      // يُقاس بما ادّخرته واستثمرته فعلاً لا بما بدأت به: اللاعب يبدأ
+      // بـ1,150 قابلة للاستثمار، فشرط "أول ألف" كان يتحقق قبل أي فعل.
+      { id: "first_save",  name: "أول ألف",            icon: "💰", test: (s, d) => s.emergency + d.totalInv >= 1000 },
       { id: "emergency",   name: "طوارئ ٦ أشهر",       icon: "🛡", test: (s, d) => s.emergency >= d.emergencyTarget },
       { id: "investor",    name: "أول استثمار",        icon: "📈", test: (s) => Object.values(s.investments).some((i) => i.cost > 0) },
       { id: "diversified", name: "محفظة متنوعة",       icon: "🧺", test: (s) => Object.values(s.investments).filter((i) => i.amount > 0).length >= 3 },
-      { id: "debt_free",   name: "بلا ديون",           icon: "🕊", test: (s) => s.debt === 0 && s.eventLog.length > 3 },
+      // يتطلب أن تكون قد حملت دينًا ثم سدّدته؛ الشرط السابق كان يُمنح
+      // لمن لم يستدن قط لأن اللاعب يبدأ بلا دين أصلاً.
+      { id: "debt_free",   name: "سدّد ديونه",         icon: "🕊", test: (s) => s.hadDebt === true && s.debt === 0 },
       { id: "landowner",   name: "صاحب أرض",           icon: "🏜", test: (s) => ["land", "building", "owned"].includes(s.housing.stage) },
       { id: "homeowner",   name: "بيت تملكه",          icon: "🏡", test: (s) => s.housing.stage === "owned" },
       { id: "zakat3",      name: "زكّى ٣ سنوات",       icon: "🤲", test: (s) => (s.zakat?.paidCount ?? 0) >= 3 },
@@ -257,6 +261,7 @@
       rent: 220,                    // جزء الإيجار، يسقط عند التملك
       creditScore: 700,
       morale: 70,
+      hadDebt: false,
       insurance: { health: false, premium: 25 },
       education: { level: 0, studyingUntil: 0, pending: null },
       zakat: { paidCount: 0, totalPaid: 0, lastDueYear: 0, unpaid: 0 },
@@ -512,6 +517,8 @@
     function setState(next) {
       const prevNetWorth = derive(state).netWorth;
       state = next;
+      // نتذكّر أنك حملت دينًا يومًا، ليصبح إنجاز السداد مستحقًا لا مجانيًا
+      if (state.debt > 0) state.hadDebt = true;
       localStorage.setItem(SAVE_KEY, JSON.stringify(state));
       const delta = derive(state).netWorth - prevNetWorth;
       if (Math.abs(delta) >= 1) {
