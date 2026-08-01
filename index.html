@@ -257,7 +257,9 @@
 
     // ==================== الأحداث المالية ====================
     const EVENTS = [
-      { id: "job_loss", title: "فقدان الوظيفة", desc: "تم تسريحك! دخلك ينخفض 60% لمدة 3 أشهر.", choices: [
+      // لا تُسرَّح من وظيفة أنت أصلاً خارجها: لا يظهر ما دام أثر خفض دخل نشطًا
+      { id: "job_loss", title: "فقدان الوظيفة", desc: "تم تسريحك! دخلك ينخفض 60% لمدة 3 أشهر.",
+        when: (s) => !(s.tempEffects || []).some((e) => e.type === "income" && e.amount < 0), choices: [
         { label: "استخدم صندوق الطوارئ", effect: (s) => ({ ...s, emergency: s.emergency - 250, tempEffects: [...s.tempEffects, { type: "income", amount: -Math.round(s.monthlyIncome * 0.6), monthsLeft: 3 }], eventLog: [...s.eventLog, "فقدان وظيفة - استخدم الطوارئ"] }) },
         { label: "اقترض لتغطية المصروفات", effect: (s) => ({ ...s, debt: s.debt + 750, cash: s.cash + 750, tempEffects: [...s.tempEffects, { type: "income", amount: -Math.round(s.monthlyIncome * 0.6), monthsLeft: 3 }], eventLog: [...s.eventLog, "فقدان وظيفة - اقترض"] }) }
       ]},
@@ -362,7 +364,9 @@
       const incomeAdj = tempEffects.filter((e) => e.type === "income").reduce((a, e) => a + e.amount, 0);
       const expenseAdj = tempEffects.filter((e) => e.type === "expense").reduce((a, e) => a + e.amount, 0);
       const moraleMod = moraleModifier(state.morale ?? 70);
-      const effIncome = Math.round((state.monthlyIncome + incomeAdj) * (1 + moraleMod));
+      // أرضية عند الصفر: مهما تراكمت آثار خفض الدخل لا يصبح الراتب سالبًا
+      // (لا تدفع لصاحب العمل). كان تكرار فقدان الوظيفة يهبط بالدخل تحت الصفر.
+      const effIncome = Math.max(0, Math.round((state.monthlyIncome + incomeAdj) * (1 + moraleMod)));
       const effExpenses = state.monthlyExpenses + expenseAdj;
       const surplus = effIncome - effExpenses;
       const totalInv = Object.values(state.investments).reduce((sum, inv) => sum + inv.amount, 0);
