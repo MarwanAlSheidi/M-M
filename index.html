@@ -449,11 +449,32 @@
     const FLOATERS = [];    // أرقام تطفو عند تغيّر صافي الثروة
     let state = loadState();
 
+    // دمج عميق: الدمج السطحي كان يُبقي الكائنات المتداخلة من الحفظ القديم كما هي،
+    // فيغيب عنها أي حقل أُضيف لاحقًا. مثال حقيقي: حفظ قديم في مرحلة "waiting"
+    // بلا waitMonths كان يعطي undefined - 1 = NaN، و NaN <= 0 خطأ دائمًا،
+    // فيعلق اللاعب في انتظار منحة الأرض إلى الأبد.
+    function mergeDefaults(defaults, saved) {
+      if (Array.isArray(defaults)) return Array.isArray(saved) ? saved : structuredClone(defaults);
+      if (defaults && typeof defaults === "object") {
+        const src = saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+        const out = {};
+        for (const k of Object.keys(defaults)) out[k] = mergeDefaults(defaults[k], src[k]);
+        // نحتفظ بأي مفاتيح إضافية في الحفظ لا نعرفها (توافق للأمام)
+        for (const k of Object.keys(src)) if (!(k in out)) out[k] = src[k];
+        return out;
+      }
+      return saved === undefined || saved === null || (typeof defaults === "number" && !Number.isFinite(saved))
+        ? defaults
+        : saved;
+    }
+
     function loadState() {
       try {
         const saved = localStorage.getItem(SAVE_KEY);
         if (!saved) { isFirstVisit = true; return structuredClone(INITIAL_STATE); }
-        return { ...structuredClone(INITIAL_STATE), ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        if (!parsed || typeof parsed !== "object") throw new Error("bad save");
+        return mergeDefaults(structuredClone(INITIAL_STATE), parsed);
       } catch {
         isFirstVisit = true;
         return structuredClone(INITIAL_STATE);
@@ -577,6 +598,14 @@
         investments: cloneInvestments(source.investments),
         tempEffects: (source.tempEffects || []).map((e) => ({ ...e })),
         housing: { ...(source.housing || INITIAL_STATE.housing) },
+        // education تُنسخ بعمق لأن pending يُعدَّل مباشرة أدناه؛ بدونها كان
+        // العدّاد يُنقص في الحالة الأصلية أيضًا عبر مرجع مشترك.
+        education: {
+          ...(source.education || INITIAL_STATE.education),
+          pending: source.education?.pending ? { ...source.education.pending } : null,
+        },
+        zakat: { ...(source.zakat || INITIAL_STATE.zakat) },
+        insurance: { ...(source.insurance || INITIAL_STATE.insurance) },
       };
 
       // منحة الأرض: انتظار التخصيص من البلدية
