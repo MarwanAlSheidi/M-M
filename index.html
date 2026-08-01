@@ -457,21 +457,28 @@
       { min: 0, name: "مبتدئ" },
       { min: 2500, name: "مدّخر" },
       { min: 12000, name: "مستثمر" },
-      { min: 30000, name: "مالك ومستثمر" },
+      { min: 30000, name: "مستثمر متمرّس" },
       { min: 50000, name: "قريب من الاستقلال" },
     ];
 
+    // يُقاس السلّم بالثروة المُدِرّة للدخل لا بصافي الثروة، لأنه سلّم نحو
+    // الاستقلال المالي: من يملك بيته ولا يملك استثمارات كان يُسمّى "قريب من
+    // الاستقلال" وهو لم يقطع سُبع الطريق. أما "متعثّر" فتُقاس بصافي الثروة
+    // كاملًا، إذ لا يصح وصف من يملك بيته خالصًا بالتعثّر.
     function rankInfo(s) {
       const d = derive(s);
-      const nw = d.netWorth;
       const fi = fiTarget(s);
       if (d.investableNetWorth >= fi) return { name: "مستقل ماليًا 🏆", pct: 1, nextLabel: "اكتمل" };
-      let idx = 0;
-      for (let i = 0; i < RANKS.length; i++) if (nw >= RANKS[i].min) idx = i;
+      if (d.netWorth < 0) {
+        const pct = Math.max(0, Math.min(1, (d.netWorth - BANKRUPT_AT) / (0 - BANKRUPT_AT)));
+        return { name: RANKS[0].name, pct, nextLabel: "التالي عند 0" };
+      }
+      const w = Math.max(0, d.investableNetWorth);
+      let idx = 1;
+      for (let i = 1; i < RANKS.length; i++) if (w >= RANKS[i].min) idx = i;
       const cur = RANKS[idx];
       const nextMin = idx + 1 < RANKS.length ? RANKS[idx + 1].min : fi;
-      const base = cur.min === -Infinity ? BANKRUPT_AT : cur.min;
-      const pct = Math.max(0, Math.min(1, (nw - base) / (nextMin - base)));
+      const pct = Math.max(0, Math.min(1, (w - cur.min) / (nextMin - cur.min)));
       return { name: cur.name, pct, nextLabel: `التالي عند ${fmt(nextMin)}` };
     }
 
