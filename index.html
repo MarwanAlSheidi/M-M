@@ -17,6 +17,10 @@
     .hud-net small { font-size: 13px; font-weight: 400; opacity: 0.7; }
     #moodEmoji { font-size: 28px; }
 
+    .rank-bar { margin: 10px 14px 0; }
+    .rank-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; font-size: 12px; }
+    .rank-head span:first-child { color: #c9974a; font-weight: 700; }
+    .rank-head .muted { font-size: 10px; }
     .stats-panel { display: none; margin: 10px 12px; }
     .stats-panel.open { display: flex; gap: 8px; }
     .stat-box { flex: 1; background: #122e27; border-radius: 12px; padding: 10px 6px; text-align: center; border: 1px solid #1d3d35; }
@@ -72,6 +76,14 @@
         <div class="hud-net" id="hudNet">0 <small>ريال</small></div>
       </div>
       <button class="btn btn-sm" id="statsBtn">📊</button>
+    </div>
+
+    <div class="rank-bar">
+      <div class="rank-head">
+        <span id="rankName">مبتدئ</span>
+        <span class="muted" id="rankNext"></span>
+      </div>
+      <div class="progress" style="height:6px;margin:0"><div class="progress-fill" id="rankFill" style="width:0%;background:#c9974a"></div></div>
     </div>
 
     <div class="stats-panel" id="statsPanel">
@@ -183,6 +195,33 @@
       return { surplus, netWorth, totalInv, coverage, effIncome, effExpenses };
     }
 
+    // ==================== الرتب ونهاية اللعبة ====================
+    // هدف الاستقلال المالي: ثروة تعادل 12 ضعف المصروفات السنوية.
+    function fiTarget(s) { return s.monthlyExpenses * 12 * 12; }
+    const BANKRUPT_AT = -10000;
+
+    const RANKS = [
+      { min: -Infinity, name: "متعثّر" },
+      { min: 0, name: "مبتدئ" },
+      { min: 10000, name: "مدّخر" },
+      { min: 50000, name: "مستثمر" },
+      { min: 150000, name: "مستثمر متمرّس" },
+      { min: 400000, name: "قريب من الاستقلال" },
+    ];
+
+    function rankInfo(s) {
+      const nw = derive(s).netWorth;
+      const fi = fiTarget(s);
+      if (nw >= fi) return { name: "مستقل ماليًا 🏆", pct: 1, nextLabel: "اكتمل" };
+      let idx = 0;
+      for (let i = 0; i < RANKS.length; i++) if (nw >= RANKS[i].min) idx = i;
+      const cur = RANKS[idx];
+      const nextMin = idx + 1 < RANKS.length ? RANKS[idx + 1].min : fi;
+      const base = cur.min === -Infinity ? BANKRUPT_AT : cur.min;
+      const pct = Math.max(0, Math.min(1, (nw - base) / (nextMin - base)));
+      return { name: cur.name, pct, nextLabel: `التالي عند ${fmt(nextMin)}` };
+    }
+
     function cloneInvestments(inv) {
       return {
         stocks: { ...inv.stocks },
@@ -216,6 +255,30 @@
       localStorage.setItem(SAVE_KEY, JSON.stringify(state));
       const delta = derive(state).netWorth - prevNetWorth;
       if (Math.abs(delta) >= 1) spawnFloater(delta);
+      refreshHud();
+      checkEnding();
+    }
+
+    // تُستدعى بعد كل تغيير؛ تعرض شاشة النهاية مرة واحدة فقط
+    function checkEnding() {
+      if (state.finished) return;
+      const nw = derive(state).netWorth;
+      if (nw >= fiTarget(state)) {
+        state.finished = "win";
+        localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+        showEnding("win");
+      } else if (nw <= BANKRUPT_AT) {
+        state.finished = "lose";
+        localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+        showEnding("lose");
+      }
+    }
+
+    function resetGame() {
+      localStorage.removeItem(SAVE_KEY);
+      state = structuredClone(INITIAL_STATE);
+      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      closeAllModals();
       refreshHud();
     }
 
@@ -686,6 +749,55 @@
       });
     }
 
+    function showEnding(kind) {
+      const d = derive(state);
+      const months = (state.year - 1) * 12 + state.month;
+      const doneGoals = state.goals.filter((g) => g.done).length;
+      const win = kind === "win";
+      pushModal(`
+        <h2>${win ? "🏆 استقلال مالي!" : "💸 إفلاس"}</h2>
+        <canvas class="celebrate-art" id="endArt" width="340" height="140"></canvas>
+        <p style="line-height:1.9;text-align:center">
+          ${win
+            ? `وصلت إلى ثروة تكفي لتغطية مصروفاتك دون الحاجة إلى راتب.`
+            : `تراكمت الديون وتجاوزت خسائرك ما تملك. جرّب توازنًا أفضل بين الطوارئ والاستثمار.`}
+        </p>
+        <div class="card" style="margin:14px 0;padding:12px">
+          <div style="display:flex;justify-content:space-between;padding:4px 0"><span class="muted">صافي الثروة</span><b style="color:${win ? "#2ecc71" : "#e74c3c"}">${fmt(d.netWorth)}</b></div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0"><span class="muted">المدة</span><b>${months} شهرًا</b></div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0"><span class="muted">أهداف مكتملة</span><b>${doneGoals}</b></div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0"><span class="muted">أحداث مررت بها</span><b>${state.eventLog.length}</b></div>
+        </div>
+        <button class="btn" id="restartBtn">ابدأ من جديد</button>
+        <button class="btn btn-outline" style="margin-top:10px" data-close-all>تابع الاستكشاف</button>
+      `, (root) => {
+        const cv = root.querySelector("#endArt");
+        if (cv) win ? animateConfetti(cv) : drawEndSlump(cv);
+        root.querySelector("#restartBtn").addEventListener("click", resetGame);
+      });
+    }
+
+    function drawEndSlump(canvas) {
+      const c = canvas.getContext("2d");
+      const W = canvas.width, H = canvas.height;
+      c.clearRect(0, 0, W, H);
+      c.strokeStyle = "rgba(138,168,155,0.2)"; c.lineWidth = 1;
+      for (let i = 1; i < 4; i++) { c.beginPath(); c.moveTo(10, (H / 4) * i); c.lineTo(W - 10, (H / 4) * i); c.stroke(); }
+      const data = state.history.length > 1 ? state.history.map((p) => p.netWorth) : [0, -2000, -5000, -8000, BANKRUPT_AT];
+      const max = Math.max(...data, 1000), min = Math.min(...data, BANKRUPT_AT);
+      const range = max - min || 1;
+      c.beginPath(); c.strokeStyle = "#e74c3c"; c.lineWidth = 2.5;
+      data.forEach((v, i) => {
+        const x = 14 + (i / (data.length - 1 || 1)) * (W - 28);
+        const y = H - 14 - ((v - min) / range) * (H - 34);
+        i === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
+      });
+      c.stroke();
+      c.fillStyle = "#e74c3c"; c.font = "bold 13px sans-serif";
+      c.textAlign = "left"; c.textBaseline = "middle";
+      c.fillText("▼", 16, 16);
+    }
+
     function celebrateGoal(goalName) {
       pushModal(`
         <h2>🎉 تحقق الهدف!</h2>
@@ -741,10 +853,23 @@
         <h2>📰 دار البلدية</h2>
         <h3 style="font-size:14px;color:#c9974a;margin:6px 0">صافي الثروة عبر الزمن</h3>
         <canvas id="chartCanvas" width="320" height="160" style="width:100%;border-radius:8px;background:#0a1e1a;margin-bottom:14px"></canvas>
+        <div class="card" style="margin:10px 0;padding:12px">
+          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">الرتبة</span><b style="color:#c9974a">${rankInfo(state).name}</b></div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">هدف الاستقلال المالي</span><b>${fmt(fiTarget(state))}</b></div>
+        </div>
         <h3 style="font-size:14px;color:#c9974a;margin:6px 0">سجل الأحداث</h3>
         ${logHtml}
-        <button class="btn btn-outline" style="margin-top:14px" data-close-all>خروج</button>
+        <button class="btn btn-outline" style="margin-top:14px" id="resetBtn">إعادة بدء اللعبة</button>
+        <button class="btn btn-outline" style="margin-top:10px" data-close-all>خروج</button>
       `, (root) => {
+        root.querySelector("#resetBtn").addEventListener("click", () => {
+          pushModal(`
+            <h2>إعادة بدء اللعبة</h2>
+            <p style="line-height:1.9">سيُمحى تقدّمك بالكامل ويعود كل شيء إلى البداية. هل أنت متأكد؟</p>
+            <button class="btn" style="margin-top:14px" id="confirmReset">نعم، ابدأ من جديد</button>
+            <button class="btn btn-outline" style="margin-top:10px" data-close>تراجع</button>
+          `, (r2) => { r2.querySelector("#confirmReset").addEventListener("click", resetGame); });
+        });
         const canvas = root.querySelector("#chartCanvas");
         const ctx = canvas.getContext("2d");
         const data = state.history;
@@ -1601,6 +1726,12 @@
       document.getElementById("statEmergency").textContent = fmt(state.emergency);
       document.getElementById("statInvest").textContent = fmt(d.totalInv);
       document.getElementById("statDebt").textContent = fmt(state.debt);
+      const r = rankInfo(state);
+      document.getElementById("rankName").textContent = r.name;
+      document.getElementById("rankNext").textContent = r.nextLabel;
+      const fill = document.getElementById("rankFill");
+      fill.style.width = `${r.pct * 100}%`;
+      fill.style.background = r.pct >= 1 ? "#2ecc71" : "#c9974a";
     }
     refreshHud();
 
