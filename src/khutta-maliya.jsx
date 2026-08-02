@@ -471,6 +471,289 @@ function DecisionCard({ n, total, card, value, onPick, onSkip }) {
   );
 }
 
+/* ─────────────────────────  دوال حساب صرفة (بلا React) ─────────────────────────
+   مفصولة عن المكوّن كي يمكن تشغيلها لأي عميل أثناء التصدير الجماعي في وضع الكوتش،
+   لا فقط للعميل المفتوح حالياً في الواجهة. */
+
+function lbl(spec, v) {
+  const o = spec.o.find((x) => x[0] === v);
+  return o ? o[1] : "لم يُجب";
+}
+
+function computeIdentity(ans) {
+  const counts = {}; Object.keys(CATS).forEach((k) => (counts[k] = 0));
+  let n = 0;
+  CARDS.forEach((card) => {
+    const i = ans[card.id];
+    if (i === undefined) return;
+    n++; counts[card.o[i].c]++;
+  });
+  const P = {}; Object.keys(CATS).forEach((k) => (P[k] = n ? Math.round((counts[k] / n) * 100) : 0));
+  const rank = Object.keys(CATS).sort((a, b) => counts[b] - counts[a]);
+
+  const present = ans.t1 !== undefined && ans.t2 !== undefined && ans.t1 > ans.t2;
+  const frame = ans.t3 !== undefined && ans.t4 !== undefined && ans.t3 !== ans.t4;
+  const incons = present || frame;
+
+  const total = CARDS.length;
+  const ready = n >= Math.ceil(total * 0.6);
+  const top = ready ? rank[0] : null;
+  const second = ready ? rank[1] : null;
+  const prof = !ready ? null : incons ? SPLIT : TYPES[top];
+  return { counts, P, rank, present, frame, incons, done:n, total, ready, top, second, prof };
+}
+
+function computeCalc(d, horizon, idn) {
+  const totalAssets = sum(d.assets), totalLiabs = sum(d.liabs);
+  const net = totalAssets - totalLiabs;
+  const invested = (d.assets[2] || 0) + (d.assets[3] || 0);
+
+  const zakatableTotal = ASSETS.reduce((s, [k], i) => s + (d.zakat.flags[k] ? (d.assets[i] || 0) : 0), 0);
+  const zakatMeetsNisab = d.zakat.nisab > 0 ? zakatableTotal >= d.zakat.nisab : null;
+  const zakatDue = d.zakat.hawl && zakatMeetsNisab ? zakatableTotal * 0.025 : 0;
+
+  const get = (k) => (d.exp.find((e) => e.key === k) || {}).cost || 0;
+  const totalExp = sum(d.exp.map((e) => e.cost));
+  const needs = sum(d.exp.filter((e) => e.type === "احتياج").map((e) => e.cost));
+  const wants = sum(d.exp.filter((e) => e.type === "رغبة").map((e) => e.cost));
+  const income = sum(d.inc.map((i) => i.amount));
+  const surplus = income - totalExp;
+  const savingsRate = income > 0 ? surplus / income : 0;
+  const r503020 = income > 0 ? { needs:needs / income, wants:wants / income, save:surplus / income } : null;
+  const dtiHousing = income > 0 ? get("housing") / income : 0;
+  const dtiTotal = income > 0 ? (get("housing") + get("debt")) / income : 0;
+
+  const base = { fixed:3, mixed:6, var:9, season:12 }[d.income] || 6;
+  const behav = idn.ready && (idn.incons || idn.P.now >= 25) ? 1 : 0;
+  const efRec = Math.min(12, base + (parseInt(d.dependents, 10) || 0) + behav);
+  const efMonths = d.efOverride || efRec;
+  const efTarget = needs * efMonths;
+  const efGap = Math.max(efTarget - d.efNow, 0);
+  const efCover = needs > 0 ? d.efNow / needs : 0;
+
+  const annualIncome = income * 12;
+  const expectedNet = (d.age * annualIncome) / 10;
+  const netRatio = expectedNet > 0 ? net / expectedNet : 0;
+  const netClass = expectedNet <= 0 ? "" : netRatio >= 2 ? "بانٍ متميّز للثروة" : netRatio >= 0.5 ? "بانٍ متوسط للثروة" : "دون المتوقّع لعمرك ودخلك";
+
+  const annualExp = totalExp * 12;
+  const fiTarget = annualExp * 25;
+  const fiFor = (s) => {
+    if (annualExp <= 0 || s <= 0) return null;
+    let b = invested;
+    for (let y = 1; y <= 60; y++) { b = b * 1.04 + s * 12; if (b >= fiTarget) return y; }
+    return null;
+  };
+  const fiYears = fiFor(surplus);
+  const fiPlus = fiFor(surplus + income * 0.05);
+
+  const BANDS = ["0–20٪","20–40٪","40–60٪","60–75٪","75–90٪"];
+  const hs = { s:0, m:1, l:2, xl:3 }[d.horizon];
+  let equity = null;
+  if (hs !== undefined && idn.ready) {
+    const tilt = idn.P.grow >= idn.P.safe + 20 ? 3 : idn.P.grow >= idn.P.safe ? 2 : idn.P.safe >= idn.P.grow + 20 ? 0 : 1;
+    equity = BANDS[Math.max(0, Math.min(4, Math.round((hs + tilt) * 0.72)))];
+  }
+
+  const inflRate = (d.inflation || 0) / 100;
+  const nominalOf = (cost, m) => (cost || 0) * Math.pow(1 + inflRate, m / 12);
+  const dueBy = {};
+  d.goals.forEach((g) => { dueBy[g.m] = (dueBy[g.m] || 0) + nominalOf(g.cost, g.m); });
+  let pot = 0, ef = efGap, efDone = efGap === 0 ? 0 : null, firstShort = null, worst = 0;
+  const capYear = [0,0,0,0,0], costYear = [0,0,0,0,0];
+  for (let i = 0; i < 60; i++) {
+    const y = Math.floor(i / 12);
+    let s = surplus;
+    if (ef > 0 && s > 0) { const put = Math.min(ef, s); ef -= put; s -= put; if (ef === 0 && efDone === null) efDone = i; }
+    pot += s; capYear[y] += s;
+    const due = dueBy[i] || 0;
+    if (due) { costYear[y] += due; pot -= due; if (pot < 0 && firstShort === null) firstShort = i; }
+    if (pot < worst) worst = pot;
+  }
+  const efNever = efGap > 0 && efDone === null;
+
+  const inH = d.goals.filter((g) => g.m < horizon);
+  const goalsTotal = sum(inH.map((g) => g.cost));
+  const goalsTotalNominal = sum(inH.map((g) => nominalOf(g.cost, g.m)));
+  const goalsAllReal = sum(d.goals.map((g) => g.cost));
+  const goalsAllNominal = sum(d.goals.map((g) => nominalOf(g.cost, g.m)));
+  const byTier = ["core","life","aspire"].map((t) => sum(inH.filter((g) => g.tier === t).map((g) => g.cost)));
+  const untyped = d.goals.filter((g) => !g.type).length;
+  const manualFunded = d.goals.filter((g) => g.fund && g.fund !== "auto").length;
+
+  return { totalAssets, totalLiabs, net, invested, totalExp, needs, wants, income, surplus,
+    savingsRate, r503020, dtiHousing, dtiTotal, efRec, efMonths, efTarget, efGap, efCover, behav,
+    expectedNet, netClass, netRatio, fiTarget, fiYears, fiPlus, equity,
+    capYear, costYear, efDone, efNever, firstShort, worstShort:-worst, endPot:pot,
+    goalsTotal, goalsTotalNominal, goalsAllReal, goalsAllNominal, byTier, untyped, manualFunded, annualExp, nominalOf,
+    zakatableTotal, zakatMeetsNisab, zakatDue };
+}
+
+function computeDebtPlan(debts, extra) {
+  const rows = debts.filter((x) => (x.balance || 0) > 0);
+  if (!rows.length) return null;
+  const ex = Math.max(0, extra || 0);
+  const totalMin = sum(rows.map((r) => r.min));
+  const totalBalance = sum(rows.map((r) => r.balance));
+  return {
+    extra:ex, totalMin, totalBalance,
+    avalanche: simulateDebts(rows, ex, DEBT_ORDER.avalanche),
+    snowball: simulateDebts(rows, ex, DEBT_ORDER.snowball),
+  };
+}
+
+function buildReport(d, c, idn, debtPlan, factsDone) {
+  const M = (n) => money(n, d.cur);
+  const F = [];
+  const add = (lvl, t, det) => F.push({ lvl, t, det });
+
+  if (c.income > 0 && c.surplus < 0)
+    add("high","عجز شهري", `المصروفات تفوق الدخل بـ ${M(-c.surplus)}. بند الرغبات ${M(c.wants)} وهو أول ما يُراجع.`);
+  if (c.efNever) add("high","صندوق الطوارئ لا يكتمل أبداً","لا يوجد فائض شهري موجب، فالفجوة لا تُغلق مهما طال الأمد.");
+  if (idn.incons)
+    add("high","قرار يتغيّر بتغيّر الصياغة", [
+      idn.present && "اشترط زيادة أكبر للانتظار حين كان الموعد اليوم، وقنع بأقل حين ابتعد الموعدان معاً — خصم مفرط (لايبسون).",
+      idn.frame && "تعامل مع ثلاثمئة المكافأة بطريقة تختلف عن ثلاثمئة الوفر — محاسبة ذهنية (ثالر).",
+    ].filter(Boolean).join(" "));
+  if (d.priority === "grow" && c.efCover < 3)
+    add("high","ترتيب أولويات معكوس","اختار الاستثمار للنمو قبل تأمين سيولة ثلاثة أشهر — مخالف لتسلسل هرم التخطيط.");
+  if (c.needs > 0 && c.efCover < 3)
+    add("high","تغطية طوارئ أقل من ثلاثة أشهر", `الرصيد يغطي ${c.efCover.toFixed(1)} شهراً مقابل ${c.efMonths} موصى بها.`);
+  else if (c.needs > 0 && c.efCover < c.efMonths)
+    add("med","صندوق الطوارئ دون الهدف", `يغطي ${c.efCover.toFixed(1)} شهراً من ${c.efMonths}. المتبقي ${M(c.efGap)}.`);
+  if (c.firstShort !== null)
+    add("high","الخطة تنكسر عند التنفيذ", `أول شهر يعجز: ${when(c.firstShort)}. أقصى عجز تراكمي ${M(c.worstShort)}. الحساب يخصم مساهمة الطوارئ أولاً.`);
+  if (c.income > 0 && c.dtiTotal > 0.36)
+    add("high","نسبة الدين تتجاوز 36٪", `السكن والأقساط ${pct(c.dtiTotal)} من الدخل مقابل سقف قاعدة 28/36.`);
+  else if (c.income > 0 && c.dtiHousing > 0.28)
+    add("med","نسبة السكن تتجاوز 28٪", `${pct(c.dtiHousing)} من الدخل.`);
+  if (idn.ready && idn.P.hide >= 25)
+    add("med","نمط تأجيل مرتفع", `${idn.P.hide}٪ من قراراته تجنّب. المتابعة الشهرية المطوّلة لن تُنفَّذ؛ الأنسب مراجعة قصيرة مجدولة.`);
+  if (idn.ready && idn.P.face >= 25 && c.r503020 && c.r503020.wants > 0.25)
+    add("med","إنفاق مدفوع بالمقارنة", `${idn.P.face}٪ مكانة مع رغبات ${pct(c.r503020.wants)} من الدخل — تضخّم نمط الحياة هو الخطر الأقرب.`);
+  if (idn.ready && idn.P.give >= 30)
+    add("med","عطاء بلا سقف", `${idn.P.give}٪ من قراراته عطاء والتزام أسري. البند يحتاج سقفاً سنوياً معلناً لا معالجة كل مرة كطارئ.`);
+  if (idn.ready && idn.P.safe >= 40 && (d.horizon === "l" || d.horizon === "xl"))
+    add("med","حماية تفوق ما يتطلبه الأفق", `${idn.P.safe}٪ أمان مع أفق طويل. الحماية من التذبذب ليست حمايةً من التضخّم.`);
+  if (c.manualFunded > 0 && idn.ready && (idn.incons || idn.P.now >= 25))
+    add("med","تمويل يدوي في ملف اندفاعي", `${c.manualFunded} هدف يعتمد على قرار شهري لا على اقتطاع تلقائي.`);
+  if (d.debtMethod === "none" && c.totalLiabs > 0)
+    add("med","تعارض في بيانات الدين", `أجاب بأنه بلا ديون بينما الالتزامات المسجّلة ${M(c.totalLiabs)}.`);
+  if (c.r503020 && c.r503020.needs > 0.5) add("med","الاحتياجات تتجاوز 50٪", `${pct(c.r503020.needs)} من الدخل.`);
+  if (c.r503020 && c.r503020.wants > 0.3) add("med","الرغبات تتجاوز 30٪", `${pct(c.r503020.wants)} من الدخل.`);
+  if (c.income > 0 && c.surplus >= 0 && c.savingsRate < 0.2)
+    add("med","معدل الادخار دون 20٪", `${pct(c.savingsRate)} مقابل الخُمس المستهدف.`);
+  if (c.expectedNet > 0 && d.age >= 35 && c.netRatio < 0.5)
+    add("med","صافي الثروة دون المتوقع", `${M(c.net)} مقابل ${M(c.expectedNet)} متوقعة لعمره ودخله.`);
+  if (c.untyped > 0) add("low","أهداف بلا نوع محدَّد", `${c.untyped} هدف بتكلفة دون اختيار نوعه.`);
+  if (!idn.ready) add("low","بطاقات القرار غير مكتملة", `${idn.done} من ${idn.total}.`);
+  if (factsDone < 6) add("low","الوقائع غير مكتملة", `${factsDone} من 6.`);
+
+  const A = [];
+  if (c.income > 0 && c.surplus < 0)
+    A.push(`إغلاق العجز أولاً: خفض الرغبات بمقدار ${M(Math.min(-c.surplus, c.wants))} شهرياً قبل أي التزام ادخاري.`);
+  else if (c.efGap > 0 && c.surplus > 0)
+    A.push(`توجيه كامل الفائض ${M(c.surplus)} لصندوق الطوارئ — يكتمل في ${c.efDone !== null ? when(c.efDone) : "أبعد من خمس سنوات"}.`);
+  if (idn.prof) idn.prof.acts.slice(0, 2).forEach((a) => A.push(a));
+  if (c.firstShort !== null)
+    A.push(`إعادة جدولة الأهداف حول ${when(c.firstShort)} أو خفضها بمقدار ${M(c.worstShort)}؛ تأجيل أهداف الطموح (${M(c.byTier[2])}) هو المدخل الأقل ضرراً.`);
+  const chosenPlan = debtPlan && debtPlan[d.debtMethod === "snowball" ? "snowball" : "avalanche"];
+  if (chosenPlan && !chosenPlan.neverPaidOff)
+    A.push(`سداد الديون بطريقة ${d.debtMethod === "snowball" ? "كرة الثلج" : "الانهيار الجليدي"} — تنتهي خلال ${chosenPlan.months < 12 ? `${chosenPlan.months} شهراً` : `${(chosenPlan.months / 12).toFixed(1)} سنة`} بفائدة إجمالية ${M(chosenPlan.totalInterest)}.`);
+  else if (c.totalLiabs > 0)
+    A.push(d.debtMethod === "snowball" ? "سداد الديون بترتيب الأصغر رصيداً أولاً، بما يوافق اختياره."
+                                      : "سداد الديون بترتيب الأعلى فائدة أولاً — الأقل كلفة إجمالية.");
+  if (debtPlan && debtPlan.avalanche.neverPaidOff && debtPlan.snowball.neverPaidOff)
+    add("high","جدول الديون لن يُسدَّد بالدفعات الحالية", "الحد الأدنى مع الدفعة الإضافية الحالية لا يكفي لتغطية الفائدة المتراكمة على مدى 50 سنة.");
+
+  const diag = [
+    ["النمط المالي", idn.prof ? `${idn.prof.name} — ${idn.prof.sub}` : "لم تكتمل البطاقات"],
+    ...Object.keys(CATS).map((k) => [CATS[k].l, idn.done ? `${idn.P[k]}٪` : "—"]),
+    ["اتساق القرار", idn.incons ? "متغيّر بتغيّر الصياغة" : idn.ready ? "متّسق" : "—"],
+    ["صافي الثروة", M(c.net)],
+    ["المتوقع لعمره ودخله", c.expectedNet > 0 ? `${M(c.expectedNet)} — ${c.netClass}` : "يتطلب العمر والدخل"],
+    ["الدخل / المصروف", `${M(c.income)} / ${M(c.totalExp)}`],
+    ["الفائض الشهري", M(c.surplus)],
+    ["معدل الادخار", c.income ? pct(c.savingsRate) : "—"],
+    ["توزيع 50/30/20", c.r503020 ? `${pct(c.r503020.needs)} / ${pct(c.r503020.wants)} / ${pct(c.r503020.save)}` : "—"],
+    ["السكن + الأقساط (سقف 36٪)", c.income ? pct(c.dtiTotal) : "—"],
+    ["تغطية الطوارئ", c.needs ? `${c.efCover.toFixed(1)} شهراً من ${c.efMonths} موصى بها` : "—"],
+    ["اكتمال صندوق الطوارئ", c.efGap === 0 ? "مكتمل" : c.efDone !== null ? when(c.efDone) : "لا يكتمل خلال الخطة"],
+    ["أول شهر يعجز", c.firstShort !== null ? `${when(c.firstShort)} — عجز ${M(c.worstShort)}` : "لا عجز خلال الخطة"],
+    ["نطاق الأصول النامية", c.equity || "—"],
+    ["سنوات الاستقلال المالي", c.fiYears ? `${c.fiYears} سنة (هدف ${M(c.fiTarget)})` : c.surplus > 0 ? "أكثر من 60 سنة" : "لا فائض"],
+    ...(debtPlan ? [["جدول سداد الديون", (() => {
+      const chosen = debtPlan[d.debtMethod === "snowball" ? "snowball" : "avalanche"];
+      return chosen.neverPaidOff ? "لن تُسدَّد بالدفعات الحالية" : `${chosen.months} شهراً — فائدة إجمالية ${M(chosen.totalInterest)}`;
+    })()]] : []),
+    ...(d.zakat.nisab > 0 ? [["الزكاة المستحقة", c.zakatDue > 0 ? M(c.zakatDue) : c.zakatMeetsNisab === false ? "دون النصاب" : "لم يكتمل الحول"]] : []),
+  ];
+
+  const profile = [
+    ["العمر", d.age ? `${d.age} سنة` : "لم يُدخل"],
+    ["مرحلة دورة الحياة", lbl(Q.stage, d.stage)],
+    ["طبيعة الدخل", lbl(Q.income, d.income)],
+    ["المعالون", lbl(Q.dependents, d.dependents)],
+    ["أفق أبعد هدف", lbl(Q.horizon, d.horizon)],
+    ["الأولوية المعلنة", lbl(Q.priority, d.priority)],
+    ["طريقة سداد الدين", lbl(Q.debtMethod, d.debtMethod)],
+  ];
+
+  const goals = [...d.goals].sort((a, b) => a.m - b.m)
+    .map((g) => [when(g.m), GOAL_LABEL[g.type] || "بلا نوع", TIER_LABEL[g.tier] || "—", M(g.cost), FUND_LABEL[g.fund] || "—"]);
+
+  return { flags:F, actions:A.slice(0, 5), diag, profile, goals };
+}
+
+function buildReportHtml(d, c, idn, rep, factsDone) {
+  const esc = (s) => String(s).replace(/[&<>]/g, (x) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[x]));
+  const rows = (arr) => arr.map(([k, v]) => `<tr><td class="k">${esc(k)}</td><td class="v">${esc(v)}</td></tr>`).join("");
+  const lv = { high:"مرتفعة", med:"متوسطة", low:"منخفضة" };
+  return `<!doctype html><html dir="rtl" lang="ar"><meta charset="utf-8">
+<title>تقرير الخطة المالية</title><style>
+body{font-family:'IBM Plex Sans Arabic',system-ui,sans-serif;color:#13312A;max-width:800px;margin:32px auto;padding:0 20px;line-height:1.7}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:26px 0 8px;border-bottom:2px solid #13312A;padding-bottom:5px}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:7px 9px;border-bottom:1px solid #DDE4E0;text-align:right}
+.k{color:#6B807A}.v{font-weight:600}
+.f{padding:10px 12px;border-radius:8px;margin-bottom:7px;font-size:13px}
+.high{background:#FBECEE;border-right:3px solid #B23A48}.med{background:#FBF3DE;border-right:3px solid #E8B84B}
+.low{background:#F1F5F3;border-right:3px solid #9FB2AC}
+.d{color:#6B807A;font-size:12px;margin-top:3px}
+ol{padding-right:18px;font-size:13px}li{margin-bottom:7px}
+.meta{color:#6B807A;font-size:12px;margin-bottom:20px}
+.type{background:#13312A;color:#EAF2EE;padding:16px;border-radius:10px;margin-bottom:18px}
+.dis{color:#6B807A;font-size:11px;margin-top:26px;border-top:1px solid #DDE4E0;padding-top:10px}
+@media print{body{margin:0}}
+</style>
+<h1>تقرير الخطة المالية</h1>
+<div class="meta">تاريخ الإصدار ${new Date().toLocaleDateString("en-GB")} · العملة ${curOf(d.cur).label} · البطاقات ${idn.done}/${idn.total} · الوقائع ${factsDone}/6</div>
+${idn.prof ? `<div class="type"><b>${esc(idn.prof.name)} — ${esc(idn.prof.sub)}</b>
+<div style="font-size:12.5px;margin-top:7px;line-height:1.8">${esc(idn.prof.d)}</div>
+<div style="font-size:12px;margin-top:9px;line-height:1.8"><b>قوّتك:</b> ${esc(idn.prof.good)}<br><b>فخّك:</b> ${esc(idn.prof.trap)}<br><b>الجملة التي تقولها:</b> «${esc(idn.prof.say)}»</div></div>` : ""}
+<h2>الوقائع</h2><table>${rows(rep.profile)}</table>
+<h2>المؤشرات</h2><table>${rows(rep.diag)}</table>
+<h2>التنبيهات (${rep.flags.length})</h2>
+${rep.flags.length ? rep.flags.map((f) => `<div class="f ${f.lvl}"><b>${esc(f.t)}</b> — خطورة ${lv[f.lvl]}<div class="d">${esc(f.det)}</div></div>`).join("") : "<p>لا تنبيهات.</p>"}
+<h2>الخطوات التالية</h2>
+${rep.actions.length ? `<ol>${rep.actions.map((a) => `<li>${esc(a)}</li>`).join("")}</ol>` : "<p>تُحدَّد بعد إدخال الميزانية.</p>"}
+<h2>الأهداف المسجّلة (${rep.goals.length})</h2>
+${rep.goals.length ? `<table><tr><th>الشهر</th><th>الهدف</th><th>التصنيف</th><th>التكلفة</th><th>التمويل</th></tr>
+${rep.goals.map((g) => `<tr>${g.map((x) => `<td>${esc(x)}</td>`).join("")}</tr>`).join("")}</table>` : "<p>لا أهداف مسجّلة.</p>"}
+<div class="dis">بطاقات القرار أداة تصنيفية استرشادية مستلهمة من نصوص المال (كلونتز)، والمحاسبة الذهنية (ثالر)، والخصم المفرط (لايبسون)، ومقياس اتجاهات المال (يامَوتشي وتمبلر). ليست أداة تشخيص نفسي معتمدة ولم تُقنَّن على عيّنة خليجية. بقية القواعد استرشادية وليست توصية استثمارية أو قانونية.</div>
+</html>`;
+}
+
+function downloadFile(filename, content, mime) {
+  const b = new Blob([content], { type:mime });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(b);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
 /* ─────────────────────────  app  ───────────────────────── */
 export default function App() {
   const [d, setD] = useState(blank);
@@ -525,138 +808,12 @@ export default function App() {
     ...s, debts:[...s.debts, { id:`b${Date.now()}${Math.random().toString(36).slice(2,6)}`, label:"", balance:0, apr:0, min:0 }],
   })), []);
 
-  /* ── نتيجة البطاقات ── */
-  const id = useMemo(() => {
-    const ans = d.ans || {};
-    const counts = {}; Object.keys(CATS).forEach((k) => (counts[k] = 0));
-    let n = 0;
-    CARDS.forEach((c) => {
-      const i = ans[c.id];
-      if (i === undefined) return;
-      n++; counts[c.o[i].c]++;
-    });
-    const P = {}; Object.keys(CATS).forEach((k) => (P[k] = n ? Math.round((counts[k] / n) * 100) : 0));
-    const rank = Object.keys(CATS).sort((a, b) => counts[b] - counts[a]);
-
-    const present = ans.t1 !== undefined && ans.t2 !== undefined && ans.t1 > ans.t2;
-    const frame = ans.t3 !== undefined && ans.t4 !== undefined && ans.t3 !== ans.t4;
-    const incons = present || frame;
-
-    const total = CARDS.length;
-    const ready = n >= Math.ceil(total * 0.6);
-    const top = ready ? rank[0] : null;
-    const second = ready ? rank[1] : null;
-    const prof = !ready ? null : incons ? SPLIT : TYPES[top];
-    return { counts, P, rank, present, frame, incons, done:n, total, ready, top, second, prof };
-  }, [d.ans]);
-
-  /* ── المحرّك الحسابي ── */
-  const c = useMemo(() => {
-    const totalAssets = sum(d.assets), totalLiabs = sum(d.liabs);
-    const net = totalAssets - totalLiabs;
-    const invested = (d.assets[2] || 0) + (d.assets[3] || 0);
-
-    /* الزكاة — 2.5٪ على الأصول الزكوية إذا بلغت النصاب ومضى عليها الحول */
-    const zakatableTotal = ASSETS.reduce((s, [k], i) => s + (d.zakat.flags[k] ? (d.assets[i] || 0) : 0), 0);
-    const zakatMeetsNisab = d.zakat.nisab > 0 ? zakatableTotal >= d.zakat.nisab : null;
-    const zakatDue = d.zakat.hawl && zakatMeetsNisab ? zakatableTotal * 0.025 : 0;
-
-    const get = (k) => (d.exp.find((e) => e.key === k) || {}).cost || 0;
-    const totalExp = sum(d.exp.map((e) => e.cost));
-    const needs = sum(d.exp.filter((e) => e.type === "احتياج").map((e) => e.cost));
-    const wants = sum(d.exp.filter((e) => e.type === "رغبة").map((e) => e.cost));
-    const income = sum(d.inc.map((i) => i.amount));
-    const surplus = income - totalExp;
-    const savingsRate = income > 0 ? surplus / income : 0;
-    const r503020 = income > 0 ? { needs:needs / income, wants:wants / income, save:surplus / income } : null;
-    const dtiHousing = income > 0 ? get("housing") / income : 0;
-    const dtiTotal = income > 0 ? (get("housing") + get("debt")) / income : 0;
-
-    const base = { fixed:3, mixed:6, var:9, season:12 }[d.income] || 6;
-    const behav = id.ready && (id.incons || id.P.now >= 25) ? 1 : 0;
-    const efRec = Math.min(12, base + (parseInt(d.dependents, 10) || 0) + behav);
-    const efMonths = d.efOverride || efRec;
-    const efTarget = needs * efMonths;
-    const efGap = Math.max(efTarget - d.efNow, 0);
-    const efCover = needs > 0 ? d.efNow / needs : 0;
-
-    const annualIncome = income * 12;
-    const expectedNet = (d.age * annualIncome) / 10;
-    const netRatio = expectedNet > 0 ? net / expectedNet : 0;
-    const netClass = expectedNet <= 0 ? "" : netRatio >= 2 ? "بانٍ متميّز للثروة" : netRatio >= 0.5 ? "بانٍ متوسط للثروة" : "دون المتوقّع لعمرك ودخلك";
-
-    const annualExp = totalExp * 12;
-    const fiTarget = annualExp * 25;
-    const fiFor = (s) => {
-      if (annualExp <= 0 || s <= 0) return null;
-      let b = invested;
-      for (let y = 1; y <= 60; y++) { b = b * 1.04 + s * 12; if (b >= fiTarget) return y; }
-      return null;
-    };
-    const fiYears = fiFor(surplus);
-    const fiPlus = fiFor(surplus + income * 0.05);
-
-    const BANDS = ["0–20٪","20–40٪","40–60٪","60–75٪","75–90٪"];
-    const hs = { s:0, m:1, l:2, xl:3 }[d.horizon];
-    let equity = null;
-    if (hs !== undefined && id.ready) {
-      const tilt = id.P.grow >= id.P.safe + 20 ? 3 : id.P.grow >= id.P.safe ? 2 : id.P.safe >= id.P.grow + 20 ? 0 : 1;
-      equity = BANDS[Math.max(0, Math.min(4, Math.round((hs + tilt) * 0.72)))];
-    }
-
-    // تكلفة الهدف تُدخَل بأسعار اليوم، لكنها تُصرف مستقبلاً — لذا تُضخَّم بمعدّل التضخم
-    // حسب المسافة الزمنية قبل دخولها المحاكاة، وإلا احتُسبت اسمياً بالخطأ.
-    const inflRate = (d.inflation || 0) / 100;
-    const nominalOf = (cost, m) => (cost || 0) * Math.pow(1 + inflRate, m / 12);
-    const dueBy = {};
-    d.goals.forEach((g) => { dueBy[g.m] = (dueBy[g.m] || 0) + nominalOf(g.cost, g.m); });
-    let pot = 0, ef = efGap, efDone = efGap === 0 ? 0 : null, firstShort = null, worst = 0;
-    const capYear = [0,0,0,0,0], costYear = [0,0,0,0,0];
-    for (let i = 0; i < 60; i++) {
-      const y = Math.floor(i / 12);
-      let s = surplus;
-      if (ef > 0 && s > 0) { const put = Math.min(ef, s); ef -= put; s -= put; if (ef === 0 && efDone === null) efDone = i; }
-      pot += s; capYear[y] += s;
-      const due = dueBy[i] || 0;
-      if (due) { costYear[y] += due; pot -= due; if (pot < 0 && firstShort === null) firstShort = i; }
-      if (pot < worst) worst = pot;
-    }
-    const efNever = efGap > 0 && efDone === null;
-
-    const inH = d.goals.filter((g) => g.m < horizon);
-    const goalsTotal = sum(inH.map((g) => g.cost));
-    const goalsTotalNominal = sum(inH.map((g) => nominalOf(g.cost, g.m)));
-    // إجماليات غير مقيّدة بمرشّح الأفق في شاشة الأهداف — لأن محاكاة القراءة تغطي خمس سنوات دوماً
-    const goalsAllReal = sum(d.goals.map((g) => g.cost));
-    const goalsAllNominal = sum(d.goals.map((g) => nominalOf(g.cost, g.m)));
-    const byTier = ["core","life","aspire"].map((t) => sum(inH.filter((g) => g.tier === t).map((g) => g.cost)));
-    const untyped = d.goals.filter((g) => !g.type).length;
-    const manualFunded = d.goals.filter((g) => g.fund && g.fund !== "auto").length;
-
-    return { totalAssets, totalLiabs, net, invested, totalExp, needs, wants, income, surplus,
-      savingsRate, r503020, dtiHousing, dtiTotal, efRec, efMonths, efTarget, efGap, efCover, behav,
-      expectedNet, netClass, netRatio, fiTarget, fiYears, fiPlus, equity,
-      capYear, costYear, efDone, efNever, firstShort, worstShort:-worst, endPot:pot,
-      goalsTotal, goalsTotalNominal, goalsAllReal, goalsAllNominal, byTier, untyped, manualFunded, annualExp, nominalOf,
-      zakatableTotal, zakatMeetsNisab, zakatDue };
-  }, [d, horizon, id]);
-
-  /* ── جدول سداد الديون: الانهيار الجليدي مقابل كرة الثلج ── */
-  const debtPlan = useMemo(() => {
-    const rows = d.debts.filter((x) => (x.balance || 0) > 0);
-    if (!rows.length) return null;
-    const extra = Math.max(0, d.debtExtra || 0);
-    const totalMin = sum(rows.map((r) => r.min));
-    const totalBalance = sum(rows.map((r) => r.balance));
-    return {
-      extra, totalMin, totalBalance,
-      avalanche: simulateDebts(rows, extra, DEBT_ORDER.avalanche),
-      snowball: simulateDebts(rows, extra, DEBT_ORDER.snowball),
-    };
-  }, [d.debts, d.debtExtra]);
+  /* ── نتيجة البطاقات، المحرّك الحسابي، وجدول الديون — دوال صرفة مستخرجة أعلى الملف ── */
+  const id = useMemo(() => computeIdentity(d.ans || {}), [d.ans]);
+  const c = useMemo(() => computeCalc(d, horizon, id), [d, horizon, id]);
+  const debtPlan = useMemo(() => computeDebtPlan(d.debts, d.debtExtra), [d.debts, d.debtExtra]);
 
   const factsDone = QKEYS.filter((k) => d[k]).length;
-  const lbl = (spec, v) => { const o = spec.o.find((x) => x[0] === v); return o ? o[1] : "لم يُجب"; };
 
   const NAV = [["facts","الوقائع"],["identity","بطاقات القرار"],["goals","الأهداف"],["wealth","صافي الثروة"],["budget","الميزانية"],["safety","الكرامة المالية"],["summary","القراءة"],["report","تقرير الكوتش"]];
   const nextView = () => {
@@ -665,157 +822,16 @@ export default function App() {
   };
 
   /* ── التقرير ── */
-  const rep = useMemo(() => {
-    const M = (n) => money(n, d.cur);
-    const F = [];
-    const add = (lvl, t, det) => F.push({ lvl, t, det });
-
-    if (c.income > 0 && c.surplus < 0)
-      add("high","عجز شهري", `المصروفات تفوق الدخل بـ ${M(-c.surplus)}. بند الرغبات ${M(c.wants)} وهو أول ما يُراجع.`);
-    if (c.efNever) add("high","صندوق الطوارئ لا يكتمل أبداً","لا يوجد فائض شهري موجب، فالفجوة لا تُغلق مهما طال الأمد.");
-    if (id.incons)
-      add("high","قرار يتغيّر بتغيّر الصياغة", [
-        id.present && "اشترط زيادة أكبر للانتظار حين كان الموعد اليوم، وقنع بأقل حين ابتعد الموعدان معاً — خصم مفرط (لايبسون).",
-        id.frame && "تعامل مع ثلاثمئة المكافأة بطريقة تختلف عن ثلاثمئة الوفر — محاسبة ذهنية (ثالر).",
-      ].filter(Boolean).join(" "));
-    if (d.priority === "grow" && c.efCover < 3)
-      add("high","ترتيب أولويات معكوس","اختار الاستثمار للنمو قبل تأمين سيولة ثلاثة أشهر — مخالف لتسلسل هرم التخطيط.");
-    if (c.needs > 0 && c.efCover < 3)
-      add("high","تغطية طوارئ أقل من ثلاثة أشهر", `الرصيد يغطي ${c.efCover.toFixed(1)} شهراً مقابل ${c.efMonths} موصى بها.`);
-    else if (c.needs > 0 && c.efCover < c.efMonths)
-      add("med","صندوق الطوارئ دون الهدف", `يغطي ${c.efCover.toFixed(1)} شهراً من ${c.efMonths}. المتبقي ${M(c.efGap)}.`);
-    if (c.firstShort !== null)
-      add("high","الخطة تنكسر عند التنفيذ", `أول شهر يعجز: ${when(c.firstShort)}. أقصى عجز تراكمي ${M(c.worstShort)}. الحساب يخصم مساهمة الطوارئ أولاً.`);
-    if (c.income > 0 && c.dtiTotal > 0.36)
-      add("high","نسبة الدين تتجاوز 36٪", `السكن والأقساط ${pct(c.dtiTotal)} من الدخل مقابل سقف قاعدة 28/36.`);
-    else if (c.income > 0 && c.dtiHousing > 0.28)
-      add("med","نسبة السكن تتجاوز 28٪", `${pct(c.dtiHousing)} من الدخل.`);
-    if (id.ready && id.P.hide >= 25)
-      add("med","نمط تأجيل مرتفع", `${id.P.hide}٪ من قراراته تجنّب. المتابعة الشهرية المطوّلة لن تُنفَّذ؛ الأنسب مراجعة قصيرة مجدولة.`);
-    if (id.ready && id.P.face >= 25 && c.r503020 && c.r503020.wants > 0.25)
-      add("med","إنفاق مدفوع بالمقارنة", `${id.P.face}٪ مكانة مع رغبات ${pct(c.r503020.wants)} من الدخل — تضخّم نمط الحياة هو الخطر الأقرب.`);
-    if (id.ready && id.P.give >= 30)
-      add("med","عطاء بلا سقف", `${id.P.give}٪ من قراراته عطاء والتزام أسري. البند يحتاج سقفاً سنوياً معلناً لا معالجة كل مرة كطارئ.`);
-    if (id.ready && id.P.safe >= 40 && (d.horizon === "l" || d.horizon === "xl"))
-      add("med","حماية تفوق ما يتطلبه الأفق", `${id.P.safe}٪ أمان مع أفق طويل. الحماية من التذبذب ليست حمايةً من التضخّم.`);
-    if (c.manualFunded > 0 && id.ready && (id.incons || id.P.now >= 25))
-      add("med","تمويل يدوي في ملف اندفاعي", `${c.manualFunded} هدف يعتمد على قرار شهري لا على اقتطاع تلقائي.`);
-    if (d.debtMethod === "none" && c.totalLiabs > 0)
-      add("med","تعارض في بيانات الدين", `أجاب بأنه بلا ديون بينما الالتزامات المسجّلة ${M(c.totalLiabs)}.`);
-    if (c.r503020 && c.r503020.needs > 0.5) add("med","الاحتياجات تتجاوز 50٪", `${pct(c.r503020.needs)} من الدخل.`);
-    if (c.r503020 && c.r503020.wants > 0.3) add("med","الرغبات تتجاوز 30٪", `${pct(c.r503020.wants)} من الدخل.`);
-    if (c.income > 0 && c.surplus >= 0 && c.savingsRate < 0.2)
-      add("med","معدل الادخار دون 20٪", `${pct(c.savingsRate)} مقابل الخُمس المستهدف.`);
-    if (c.expectedNet > 0 && d.age >= 35 && c.netRatio < 0.5)
-      add("med","صافي الثروة دون المتوقع", `${M(c.net)} مقابل ${M(c.expectedNet)} متوقعة لعمره ودخله.`);
-    if (c.untyped > 0) add("low","أهداف بلا نوع محدَّد", `${c.untyped} هدف بتكلفة دون اختيار نوعه.`);
-    if (!id.ready) add("low","بطاقات القرار غير مكتملة", `${id.done} من ${id.total}.`);
-    if (factsDone < 6) add("low","الوقائع غير مكتملة", `${factsDone} من 6.`);
-
-    const A = [];
-    if (c.income > 0 && c.surplus < 0)
-      A.push(`إغلاق العجز أولاً: خفض الرغبات بمقدار ${M(Math.min(-c.surplus, c.wants))} شهرياً قبل أي التزام ادخاري.`);
-    else if (c.efGap > 0 && c.surplus > 0)
-      A.push(`توجيه كامل الفائض ${M(c.surplus)} لصندوق الطوارئ — يكتمل في ${c.efDone !== null ? when(c.efDone) : "أبعد من خمس سنوات"}.`);
-    if (id.prof) id.prof.acts.slice(0, 2).forEach((a) => A.push(a));
-    if (c.firstShort !== null)
-      A.push(`إعادة جدولة الأهداف حول ${when(c.firstShort)} أو خفضها بمقدار ${M(c.worstShort)}؛ تأجيل أهداف الطموح (${M(c.byTier[2])}) هو المدخل الأقل ضرراً.`);
-    const chosenPlan = debtPlan && debtPlan[d.debtMethod === "snowball" ? "snowball" : "avalanche"];
-    if (chosenPlan && !chosenPlan.neverPaidOff)
-      A.push(`سداد الديون بطريقة ${d.debtMethod === "snowball" ? "كرة الثلج" : "الانهيار الجليدي"} — تنتهي خلال ${chosenPlan.months < 12 ? `${chosenPlan.months} شهراً` : `${(chosenPlan.months / 12).toFixed(1)} سنة`} بفائدة إجمالية ${M(chosenPlan.totalInterest)}.`);
-    else if (c.totalLiabs > 0)
-      A.push(d.debtMethod === "snowball" ? "سداد الديون بترتيب الأصغر رصيداً أولاً، بما يوافق اختياره."
-                                        : "سداد الديون بترتيب الأعلى فائدة أولاً — الأقل كلفة إجمالية.");
-    if (debtPlan && debtPlan.avalanche.neverPaidOff && debtPlan.snowball.neverPaidOff)
-      add("high","جدول الديون لن يُسدَّد بالدفعات الحالية", "الحد الأدنى مع الدفعة الإضافية الحالية لا يكفي لتغطية الفائدة المتراكمة على مدى 50 سنة.");
-
-    const diag = [
-      ["النمط المالي", id.prof ? `${id.prof.name} — ${id.prof.sub}` : "لم تكتمل البطاقات"],
-      ...Object.keys(CATS).map((k) => [CATS[k].l, id.done ? `${id.P[k]}٪` : "—"]),
-      ["اتساق القرار", id.incons ? "متغيّر بتغيّر الصياغة" : id.ready ? "متّسق" : "—"],
-      ["صافي الثروة", M(c.net)],
-      ["المتوقع لعمره ودخله", c.expectedNet > 0 ? `${M(c.expectedNet)} — ${c.netClass}` : "يتطلب العمر والدخل"],
-      ["الدخل / المصروف", `${M(c.income)} / ${M(c.totalExp)}`],
-      ["الفائض الشهري", M(c.surplus)],
-      ["معدل الادخار", c.income ? pct(c.savingsRate) : "—"],
-      ["توزيع 50/30/20", c.r503020 ? `${pct(c.r503020.needs)} / ${pct(c.r503020.wants)} / ${pct(c.r503020.save)}` : "—"],
-      ["السكن + الأقساط (سقف 36٪)", c.income ? pct(c.dtiTotal) : "—"],
-      ["تغطية الطوارئ", c.needs ? `${c.efCover.toFixed(1)} شهراً من ${c.efMonths} موصى بها` : "—"],
-      ["اكتمال صندوق الطوارئ", c.efGap === 0 ? "مكتمل" : c.efDone !== null ? when(c.efDone) : "لا يكتمل خلال الخطة"],
-      ["أول شهر يعجز", c.firstShort !== null ? `${when(c.firstShort)} — عجز ${M(c.worstShort)}` : "لا عجز خلال الخطة"],
-      ["نطاق الأصول النامية", c.equity || "—"],
-      ["سنوات الاستقلال المالي", c.fiYears ? `${c.fiYears} سنة (هدف ${M(c.fiTarget)})` : c.surplus > 0 ? "أكثر من 60 سنة" : "لا فائض"],
-      ...(debtPlan ? [["جدول سداد الديون", (() => {
-        const chosen = debtPlan[d.debtMethod === "snowball" ? "snowball" : "avalanche"];
-        return chosen.neverPaidOff ? "لن تُسدَّد بالدفعات الحالية" : `${chosen.months} شهراً — فائدة إجمالية ${M(chosen.totalInterest)}`;
-      })()]] : []),
-      ...(d.zakat.nisab > 0 ? [["الزكاة المستحقة", c.zakatDue > 0 ? M(c.zakatDue) : c.zakatMeetsNisab === false ? "دون النصاب" : "لم يكتمل الحول"]] : []),
-    ];
-
-    const profile = [
-      ["العمر", d.age ? `${d.age} سنة` : "لم يُدخل"],
-      ["مرحلة دورة الحياة", lbl(Q.stage, d.stage)],
-      ["طبيعة الدخل", lbl(Q.income, d.income)],
-      ["المعالون", lbl(Q.dependents, d.dependents)],
-      ["أفق أبعد هدف", lbl(Q.horizon, d.horizon)],
-      ["الأولوية المعلنة", lbl(Q.priority, d.priority)],
-      ["طريقة سداد الدين", lbl(Q.debtMethod, d.debtMethod)],
-    ];
-
-    const goals = [...d.goals].sort((a, b) => a.m - b.m)
-      .map((g) => [when(g.m), GOAL_LABEL[g.type] || "بلا نوع", TIER_LABEL[g.tier] || "—", M(g.cost), FUND_LABEL[g.fund] || "—"]);
-
-    return { flags:F, actions:A.slice(0, 5), diag, profile, goals };
-  }, [d, c, id, factsDone, debtPlan]);
+  const rep = useMemo(() => buildReport(d, c, id, debtPlan, factsDone), [d, c, id, factsDone, debtPlan]);
 
   const exportJson = () => {
-    try {
-      const b = new Blob([JSON.stringify(d, null, 2)], { type:"application/json" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(b); a.download = "الخطة-المالية.json"; a.click();
-    } catch { setStatus("تعذّر التصدير في هذه البيئة"); }
+    try { downloadFile("الخطة-المالية.json", JSON.stringify(d, null, 2), "application/json"); }
+    catch { setStatus("تعذّر التصدير في هذه البيئة"); }
   };
 
   const exportHtml = () => {
-    const esc = (s) => String(s).replace(/[&<>]/g, (x) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[x]));
-    const rows = (arr) => arr.map(([k, v]) => `<tr><td class="k">${esc(k)}</td><td class="v">${esc(v)}</td></tr>`).join("");
-    const lv = { high:"مرتفعة", med:"متوسطة", low:"منخفضة" };
-    const html = `<!doctype html><html dir="rtl" lang="ar"><meta charset="utf-8">
-<title>تقرير الخطة المالية</title><style>
-body{font-family:'IBM Plex Sans Arabic',system-ui,sans-serif;color:#13312A;max-width:800px;margin:32px auto;padding:0 20px;line-height:1.7}
-h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:26px 0 8px;border-bottom:2px solid #13312A;padding-bottom:5px}
-table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:7px 9px;border-bottom:1px solid #DDE4E0;text-align:right}
-.k{color:#6B807A}.v{font-weight:600}
-.f{padding:10px 12px;border-radius:8px;margin-bottom:7px;font-size:13px}
-.high{background:#FBECEE;border-right:3px solid #B23A48}.med{background:#FBF3DE;border-right:3px solid #E8B84B}
-.low{background:#F1F5F3;border-right:3px solid #9FB2AC}
-.d{color:#6B807A;font-size:12px;margin-top:3px}
-ol{padding-right:18px;font-size:13px}li{margin-bottom:7px}
-.meta{color:#6B807A;font-size:12px;margin-bottom:20px}
-.type{background:#13312A;color:#EAF2EE;padding:16px;border-radius:10px;margin-bottom:18px}
-.dis{color:#6B807A;font-size:11px;margin-top:26px;border-top:1px solid #DDE4E0;padding-top:10px}
-@media print{body{margin:0}}
-</style>
-<h1>تقرير الخطة المالية</h1>
-<div class="meta">تاريخ الإصدار ${new Date().toLocaleDateString("en-GB")} · العملة ${curOf(d.cur).label} · البطاقات ${id.done}/${id.total} · الوقائع ${factsDone}/6</div>
-${id.prof ? `<div class="type"><b>${esc(id.prof.name)} — ${esc(id.prof.sub)}</b>
-<div style="font-size:12.5px;margin-top:7px;line-height:1.8">${esc(id.prof.d)}</div>
-<div style="font-size:12px;margin-top:9px;line-height:1.8"><b>قوّتك:</b> ${esc(id.prof.good)}<br><b>فخّك:</b> ${esc(id.prof.trap)}<br><b>الجملة التي تقولها:</b> «${esc(id.prof.say)}»</div></div>` : ""}
-<h2>الوقائع</h2><table>${rows(rep.profile)}</table>
-<h2>المؤشرات</h2><table>${rows(rep.diag)}</table>
-<h2>التنبيهات (${rep.flags.length})</h2>
-${rep.flags.length ? rep.flags.map((f) => `<div class="f ${f.lvl}"><b>${esc(f.t)}</b> — خطورة ${lv[f.lvl]}<div class="d">${esc(f.det)}</div></div>`).join("") : "<p>لا تنبيهات.</p>"}
-<h2>الخطوات التالية</h2>
-${rep.actions.length ? `<ol>${rep.actions.map((a) => `<li>${esc(a)}</li>`).join("")}</ol>` : "<p>تُحدَّد بعد إدخال الميزانية.</p>"}
-<h2>الأهداف المسجّلة (${rep.goals.length})</h2>
-${rep.goals.length ? `<table><tr><th>الشهر</th><th>الهدف</th><th>التصنيف</th><th>التكلفة</th><th>التمويل</th></tr>
-${rep.goals.map((g) => `<tr>${g.map((x) => `<td>${esc(x)}</td>`).join("")}</tr>`).join("")}</table>` : "<p>لا أهداف مسجّلة.</p>"}
-<div class="dis">بطاقات القرار أداة تصنيفية استرشادية مستلهمة من نصوص المال (كلونتز)، والمحاسبة الذهنية (ثالر)، والخصم المفرط (لايبسون)، ومقياس اتجاهات المال (يامَوتشي وتمبلر). ليست أداة تشخيص نفسي معتمدة ولم تُقنَّن على عيّنة خليجية. بقية القواعد استرشادية وليست توصية استثمارية أو قانونية.</div>
-</html>`;
     try {
-      const b = new Blob([html], { type:"text/html;charset=utf-8" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(b); a.download = "تقرير-الخطة-المالية.html"; a.click();
+      downloadFile("تقرير-الخطة-المالية.html", buildReportHtml(d, c, id, rep, factsDone), "text/html;charset=utf-8");
       setStatus("نُزّل التقرير — افتحه في المتصفح واحفظه PDF");
     } catch { setStatus("تعذّر التنزيل في هذه البيئة"); }
   };
