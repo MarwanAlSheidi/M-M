@@ -1707,8 +1707,14 @@
       { id: "concentrated", sev: 2, icon: "🧺", term: "التنويع",
         test: (s, d) => { const held = Object.values(s.investments).filter(i => i.amount > 0); return d.totalInv > 800 && held.length === 1; },
         text: (s) => { const k = Object.entries(s.investments).find(([, i]) => i.amount > 0)?.[0]; return `كل استثمارك في ${ASSETS[k]?.label ?? "أصل واحد"}. توزيعه على أصول تتحرك مستقلة يقلّل تذبذب محفظتك دون خفض عائدك كثيرًا.`; } },
+      // النقد المرصود للبناء ليس خاملاً: كانت النصيحة تطالب من يدّخر لإكمال
+      // منزله باستثمار المبلغ، فتؤخّر بيته وتعرّض مال البناء لتقلّب السوق.
+      { id: "build_ready", sev: 2, icon: "🧱", term: "البناء التدريجي",
+        test: (s) => ["land", "building"].includes(s.housing.stage) && s.cash >= 500 && s.housing.built < HOME_COST,
+        text: (s) => `لديك ${fmt(s.cash)} ريالًا ومتبقٍ ${fmt(HOME_COST - s.housing.built)} على إكمال منزلك. كل دفعة بناء تقرّب سقوط الإيجار عنك.` },
       { id: "idle_cash", sev: 2, icon: "💤", term: "تكلفة الفرصة البديلة",
-        test: (s, d) => s.cash > d.effExpenses * 6 && d.totalInv < s.cash * 0.5,
+        test: (s, d) => s.cash > d.effExpenses * 6 && d.totalInv < s.cash * 0.5
+                        && !(["land", "building"].includes(s.housing.stage) && s.housing.built < HOME_COST),
         text: (s, d) => `لديك ${fmt(s.cash)} ريالًا نقدًا خاملاً — أكثر من ٦ أشهر مصروفات. النقد الزائد يتآكل بالتضخم بدل أن ينمو.` },
       { id: "no_insurance", sev: 2, icon: "☂", term: "التأمين",
         test: (s, d) => !s.insurance?.health && d.coverage < 4,
