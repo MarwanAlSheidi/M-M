@@ -1712,20 +1712,27 @@
     function lastReportHtml() {
       const r = state.lastReport;
       if (!r) return "";
+      // التقرير يُحفظ في المتصفح ولا يمرّ بتحقّق القيم الافتراضية (ليس في
+      // INITIAL_STATE)، فحفظ قديم يحمل اسم أصل لم يعد موجودًا كان يرمي
+      // استثناءً يمنع فتح شاشة الراتب أصلاً — أي يوقف اللعبة.
+      const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
       const rows = [];
-      for (const [key, a] of Object.entries(r.assets || {})) {
-        if (!a.delta && !a.crashed) continue;
+      const assets = r.assets && typeof r.assets === "object" && !Array.isArray(r.assets) ? r.assets : {};
+      for (const [key, a] of Object.entries(assets)) {
+        if (!ASSETS[key] || !a || typeof a !== "object") continue;
+        const delta = num(a.delta);
+        if (!delta && !a.crashed) continue;
         rows.push([`${ASSETS[key].label}${a.crashed ? " ⚠" : ""}`,
-          `${a.delta >= 0 ? "+" : "−"}${fmt(Math.abs(a.delta))}`,
-          a.delta >= 0 ? "#2ecc71" : "#e74c3c"]);
+          `${delta >= 0 ? "+" : "−"}${fmt(Math.abs(delta))}`,
+          delta >= 0 ? "#2ecc71" : "#e74c3c"]);
       }
-      if (r.rent) rows.push(["دخل إيجاري", `+${fmt(r.rent)}`, "#2ecc71"]);
-      if (r.loanPaid) rows.push(["قسط الإسكان", `−${fmt(r.loanPaid)}`, "#e67e22"]);
-      if (r.debtInterest) rows.push(["فائدة الدين", `−${fmt(r.debtInterest)}`, "#e74c3c"]);
-      if (r.premium) rows.push(["قسط التأمين", `−${fmt(r.premium)}`, "#e67e22"]);
-      const credit = (r.creditTo ?? 0) - (r.creditFrom ?? 0);
+      if (num(r.rent)) rows.push(["دخل إيجاري", `+${fmt(num(r.rent))}`, "#2ecc71"]);
+      if (num(r.loanPaid)) rows.push(["قسط الإسكان", `−${fmt(num(r.loanPaid))}`, "#e67e22"]);
+      if (num(r.debtInterest)) rows.push(["فائدة الدين", `−${fmt(num(r.debtInterest))}`, "#e74c3c"]);
+      if (num(r.premium)) rows.push(["قسط التأمين", `−${fmt(num(r.premium))}`, "#e67e22"]);
+      const credit = num(r.creditTo) - num(r.creditFrom);
       if (credit) rows.push(["التصنيف الائتماني", `${credit > 0 ? "+" : "−"}${Math.abs(credit)}`, credit > 0 ? "#2ecc71" : "#e74c3c"]);
-      const morale = (r.moraleTo ?? 0) - (r.moraleFrom ?? 0);
+      const morale = num(r.moraleTo) - num(r.moraleFrom);
       if (morale) rows.push(["الرضا", `${morale > 0 ? "+" : "−"}${Math.abs(morale)}`, morale > 0 ? "#2ecc71" : "#e74c3c"]);
       if (!rows.length && !r.inflation) return "";
       return `<div class="card" style="padding:10px;margin-bottom:12px">
