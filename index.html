@@ -2956,7 +2956,7 @@
         const ty = 14 + rng() * (WORLD_H - 28);
         if (nearAnyBuilding(tx, ty, 24)) continue;
         if (Math.hypot(tx - PLAZA_X, ty - PLAZA_Y) < 44) continue;
-        TREES.push({ x: tx, y: ty, r: 9 + rng() * 5 });
+        TREES.push({ x: tx, y: ty, r: 9 + rng() * 5, seed: rng() });
       }
     }
     const GROUND_DOTS = [];
@@ -2971,11 +2971,17 @@
     }
 
     // ==================== الفصول (تتبع الشهر داخل اللعبة) ====================
+    // النخيل لا يتساقط ورقه ولا يصفرّ، فالفصول تُقرأ في الأرض والضوء والثمر
+    // لا في لون السعف. والأرض رملية حصوية لا مروجًا خضراء.
     const SEASONS = {
-      winter: { name: "شتاء", leaf: "#4a7a68", leafHi: "#5f9180", ground: ["#12302c", "#0b2220"], dot: "rgba(120,160,170,0.30)", tint: "rgba(120,170,200,0.07)", blossom: null },
-      spring: { name: "ربيع", leaf: "#2f8a52", leafHi: "#46a86a", ground: ["#12332a", "#0a201c"], dot: "rgba(80,150,110,0.35)", tint: "rgba(140,220,160,0.05)", blossom: "#f2a7c3" },
-      summer: { name: "صيف", leaf: "#1f5c3f", leafHi: "#2f7a52", ground: ["#0f2b24", "#0a1e1a"], dot: "rgba(60,110,90,0.35)", tint: null, blossom: null },
-      autumn: { name: "خريف", leaf: "#b5761f", leafHi: "#d29434", ground: ["#2b2418", "#1c1710"], dot: "rgba(170,130,60,0.30)", tint: "rgba(220,160,70,0.06)", blossom: null },
+      winter: { name: "شتاء", leaf: "#2c6b4c", leafHi: "#3f8a63", ground: ["#3a3428", "#241f18"],
+                dot: "rgba(150,170,180,0.22)", tint: "rgba(120,170,200,0.06)", dates: null },
+      spring: { name: "ربيع", leaf: "#2f8a52", leafHi: "#46a86a", ground: ["#3f3a29", "#28231a"],
+                dot: "rgba(120,150,100,0.25)", tint: "rgba(150,210,160,0.04)", dates: null },
+      summer: { name: "صيف", leaf: "#256444", leafHi: "#357f57", ground: ["#4a4130", "#2e2820"],
+                dot: "rgba(190,165,120,0.30)", tint: "rgba(240,190,110,0.05)", dates: "#c9974a" },
+      autumn: { name: "خريف", leaf: "#2a6247", leafHi: "#3d8059", ground: ["#453c2c", "#2a241b"],
+                dot: "rgba(180,150,105,0.28)", tint: "rgba(220,170,90,0.05)", dates: "#8a4b2a" },
     };
     function seasonForMonth(m) {
       if (m === 12 || m === 1 || m === 2) return "winter";
@@ -3078,52 +3084,50 @@
 
     // ==================== طقس حسب الفصل ====================
     const WEATHER = [];
+    // لا ثلج في عُمان. الشتاء موسم المطر، والصيف غبار محمول، وما بينهما صفاء.
     function weatherKindFor(seasonKey) {
-      if (seasonKey === "winter") return "snow";
-      if (seasonKey === "autumn") return "leaf";
-      if (seasonKey === "spring") return "petal";
+      if (seasonKey === "winter") return "rain";
+      if (seasonKey === "summer") return "dust";
       return null;
     }
     function updateWeather(dt, seasonKey) {
       const kind = weatherKindFor(seasonKey);
       if (!kind) { WEATHER.length = 0; return; }
       if (WEATHER.length && WEATHER[0].kind !== kind) WEATHER.length = 0;
-      const cap = kind === "snow" ? 46 : 26;
-      if (WEATHER.length < cap && Math.random() < 0.6) {
+      const cap = kind === "rain" ? 60 : 34;
+      if (WEATHER.length < cap && Math.random() < (kind === "rain" ? 0.9 : 0.4)) {
         WEATHER.push({
-          kind, x: Math.random() * WORLD_W, y: -6,
-          vy: kind === "snow" ? 14 + Math.random() * 16 : 22 + Math.random() * 22,
+          kind,
+          x: Math.random() * WORLD_W, y: kind === "dust" ? Math.random() * WORLD_H : -8,
+          vy: kind === "rain" ? 210 + Math.random() * 90 : 6 + Math.random() * 10,
           sway: Math.random() * Math.PI * 2,
-          swaySpeed: 0.8 + Math.random() * 1.4,
-          size: kind === "snow" ? 1.4 + Math.random() * 1.6 : 2.2 + Math.random() * 2,
+          swaySpeed: kind === "rain" ? 0 : 0.5 + Math.random() * 0.9,
+          size: kind === "rain" ? 4 + Math.random() * 4 : 0.7 + Math.random() * 1.1,
           spin: Math.random() * Math.PI,
+          life: 0,
         });
       }
       for (let i = WEATHER.length - 1; i >= 0; i--) {
         const p = WEATHER[i];
         p.sway += p.swaySpeed * dt;
         p.y += p.vy * dt;
-        p.x += Math.sin(p.sway) * 10 * dt;
+        p.x += (p.kind === "rain" ? 26 : Math.sin(p.sway) * 14) * dt;
         p.spin += dt * 1.6;
-        if (p.y > WORLD_H + 6) WEATHER.splice(i, 1);
+        p.life += dt;
+        if (p.y > WORLD_H + 8 || p.x > WORLD_W + 8 || (p.kind === "dust" && p.life > 14)) WEATHER.splice(i, 1);
       }
     }
-    const LEAF_COLORS = ["#c9772a", "#b5761f", "#d29434", "#a35a1c"];
     function drawWeather(c) {
       for (const p of WEATHER) {
-        if (p.kind === "snow") {
-          c.fillStyle = "rgba(226,240,245,0.75)";
-          c.beginPath(); c.arc(p.x, p.y, p.size, 0, Math.PI * 2); c.fill();
-        } else if (p.kind === "leaf") {
-          c.save(); c.translate(p.x, p.y); c.rotate(p.spin);
-          c.fillStyle = LEAF_COLORS[Math.floor(p.size) % LEAF_COLORS.length];
-          c.beginPath(); c.ellipse(0, 0, p.size * 1.5, p.size * 0.7, 0, 0, Math.PI * 2); c.fill();
-          c.restore();
+        if (p.kind === "rain") {
+          c.strokeStyle = "rgba(174,206,222,0.45)";
+          c.lineWidth = 1;
+          c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x - 2.2, p.y - p.size); c.stroke();
         } else {
-          c.save(); c.translate(p.x, p.y); c.rotate(p.spin);
-          c.fillStyle = "rgba(242,167,195,0.85)";
-          c.beginPath(); c.ellipse(0, 0, p.size * 1.2, p.size * 0.6, 0, 0, Math.PI * 2); c.fill();
-          c.restore();
+          c.globalAlpha = 0.5 + Math.sin(p.sway) * 0.25;
+          c.fillStyle = "rgba(226,206,164,0.7)";
+          c.beginPath(); c.arc(p.x, p.y, p.size, 0, Math.PI * 2); c.fill();
+          c.globalAlpha = 1;
         }
       }
     }
@@ -3440,20 +3444,79 @@
     }
     renderBackground();
 
-    function drawTree(c, t, season) {
-      c.beginPath(); c.ellipse(t.x, t.y + 2, t.r * 0.5, t.r * 0.25, 0, 0, Math.PI * 2);
-      c.fillStyle = "rgba(0,0,0,0.25)"; c.fill();
-      c.fillStyle = "#3a2a1a";
-      c.fillRect(t.x - 2, t.y - t.r * 0.3, 4, t.r * 0.6);
-      c.beginPath(); c.arc(t.x, t.y - t.r * 0.5, t.r, 0, Math.PI * 2);
-      c.fillStyle = season.leaf; c.fill();
-      c.beginPath(); c.arc(t.x - t.r * 0.3, t.y - t.r * 0.7, t.r * 0.6, 0, Math.PI * 2);
+    // النخلة بدل "المصّاصة": جذع مقطّع منحنٍ وتاج من سعف مقوّس يتمايل.
+    // الشكل هو الطابع العُماني نفسه — ولا شيء في الكرة المسطّحة يوحي بمكان.
+    function drawTree(c, t, season, now) {
+      const sway = Math.sin(now / 1000 * 0.9 + t.seed * 6.28) * 0.045;
+      const H = t.r * 3.2;                       // ارتفاع الجذع
+      const topX = t.x + Math.sin(sway) * H * 0.42;
+      const topY = t.y - H;
+
+      // ظل بيضاوي على الأرض
+      c.beginPath(); c.ellipse(t.x + 2, t.y + 2, t.r * 0.85, t.r * 0.3, 0, 0, Math.PI * 2);
+      c.fillStyle = "rgba(0,0,0,0.28)"; c.fill();
+
+      // الجذع: منحنى مخروطي بحلقات
+      const bw = t.r * 0.42, tw = t.r * 0.24;
+      const cx1 = t.x + (topX - t.x) * 0.25, cy1 = t.y - H * 0.45;
+      c.beginPath();
+      c.moveTo(t.x - bw, t.y);
+      c.quadraticCurveTo(cx1 - tw, cy1, topX - tw, topY);
+      c.lineTo(topX + tw, topY);
+      c.quadraticCurveTo(cx1 + tw, cy1, t.x + bw, t.y);
+      c.closePath();
+      c.fillStyle = "#6b5535"; c.fill();
+      c.strokeStyle = "rgba(52,40,24,0.55)"; c.lineWidth = 1;
+      const rings = Math.max(4, Math.round(H / 5));
+      for (let i = 1; i < rings; i++) {
+        const f = i / rings;
+        const rx = t.x + (topX - t.x) * f * f, ry = t.y - H * f;
+        const hw = bw + (tw - bw) * f;
+        c.beginPath(); c.moveTo(rx - hw * 0.9, ry); c.lineTo(rx + hw * 0.9, ry); c.stroke();
+      }
+      // إضاءة جانبية على الجذع
+      c.globalAlpha = 0.25; c.fillStyle = "#a68a55";
+      c.beginPath();
+      c.moveTo(t.x - bw, t.y);
+      c.quadraticCurveTo(cx1 - tw, cy1, topX - tw, topY);
+      c.lineTo(topX - tw * 0.35, topY);
+      c.quadraticCurveTo(cx1 - tw * 0.35, cy1, t.x - bw * 0.35, t.y);
+      c.closePath(); c.fill();
+      c.globalAlpha = 1;
+
+      // السعف: ثمانية أوراق مقوّسة، الخلفية أغمق ثم الأمامية أفتح
+      const fronds = 8, L = t.r * 2.05;
+      for (let pass = 0; pass < 2; pass++) {
+        c.fillStyle = pass === 0 ? season.leaf : season.leafHi;
+        for (let i = 0; i < fronds; i++) {
+          if ((i % 2 === 0) !== (pass === 0)) continue;
+          const a = Math.PI + (i / (fronds - 1)) * Math.PI + sway * 1.6;
+          const droop = 0.55 + 0.35 * Math.abs(Math.cos(a));
+          const ex = topX + Math.cos(a) * L, ey = topY + Math.sin(a) * L * 0.55 + L * droop * 0.45;
+          const mx = topX + Math.cos(a) * L * 0.55, my = topY + Math.sin(a) * L * 0.4 - L * 0.16;
+          const wdt = t.r * 0.36 * (pass === 0 ? 1 : 0.82);
+          c.beginPath();
+          c.moveTo(topX, topY);
+          c.quadraticCurveTo(mx, my - wdt, ex, ey);
+          c.quadraticCurveTo(mx, my + wdt, topX, topY);
+          c.fill();
+        }
+      }
+      // قلب التاج
+      c.beginPath(); c.arc(topX, topY, t.r * 0.28, 0, Math.PI * 2);
       c.fillStyle = season.leafHi; c.fill();
-      if (season.blossom) {
-        c.fillStyle = season.blossom;
-        for (let i = 0; i < 4; i++) {
-          const a = (i / 4) * Math.PI * 2 + t.r;
-          c.beginPath(); c.arc(t.x + Math.cos(a) * t.r * 0.55, t.y - t.r * 0.5 + Math.sin(a) * t.r * 0.55, 1.6, 0, Math.PI * 2); c.fill();
+
+      // عذوق التمر في الصيف والخريف
+      if (season.dates) {
+        c.fillStyle = season.dates;
+        for (let k = 0; k < 3; k++) {
+          const a = -0.5 + k * 0.5;
+          for (let j = 0; j < 4; j++) {
+            const d = t.r * (0.35 + j * 0.16);
+            c.beginPath();
+            c.arc(topX + Math.cos(a) * d, topY + Math.sin(a) * d * 0.7 + j * 1.1, 1.5, 0, Math.PI * 2);
+            c.fill();
+          }
         }
       }
     }
@@ -3588,6 +3651,18 @@
 
       drawBuildingIndicators(now);
 
+      // ظلال السحب على الأرض. كانت تُرسم أقراصًا بيضاء صلبة *فوق* المباني
+      // فتبدو صحونًا طائرة تحجب المدينة؛ والظل المتحرك على الأرض هو ما يُرى
+      // فعلاً من أعلى، ولا يحجب شيئًا.
+      for (const cl of CLOUDS) {
+        const g = ctx.createRadialGradient(cl.x, cl.y, cl.r * 0.15, cl.x, cl.y, cl.r * 1.6);
+        g.addColorStop(0, `rgba(8,20,18,${cl.alpha * 2.4})`);
+        g.addColorStop(0.6, `rgba(8,20,18,${cl.alpha * 1.1})`);
+        g.addColorStop(1, "rgba(8,20,18,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.ellipse(cl.x, cl.y, cl.r * 1.6, cl.r * 1.05, 0, 0, Math.PI * 2); ctx.fill();
+      }
+
       // ترتيب حسب العمق: الأشجار والشخصيات تُرسم بترتيب موضعها الرأسي
       const entities = [];
       for (const t of TREES) entities.push({ footY: t.y, kind: "tree", ref: t });
@@ -3595,7 +3670,7 @@
       entities.push({ footY: player.y + player.h, kind: "player" });
       entities.sort((a, b) => a.footY - b.footY);
       for (const e of entities) {
-        if (e.kind === "tree") drawTree(ctx, e.ref, season);
+        if (e.kind === "tree") drawTree(ctx, e.ref, season, now);
         else if (e.kind === "npc") drawCharacter(ctx, e.ref.x, e.ref.y, e.ref.facing, e.ref.animT, e.ref.moving, e.ref.palette);
         else drawCharacter(ctx, player.x + player.w / 2, player.y + player.h / 2, player.facing, player.animT, pressed.size > 0, PLAYER_PALETTE);
       }
@@ -3606,14 +3681,6 @@
         ctx.fillRect(l.x - 1.5, l.y - 16, 3, 16);
         ctx.fillStyle = night > 0.12 ? "#f4d58d" : "#6b7a72";
         ctx.beginPath(); ctx.arc(l.x, l.y - 18, 3.4, 0, Math.PI * 2); ctx.fill();
-      }
-
-      // سحب تمر فوق المدينة
-      for (const cl of CLOUDS) {
-        ctx.fillStyle = `rgba(220,235,230,${cl.alpha})`;
-        ctx.beginPath(); ctx.arc(cl.x, cl.y, cl.r, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(cl.x + cl.r * 0.8, cl.y + 4, cl.r * 0.7, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(cl.x - cl.r * 0.7, cl.y + 5, cl.r * 0.6, 0, Math.PI * 2); ctx.fill();
       }
 
       drawWeather(ctx);
