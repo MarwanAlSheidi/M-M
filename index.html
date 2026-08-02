@@ -273,7 +273,7 @@
       morale: 70,
       hadDebt: false,
       insurance: { health: false, premium: 25 },
-      education: { level: 0, studyingUntil: 0, pending: null },
+      education: { level: 0, pending: null },
       zakat: { paidCount: 0, totalPaid: 0, lastDueYear: 0, unpaid: 0 },
       achievements: [],
       housing: {
@@ -1144,6 +1144,10 @@
             <span class="muted" style="font-size:11px">متوقع ${expectedAnnual(key).toFixed(1)}%/سنة · مخاطرة ${ASSETS[key].risk}</span>
             ${mvHtml}
           </div>
+          ${ASSETS[key].income > 0 ? `<div style="display:flex;justify-content:space-between;margin-top:4px">
+            <span class="muted" style="font-size:11px">منها دخل إيجاري يُضاف نقدًا</span>
+            <span style="font-size:11px;color:#2ecc71">${inv.amount > 0 ? `+${fmt(inv.rentalIncome || Math.round(inv.amount * ASSETS[key].income))}/شهر` : `${(ASSETS[key].income * 1200).toFixed(1)}%/سنة`}</span>
+          </div>` : ""}
           <div class="row-actions" style="margin-top:8px">
             <input type="number" min="0" id="amt_${key}" placeholder="مبلغ" />
             <button class="btn btn-sm" data-buy="${key}">شراء</button>
@@ -1761,6 +1765,7 @@
         ["نمو الثروة منذ البداية", (growth >= 0 ? "+" : "−") + fmt(Math.abs(growth))],
         ["رأس المال المستثمر", fmt(invested)],
         ["أرباح/خسائر الاستثمار", (gains >= 0 ? "+" : "−") + fmt(Math.abs(gains))],
+        ["دخل إيجاري شهري", fmt(state.investments.realEstate.rentalIncome || 0)],
         ["مستواك التعليمي", eduName],
         ["التأمين الصحي", state.insurance?.health ? "مفعّل" : "غير مفعّل"],
         ["الحالة الاجتماعية", state.married ? `متزوج · ${state.children ?? 0} أبناء` : "أعزب"],
