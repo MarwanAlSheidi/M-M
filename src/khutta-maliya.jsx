@@ -90,6 +90,11 @@ const ZAKAT_DEFAULT_FLAGS = () => ({ cash:true, save:true, inv:true, ret:false, 
 
 const STORE_KEY = "khutta-maliya:v2";
 
+// وضع الكوتش: فهرس عملاء منفصل عن بيانات كل خطة، كل خطة بمفتاح خاص بها.
+const CLIENTS_KEY = "khutta-maliya:clients-v1";
+const ACTIVE_CLIENT_KEY = "khutta-maliya:active-v1";
+const planKey = (clientId) => `khutta-maliya:plan:${clientId}`;
+
 const blank = () => ({
   cur:"OMR", age:0,
   stage:"", income:"", dependents:"", horizon:"", priority:"", debtMethod:"",
@@ -332,10 +337,10 @@ const fieldStyle = {
   padding:"10px 11px", fontFamily:T.body, fontSize:13.5, color:T.ink, outline:"none",
 };
 
-function Select({ value, onChange, options, plain }) {
+function Select({ value, onChange, options, plain, style }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)}
-      style={{ ...fieldStyle, ...(plain ? { background:"#fff", border:`1px solid ${T.line}` } : {}) }}>
+      style={{ ...fieldStyle, ...(plain ? { background:"#fff", border:`1px solid ${T.line}` } : {}), ...style }}>
       {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
     </select>
   );
@@ -757,33 +762,136 @@ function downloadFile(filename, content, mime) {
 /* ─────────────────────────  app  ───────────────────────── */
 export default function App() {
   const [d, setD] = useState(blank);
+  const [clients, setClients] = useState([]);
+  const [clientId, setClientId] = useState(null);
   const [view, setView] = useState("facts");
   const [horizon, setHorizon] = useState(60);
   const [status, setStatus] = useState("جارٍ التحميل…");
   const [confirming, setConfirming] = useState(false);
+  const [confirmDeleteClient, setConfirmDeleteClient] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameText, setRenameText] = useState("");
   const [moreExp, setMoreExp] = useState(false);
   const loaded = useRef(false);
 
+  // تحميل فهرس العملاء أولاً؛ لو لم يوجد فهرس بعد، يُرحَّل أي خطة قديمة محفوظة بالمفتاح
+  // الأصلي الوحيد إلى «عميل 1» بدل أن تُفقَد عند تفعيل وضع تعدد العملاء لأول مرة.
   useEffect(() => {
     (async () => {
+      let list = [];
       try {
-        const r = await storage.get(STORE_KEY);
-        if (r && r.value) setD(migrate(JSON.parse(r.value)));
-        setStatus("محفوظة");
-      } catch { setStatus("خطة جديدة"); }
+        const r = await storage.get(CLIENTS_KEY);
+        const parsed = JSON.parse(r.value);
+        if (Array.isArray(parsed) && parsed.length) list = parsed;
+      } catch {}
+
+      if (!list.length) {
+        let legacy = null;
+        try { legacy = JSON.parse((await storage.get(STORE_KEY)).value); } catch {}
+        const firstId = `cl-${Date.now()}`;
+        list = [{ id:firstId, name:legacy ? "عميلي" : "عميل 1", updatedAt:Date.now() }];
+        await storage.set(CLIENTS_KEY, JSON.stringify(list)).catch(() => {});
+        await storage.set(planKey(firstId), JSON.stringify(migrate(legacy || {}))).catch(() => {});
+      }
+
+      let active = null;
+      try { active = JSON.parse((await storage.get(ACTIVE_CLIENT_KEY)).value); } catch {}
+      if (!active || !list.some((c) => c.id === active)) active = list[0].id;
+
+      setClients(list);
+      setClientId(active);
+      try {
+        const r = await storage.get(planKey(active));
+        setD(migrate(JSON.parse(r.value)));
+      } catch {
+        setD(blank());
+      }
+      setStatus("محفوظة");
       loaded.current = true;
     })();
   }, []);
 
   useEffect(() => {
-    if (!loaded.current) return;
+    if (!loaded.current || !clientId) return;
     setStatus("جارٍ الحفظ…");
     const t = setTimeout(async () => {
-      try { await storage.set(STORE_KEY, JSON.stringify(d)); setStatus("محفوظة"); }
+      try { await storage.set(planKey(clientId), JSON.stringify(d)); setStatus("محفوظة"); }
       catch { setStatus("تعذّر الحفظ — البيانات في هذه الجلسة فقط"); }
     }, 700);
     return () => clearTimeout(t);
-  }, [d]);
+  }, [d, clientId]);
+
+  const switchClient = useCallback((newId) => {
+    if (!newId || newId === clientId) return;
+    (async () => {
+      setStatus("جارٍ التحميل…");
+      try {
+        const r = await storage.get(planKey(newId));
+        setD(migrate(JSON.parse(r.value)));
+      } catch {
+        setD(blank());
+      }
+      setClientId(newId);
+      setView("facts");
+      setConfirming(false);
+      setConfirmDeleteClient(false);
+      storage.set(ACTIVE_CLIENT_KEY, JSON.stringify(newId)).catch(() => {});
+    })();
+  }, [clientId]);
+
+  const addClient = useCallback(() => {
+    (async () => {
+      const newId = `cl-${Date.now()}`;
+      const name = `عميل ${clients.length + 1}`;
+      const next = [...clients, { id:newId, name, updatedAt:Date.now() }];
+      setClients(next);
+      await storage.set(CLIENTS_KEY, JSON.stringify(next)).catch(() => {});
+      await storage.set(planKey(newId), JSON.stringify(blank())).catch(() => {});
+      setD(blank());
+      setClientId(newId);
+      setView("facts");
+      storage.set(ACTIVE_CLIENT_KEY, JSON.stringify(newId)).catch(() => {});
+    })();
+  }, [clients]);
+
+  const renameClient = useCallback((cid, name) => {
+    setClients((prev) => {
+      const next = prev.map((c) => (c.id === cid ? { ...c, name:name || c.name } : c));
+      storage.set(CLIENTS_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const deleteClient = useCallback((cid) => {
+    setClients((prev) => {
+      if (prev.length <= 1) return prev;
+      const next = prev.filter((c) => c.id !== cid);
+      storage.set(CLIENTS_KEY, JSON.stringify(next)).catch(() => {});
+      if (cid === clientId) switchClient(next[0].id);
+      return next;
+    });
+    setConfirmDeleteClient(false);
+  }, [clientId, switchClient]);
+
+  const exportAllClients = useCallback(() => {
+    (async () => {
+      for (const client of clients) {
+        try {
+          const r = await storage.get(planKey(client.id));
+          const cd = migrate(JSON.parse(r.value));
+          const cid2 = computeIdentity(cd.ans || {});
+          const cc = computeCalc(cd, 60, cid2);
+          const cdp = computeDebtPlan(cd.debts, cd.debtExtra);
+          const cFactsDone = QKEYS.filter((k) => cd[k]).length;
+          const crep = buildReport(cd, cc, cid2, cdp, cFactsDone);
+          const html = buildReportHtml(cd, cc, cid2, crep, cFactsDone);
+          downloadFile(`تقرير-${client.name}.html`, html, "text/html;charset=utf-8");
+        } catch {}
+        await new Promise((res) => setTimeout(res, 350));
+      }
+      setStatus(`تم تصدير ${clients.length} تقريراً`);
+    })();
+  }, [clients]);
 
   const up = useCallback((p) => setD((s) => ({ ...s, ...p })), []);
   const pick = useCallback((cid, i) => setD((s) => {
@@ -837,7 +945,7 @@ export default function App() {
   };
 
   const doPrint = () => { try { window.print(); } catch { setStatus("الطباعة محجوبة — استخدم زر تنزيل التقرير"); } };
-  const reset = () => { const f = blank(); setD(f); setConfirming(false); storage.set(STORE_KEY, JSON.stringify(f)).catch(() => {}); };
+  const reset = () => { const f = blank(); setD(f); setConfirming(false); storage.set(planKey(clientId), JSON.stringify(f)).catch(() => {}); };
   const sortedGoals = useMemo(() => [...d.goals].sort((a, b) => a.m - b.m), [d.goals]);
 
   return (
@@ -873,6 +981,52 @@ export default function App() {
             ))}
           </div>
         </div>
+
+        <div style={{ background:T.fill, borderBottom:`1px solid ${T.fillLine}55` }}>
+          <div style={{ maxWidth:1120, margin:"0 auto", padding:"8px 16px", display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+            <span style={{ fontSize:11.5, color:"#9A7A18" }}>العميل</span>
+            {renaming ? (
+              <>
+                <input
+                  value={renameText}
+                  onChange={(e) => setRenameText(e.target.value)}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { renameClient(clientId, renameText.trim()); setRenaming(false); }
+                    if (e.key === "Escape") setRenaming(false);
+                  }}
+                  style={{ ...fieldStyle, width:170, padding:"5px 8px", fontSize:12.5 }}
+                />
+                <button onClick={() => { renameClient(clientId, renameText.trim()); setRenaming(false); }} style={{ ...btn, padding:"5px 10px", fontSize:12 }}>حفظ</button>
+                <button onClick={() => setRenaming(false)} style={{ ...btn, padding:"5px 10px", fontSize:12 }}>إلغاء</button>
+              </>
+            ) : (
+              <>
+                <Select plain value={clientId || ""} onChange={switchClient}
+                  options={clients.map((cl) => [cl.id, cl.name])} style={{ width:170, padding:"5px 8px", fontSize:12.5 }} />
+                <button
+                  onClick={() => { setRenameText((clients.find((cl) => cl.id === clientId) || {}).name || ""); setRenaming(true); }}
+                  style={{ ...btn, padding:"5px 10px", fontSize:12 }}
+                >إعادة تسمية</button>
+              </>
+            )}
+            <button onClick={addClient} style={{ ...btn, padding:"5px 10px", fontSize:12 }}>+ عميل جديد</button>
+            {confirmDeleteClient ? (
+              <>
+                <span style={{ fontSize:11.5, color:T.bad }}>حذف {(clients.find((cl) => cl.id === clientId) || {}).name}؟</span>
+                <button onClick={() => deleteClient(clientId)} style={{ ...btn, padding:"5px 10px", fontSize:12, color:"#fff", background:T.bad, borderColor:T.bad }}>نعم، احذف</button>
+                <button onClick={() => setConfirmDeleteClient(false)} style={{ ...btn, padding:"5px 10px", fontSize:12 }}>تراجع</button>
+              </>
+            ) : (
+              clients.length > 1 && (
+                <button onClick={() => setConfirmDeleteClient(true)} style={{ ...btn, padding:"5px 10px", fontSize:12, color:T.bad, borderColor:"#E9C8CE" }}>حذف العميل</button>
+              )
+            )}
+            <span style={{ marginInlineStart:"auto", fontSize:11, color:T.muted }}>{clients.length} عميل</span>
+            <button onClick={exportAllClients} style={{ ...btn, padding:"5px 10px", fontSize:12 }}>تصدير الكل</button>
+          </div>
+        </div>
+
         <div style={{ background:T.card, borderBottom:`1px solid ${T.line}` }}>
           <div style={{ maxWidth:1120, margin:"0 auto", padding:"0 8px", display:"flex", gap:2, overflowX:"auto" }}>
             {NAV.map(([k, l], i) => (
