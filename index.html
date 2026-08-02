@@ -68,6 +68,7 @@
     .celebrate-art { width: 100%; height: auto; display: block; background: #0a1e1a; border-radius: 10px; margin-bottom: 12px; }
     .event-btn { background: #1d3d35; border: 1px solid #2a5043; color: #e0e8e4; padding: 12px; border-radius: 8px; width: 100%; margin: 6px 0; cursor: pointer; font-family: inherit; font-size: 14px; text-align: right; transition: background 0.2s; }
     .event-btn:hover { background: #2a5043; }
+    .choice-hint { display: block; font-size: 11px; color: #e67e22; margin-top: 4px; }
     .inline-error { color: #e74c3c; font-size: 13px; margin: -8px 0 12px; min-height: 16px; }
     .muted { color: #8aa89b; }
     .term-row { padding: 10px 0; border-bottom: 1px solid #1d3d35; cursor: pointer; }
@@ -292,11 +293,43 @@
     };
 
     // ==================== الأحداث المالية ====================
+    // كانت خيارات الأحداث تطرح كلفتها مباشرة من الطوارئ أو النقد بلا تحقق، فيهبط
+    // الرصيد تحت الصفر: مالٌ وهمي يُنفَق ولا يُقترض، ويشوّه صافي الثروة والزكاة.
+    // الآن يُستنزف المصدر ثم النقد، وما بقي يُغطّى بدَين حقيقي عليه فائدة.
+    function fundsFor(s, source) {
+      return Math.max(0, s.cash) + (source === "emergency" ? Math.max(0, s.emergency) : 0);
+    }
+    function spend(s, cost, source) {
+      let left = Math.max(0, Math.round(cost));
+      const out = { ...s };
+      if (source === "emergency") {
+        const take = Math.min(Math.max(0, out.emergency), left);
+        out.emergency -= take; left -= take;
+      }
+      const fromCash = Math.min(Math.max(0, out.cash), left);
+      out.cash -= fromCash; left -= fromCash;
+      if (left > 0) { out.debt += left; out.hadDebt = true; }
+      return out;
+    }
+    // الفارق الذي سيُقترض — يُعرض على الزر قبل الاختيار لا بعده
+    function gapOf(s, cost, source) {
+      return Math.max(0, Math.round(cost) - fundsFor(s, source));
+    }
+    function gapHint(cost, source) {
+      return (s) => { const g = gapOf(s, cost, source);
+        return g > 0 ? `سيُقترض ${fmt(g)} ريالًا لتغطية الفارق` : ""; };
+    }
+    function gapNote(s, cost, source) {
+      const g = gapOf(s, cost, source);
+      return g > 0 ? ` (اقترض ${fmt(g)})` : "";
+    }
+
     const EVENTS = [
       // لا تُسرَّح من وظيفة أنت أصلاً خارجها: لا يظهر ما دام أثر خفض دخل نشطًا
       { id: "job_loss", title: "فقدان الوظيفة", desc: "تم تسريحك! دخلك ينخفض 60% لمدة 3 أشهر.",
         when: (s) => !(s.tempEffects || []).some((e) => e.type === "income" && e.amount < 0), choices: [
-        { label: "اسحب 250 من صندوق الطوارئ", effect: (s) => ({ ...s, emergency: s.emergency - 250, tempEffects: [...s.tempEffects, { type: "income", amount: -Math.round(s.monthlyIncome * 0.6), monthsLeft: 3 }], eventLog: [...s.eventLog, "فقدان وظيفة - استخدم الطوارئ"] }) },
+        { label: "غطِّ 250 من صندوق الطوارئ", hint: gapHint(250, "emergency"),
+          effect: (s) => ({ ...spend(s, 250, "emergency"), tempEffects: [...s.tempEffects, { type: "income", amount: -Math.round(s.monthlyIncome * 0.6), monthsLeft: 3 }], eventLog: [...s.eventLog, "فقدان وظيفة - استخدم الطوارئ" + gapNote(s, 250, "emergency")] }) },
         { label: "اقترض 750 لتغطية المصروفات", effect: (s) => ({ ...s, debt: s.debt + 750, cash: s.cash + 750, tempEffects: [...s.tempEffects, { type: "income", amount: -Math.round(s.monthlyIncome * 0.6), monthsLeft: 3 }], eventLog: [...s.eventLog, "فقدان وظيفة - اقترض"] }) }
       ]},
       // الانخفاض يُطبَّق فعلاً قبل تنفيذ الخيار: كان الحدث يعلن هبوط 25%
@@ -325,29 +358,34 @@
       // يظهر فقط ما دمت مستأجرًا — بعد التملك لا معنى لرفع الإيجار
       { id: "rent_increase", title: "رفع الإيجار", desc: "المالك يرفع الإيجار 5% بشكل دائم.", when: (s) => s.housing.stage !== "owned", choices: [
         { label: "أقبل الزيادة", effect: (s) => ({ ...s, rent: Math.round(s.rent * 1.05), monthlyExpenses: Math.round(s.monthlyExpenses + s.rent * 0.05), eventLog: [...s.eventLog, "رفع إيجار - قبل"] }) },
-        { label: "أنتقل لسكن أرخص (تكلفة 150)", effect: (s) => ({ ...s, cash: s.cash - 150, rent: Math.round(s.rent * 0.9), monthlyExpenses: Math.round(s.monthlyExpenses - s.rent * 0.1), eventLog: [...s.eventLog, "رفع إيجار - انتقل"] }) }
+        { label: "أنتقل لسكن أرخص (تكلفة 150)", hint: gapHint(150, "cash"),
+          effect: (s) => ({ ...spend(s, 150, "cash"), rent: Math.round(s.rent * 0.9), monthlyExpenses: Math.round(s.monthlyExpenses - s.rent * 0.1), eventLog: [...s.eventLog, "رفع إيجار - انتقل" + gapNote(s, 150, "cash")] }) }
       ]},
       // التأمين لا يمنع الحدث لكنه يخفض كلفته إلى الربع
       { id: "medical", title: "طارئ صحي",
         desc: "علاج طارئ. التكلفة الكاملة 220 ريالًا — ومع التأمين الصحي تتحمل ربعها فقط.",
         choices: [
-        { label: "ادفع من الطوارئ", effect: (s) => { const c = s.insurance?.health ? 55 : 220;
-            return { ...s, emergency: s.emergency - c, eventLog: [...s.eventLog, `طارئ صحي - دفع ${c}`] }; } },
+        { label: "ادفع من الطوارئ", hint: (s) => gapHint(s.insurance?.health ? 55 : 220, "emergency")(s),
+          effect: (s) => { const c = s.insurance?.health ? 55 : 220;
+            return { ...spend(s, c, "emergency"), eventLog: [...s.eventLog, `طارئ صحي - دفع ${c}` + gapNote(s, c, "emergency")] }; } },
         { label: "تقسيط على 6 أشهر", effect: (s) => { const c = s.insurance?.health ? 55 : 220;
             return { ...s, debt: s.debt + c, tempEffects: [...s.tempEffects, { type: "expense", amount: Math.ceil(c / 6), monthsLeft: 6 }], eventLog: [...s.eventLog, `طارئ صحي - تقسيط ${c}`] }; } }
       ]},
       { id: "car_repair", title: "عطل في السيارة", desc: "تحتاج سيارتك إصلاحًا عاجلاً بـ180 ريالًا.", choices: [
-        { label: "ادفع من الطوارئ", effect: (s) => ({ ...s, emergency: s.emergency - 180, eventLog: [...s.eventLog, "عطل سيارة - طوارئ"] }) },
+        { label: "ادفع من الطوارئ", hint: gapHint(180, "emergency"),
+          effect: (s) => ({ ...spend(s, 180, "emergency"), eventLog: [...s.eventLog, "عطل سيارة - طوارئ" + gapNote(s, 180, "emergency")] }) },
         { label: "أجّل الإصلاح (يرتفع لاحقًا)", effect: (s) => ({ ...s, tempEffects: [...s.tempEffects, { type: "expense", amount: 45, monthsLeft: 5 }], morale: Math.max(0, (s.morale ?? 70) - 5), eventLog: [...s.eventLog, "عطل سيارة - أجّل"] }) }
       ]},
       { id: "wedding", title: "زواج", desc: "تتزوج! يرتفع دخل الأسرة 25% ومصروفاتها 30% أو أكثر — والتكلفة تعتمد على حجم العرس.",
         when: (s) => !s.married && s.year >= 2, choices: [
-        { label: "زواج متواضع (1,500)", effect: (s) => ({ ...s, married: true, cash: s.cash - 1500,
+        { label: "زواج متواضع (1,500)", hint: gapHint(1500, "cash"),
+          effect: (s) => ({ ...spend(s, 1500, "cash"), married: true,
             monthlyIncome: Math.round(s.monthlyIncome * 1.25), monthlyExpenses: Math.round(s.monthlyExpenses * 1.3),
-            morale: Math.min(100, (s.morale ?? 70) + 25), eventLog: [...s.eventLog, "💍 زواج متواضع"] }) },
-        { label: "زواج كبير (2,500، رضا أعلى)", effect: (s) => ({ ...s, married: true, cash: s.cash - 2500,
+            morale: Math.min(100, (s.morale ?? 70) + 25), eventLog: [...s.eventLog, "💍 زواج متواضع" + gapNote(s, 1500, "cash")] }) },
+        { label: "زواج كبير (2,500، رضا أعلى)", hint: gapHint(2500, "cash"),
+          effect: (s) => ({ ...spend(s, 2500, "cash"), married: true,
             monthlyIncome: Math.round(s.monthlyIncome * 1.25), monthlyExpenses: Math.round(s.monthlyExpenses * 1.35),
-            morale: Math.min(100, (s.morale ?? 70) + 35), eventLog: [...s.eventLog, "💍 زواج كبير"] }) },
+            morale: Math.min(100, (s.morale ?? 70) + 35), eventLog: [...s.eventLog, "💍 زواج كبير" + gapNote(s, 2500, "cash")] }) },
         // خيار التأجيل ضروري: الزواج يرفع مصروفاتك دائمًا، ومعها يرتفع هدف
         // الاستقلال المالي — فلا يصح فرضه على اللاعب بلا مخرج.
         { label: "أؤجّل الأمر الآن", effect: (s) => ({ ...s, morale: Math.max(0, (s.morale ?? 70) - 4), eventLog: [...s.eventLog, "أجّلت الزواج"] }) }
@@ -905,7 +943,10 @@
         <h2>${ev.title}</h2>
         <canvas class="event-art" id="eventArt" width="340" height="120"></canvas>
         <p style="margin:12px 0;line-height:1.8">${ev.desc}</p>
-        ${ev.choices.map((c, i) => `<button class="event-btn" data-choice="${i}">${c.label}</button>`).join("")}
+        ${ev.choices.map((c, i) => {
+          const hint = c.hint ? c.hint(state) : "";
+          return `<button class="event-btn" data-choice="${i}">${c.label}${hint ? `<span class="choice-hint">⚠ ${hint}</span>` : ""}</button>`;
+        }).join("")}
       `, (root) => {
         const artCanvas = root.querySelector("#eventArt");
         if (artCanvas) animateEventArt(artCanvas, ev.id);
