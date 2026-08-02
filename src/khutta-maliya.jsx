@@ -89,7 +89,7 @@ const STORE_KEY = "khutta-maliya:v2";
 const blank = () => ({
   cur:"OMR", age:0,
   stage:"", income:"", dependents:"", horizon:"", priority:"", debtMethod:"",
-  ans:{}, goals:[], debts:[], debtExtra:0,
+  ans:{}, goals:[], debts:[], debtExtra:0, inflation:2.5,
   assets: ASSETS.map(() => 0), liabs: LIABS.map(() => 0),
   exp: EXPENSES.map(([k, l, t]) => ({ key:k, label:l, type:t, cost:0 })),
   inc: INCOMES.map(([l]) => ({ label:l, amount:0 })),
@@ -331,7 +331,7 @@ function Select({ value, onChange, options, plain }) {
   );
 }
 
-function NumberField({ value, onChange, placeholder = "0" }) {
+function NumberField({ value, onChange, placeholder = "0", style }) {
   const [txt, setTxt] = useState(value ? String(value) : "");
   const f = useRef(false);
   useEffect(() => { if (!f.current) setTxt(value ? String(value) : ""); }, [value]);
@@ -340,7 +340,7 @@ function NumberField({ value, onChange, placeholder = "0" }) {
       onFocus={() => (f.current = true)}
       onBlur={() => { f.current = false; setTxt(value ? String(value) : ""); }}
       onChange={(e) => { const r = e.target.value.replace(/[^\d.]/g, ""); setTxt(r); onChange(parseFloat(r) || 0); }}
-      style={{ ...fieldStyle, fontFamily:T.mono, textAlign:"right", direction:"ltr" }} />
+      style={{ ...fieldStyle, fontFamily:T.mono, textAlign:"right", direction:"ltr", ...style }} />
   );
 }
 
@@ -586,8 +586,12 @@ export default function App() {
       equity = BANDS[Math.max(0, Math.min(4, Math.round((hs + tilt) * 0.72)))];
     }
 
+    // تكلفة الهدف تُدخَل بأسعار اليوم، لكنها تُصرف مستقبلاً — لذا تُضخَّم بمعدّل التضخم
+    // حسب المسافة الزمنية قبل دخولها المحاكاة، وإلا احتُسبت اسمياً بالخطأ.
+    const inflRate = (d.inflation || 0) / 100;
+    const nominalOf = (cost, m) => (cost || 0) * Math.pow(1 + inflRate, m / 12);
     const dueBy = {};
-    d.goals.forEach((g) => { dueBy[g.m] = (dueBy[g.m] || 0) + (g.cost || 0); });
+    d.goals.forEach((g) => { dueBy[g.m] = (dueBy[g.m] || 0) + nominalOf(g.cost, g.m); });
     let pot = 0, ef = efGap, efDone = efGap === 0 ? 0 : null, firstShort = null, worst = 0;
     const capYear = [0,0,0,0,0], costYear = [0,0,0,0,0];
     for (let i = 0; i < 60; i++) {
@@ -603,6 +607,10 @@ export default function App() {
 
     const inH = d.goals.filter((g) => g.m < horizon);
     const goalsTotal = sum(inH.map((g) => g.cost));
+    const goalsTotalNominal = sum(inH.map((g) => nominalOf(g.cost, g.m)));
+    // إجماليات غير مقيّدة بمرشّح الأفق في شاشة الأهداف — لأن محاكاة القراءة تغطي خمس سنوات دوماً
+    const goalsAllReal = sum(d.goals.map((g) => g.cost));
+    const goalsAllNominal = sum(d.goals.map((g) => nominalOf(g.cost, g.m)));
     const byTier = ["core","life","aspire"].map((t) => sum(inH.filter((g) => g.tier === t).map((g) => g.cost)));
     const untyped = d.goals.filter((g) => !g.type).length;
     const manualFunded = d.goals.filter((g) => g.fund && g.fund !== "auto").length;
@@ -611,7 +619,7 @@ export default function App() {
       savingsRate, r503020, dtiHousing, dtiTotal, efRec, efMonths, efTarget, efGap, efCover, behav,
       expectedNet, netClass, netRatio, fiTarget, fiYears, fiPlus, equity,
       capYear, costYear, efDone, efNever, firstShort, worstShort:-worst, endPot:pot,
-      goalsTotal, byTier, untyped, manualFunded, annualExp };
+      goalsTotal, goalsTotalNominal, goalsAllReal, goalsAllNominal, byTier, untyped, manualFunded, annualExp, nominalOf };
   }, [d, horizon, id]);
 
   /* ── جدول سداد الديون: الانهيار الجليدي مقابل كرة الثلج ── */
@@ -1010,10 +1018,20 @@ ${rep.goals.map((g) => `<tr>${g.map((x) => `<td>${esc(x)}</td>`).join("")}</tr>`
                   color:horizon === n ? "#fff" : T.ink2,
                 }}>{l}</button>
               ))}
-              <span style={{ marginInlineStart:"auto", fontSize:13, color:T.muted }}>
-                الإجمالي: <b style={{ fontFamily:T.mono, color:T.ink, direction:"ltr", display:"inline-block" }}>{money(c.goalsTotal, d.cur)}</b>
+              <span style={{ display:"flex", alignItems:"center", gap:6, fontSize:12.5, color:T.muted }}>
+                معدّل التضخم المفترض
+                <NumberField value={d.inflation} onChange={(v) => up({ inflation:v })} placeholder="2.5" style={{ width:70, padding:"6px 8px" }} />
+                ٪ سنوياً
+              </span>
+              <span style={{ marginInlineStart:"auto", fontSize:13, color:T.muted, textAlign:"left" }}>
+                بأسعار اليوم: <b style={{ fontFamily:T.mono, color:T.ink, direction:"ltr", display:"inline-block" }}>{money(c.goalsTotal, d.cur)}</b>
+                <br />
+                المتوقع وقت الشراء: <b style={{ fontFamily:T.mono, color:T.fillLine, direction:"ltr", display:"inline-block" }}>{money(c.goalsTotalNominal, d.cur)}</b>
               </span>
             </div>
+            <p style={{ fontSize:11.5, color:T.muted, margin:"-6px 0 14px", lineHeight:1.7 }}>
+              تكلفة كل هدف تُدخَل بأسعار اليوم، وتُضخَّم في المحاكاة والرسم البياني حسب المسافة الزمنية حتى موعده — الفرق بين الرقمين أعلاه هو أثر التضخم وحده.
+            </p>
 
             {id.ready && (id.incons || id.P.now >= 25) && c.manualFunded > 0 && (
               <Card style={{ marginBottom:14, background:T.fill, borderColor:T.fillLine }}>
@@ -1058,7 +1076,12 @@ ${rep.goals.map((g) => `<tr>${g.map((x) => `<td>${esc(x)}</td>`).join("")}</tr>`
                   <NumberField value={g.cost} onChange={(v) => upGoal(g.id, { cost:v })} placeholder="التكلفة" />
                   <Select value={g.fund} options={FUNDING} onChange={(v) => upGoal(g.id, { fund:v })} />
                 </div>
-                <div style={{ display:"flex", marginTop:8 }}>
+                <div style={{ display:"flex", alignItems:"center", marginTop:8 }}>
+                  {g.m > 0 && d.inflation > 0 && g.cost > 0 && (
+                    <span style={{ fontSize:11.5, color:T.muted }}>
+                      المتوقع وقت الشراء بالتضخّم: <b style={{ fontFamily:T.mono, direction:"ltr", display:"inline-block" }}>{money(c.nominalOf(g.cost, g.m), d.cur)}</b>
+                    </span>
+                  )}
                   <button onClick={() => delGoal(g.id)} style={{ ...btn, padding:"5px 11px", fontSize:12, color:T.bad, borderColor:"#E9C8CE", marginInlineStart:"auto" }}>حذف</button>
                 </div>
               </Card>
@@ -1317,19 +1340,21 @@ ${rep.goals.map((g) => `<tr>${g.map((x) => `<td>${esc(x)}</td>`).join("")}</tr>`
             <Card style={{ marginBottom:16 }}>
               <div dir="ltr" style={{ width:"100%", height:260 }}>
                 <ResponsiveContainer>
-                  <BarChart data={[0,1,2,3,4].map((y) => ({ name:`Year ${y + 1}`, "تكلفة الأهداف":c.costYear[y], "المتاح فعلياً":Math.max(c.capYear[y], 0) }))}>
+                  <BarChart data={[0,1,2,3,4].map((y) => ({ name:`Year ${y + 1}`, "تكلفة الأهداف (اسمية)":c.costYear[y], "المتاح فعلياً":Math.max(c.capYear[y], 0) }))}>
                     <CartesianGrid strokeDasharray="3 3" stroke={T.line} />
                     <XAxis dataKey="name" tick={{ fontSize:11, fill:T.muted }} />
                     <YAxis tick={{ fontSize:11, fill:T.muted }} />
                     <Tooltip formatter={(v) => money(v, d.cur)} />
                     <Legend wrapperStyle={{ fontSize:12, fontFamily:T.body }} />
-                    <Bar dataKey="تكلفة الأهداف" fill={T.ink} radius={[4,4,0,0]} />
+                    <Bar dataKey="تكلفة الأهداف (اسمية)" fill={T.ink} radius={[4,4,0,0]} />
                     <Bar dataKey="المتاح فعلياً" fill={T.fillLine} radius={[4,4,0,0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
               <p style={{ fontSize:11.5, color:T.muted, margin:"8px 0 0", lineHeight:1.7 }}>
                 «المتاح فعلياً» هو الفائض السنوي بعد خصم ما ذهب لصندوق الطوارئ في تلك السنة، لا الفائض الخام.
+                «تكلفة الأهداف» هنا اسمية — مضخّمة بمعدّل التضخّم ({d.inflation || 0}٪ سنوياً) حسب موعد كل هدف،
+                لا بأسعار اليوم. بأسعار اليوم فقط: {money(c.goalsAllReal, d.cur)} مقابل {money(c.goalsAllNominal, d.cur)} اسمياً.
               </p>
             </Card>
             <div className="grid gap-4" style={{ gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))" }}>
