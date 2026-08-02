@@ -333,6 +333,29 @@
       return g > 0 ? ` (اقترض ${fmt(g)})` : "";
     }
 
+    // شدّة الطارئ الصحي: المتوسط 456 ريالًا، لكن 8% من الحالات تعادل
+    // دخل شهرين — وهذا الذيل تحديدًا هو ما يشتريه قسط التأمين.
+    const MEDICAL_TIERS = [
+      { p: 0.70, cost: 180,  label: "زيارة طارئة وعلاج قصير" },
+      { p: 0.22, cost: 700,  label: "إصابة تستدعي جراحة صغرى" },
+      { p: 0.08, cost: 2200, label: "حالة خطيرة تستدعي تنويمًا" },
+    ];
+    const INSURANCE_COVER = 0.75;
+    function insuredShare(cost) { return Math.round(cost * (1 - INSURANCE_COVER)); }
+    function rollMedical() {
+      let r = Math.random(), acc = 0;
+      for (const t of MEDICAL_TIERS) { acc += t.p; if (r <= acc) return t; }
+      return MEDICAL_TIERS[MEDICAL_TIERS.length - 1];
+    }
+    function medicalCost(s, tier) {
+      const t = tier && Number.isFinite(tier.cost) ? tier : MEDICAL_TIERS[0];
+      return s.insurance?.health ? insuredShare(t.cost) : t.cost;
+    }
+    // متوسط الفاتورة الشهرية المتوقعة، لعرض القيمة الصادقة للتأمين
+    function expectedMedicalBill() {
+      return MEDICAL_TIERS.reduce((a, t) => a + t.p * t.cost, 0);
+    }
+
     const EVENTS = [
       // لا تُسرَّح من وظيفة أنت أصلاً خارجها: لا يظهر ما دام أثر خفض دخل نشطًا
       { id: "job_loss", title: "فقدان الوظيفة", desc: "تم تسريحك! دخلك ينخفض 60% لمدة 3 أشهر.",
@@ -370,15 +393,22 @@
         { label: "أنتقل لسكن أرخص (تكلفة 150)", hint: gapHint(150, "cash"),
           effect: (s) => ({ ...spend(s, 150, "cash"), rent: Math.round(s.rent * 0.9), monthlyExpenses: Math.round(s.monthlyExpenses - s.rent * 0.1), eventLog: [...s.eventLog, "رفع إيجار - انتقل" + gapNote(s, 150, "cash")] }) }
       ]},
-      // التأمين لا يمنع الحدث لكنه يخفض كلفته إلى الربع
+      // الطارئ الصحي له ذيل ثقيل: أغلبه زيارة رخيصة، وقليله فاتورة تعادل
+      // دخل شهرين. بفاتورة ثابتة عند 220 كان التأمين خاسرًا رياضيًا بيقين
+      // (قسطه 2.4 ضعف ما يوفّره) ولا يحميك من شيء يستحق الحماية — فيصير
+      // نصح اللاعب بالاشتراك تعليمًا خاطئًا. القيمة الحقيقية للتأمين هي
+      // قطع الذيل، لا خفض المتوسط.
       { id: "medical", title: "طارئ صحي",
-        desc: "علاج طارئ. التكلفة الكاملة 220 ريالًا — ومع التأمين الصحي تتحمل ربعها فقط.",
+        roll: () => rollMedical(),
+        desc: (s, t) => `${t.label}. الفاتورة <b>${fmt(t.cost)}</b> ريالًا${
+          s.insurance?.health ? ` — ويتحمل تأمينك 75% فتدفع ${fmt(insuredShare(t.cost))} فقط.`
+                              : ` — ولو كنت مؤمَّنًا لدفعت ${fmt(insuredShare(t.cost))} منها فقط.`}`,
         choices: [
-        { label: "ادفع من الطوارئ", hint: (s) => gapHint(s.insurance?.health ? 55 : 220, "emergency")(s),
-          effect: (s) => { const c = s.insurance?.health ? 55 : 220;
-            return { ...spend(s, c, "emergency"), eventLog: [...s.eventLog, `طارئ صحي - دفع ${c}` + gapNote(s, c, "emergency")] }; } },
-        { label: "تقسيط على 6 أشهر", effect: (s) => { const c = s.insurance?.health ? 55 : 220;
-            return { ...s, debt: s.debt + c, tempEffects: [...s.tempEffects, { type: "expense", amount: Math.ceil(c / 6), monthsLeft: 6 }], eventLog: [...s.eventLog, `طارئ صحي - تقسيط ${c}`] }; } }
+        { label: "ادفع من الطوارئ", hint: (s, t) => gapHint(medicalCost(s, t), "emergency")(s),
+          effect: (s, t) => { const c = medicalCost(s, t);
+            return { ...spend(s, c, "emergency"), eventLog: [...s.eventLog, `طارئ صحي - دفع ${fmt(c)}` + gapNote(s, c, "emergency")] }; } },
+        { label: "تقسيط على 6 أشهر", effect: (s, t) => { const c = medicalCost(s, t);
+            return { ...s, debt: s.debt + c, hadDebt: true, tempEffects: [...s.tempEffects, { type: "expense", amount: Math.ceil(c / 6), monthsLeft: 6 }], eventLog: [...s.eventLog, `طارئ صحي - تقسيط ${fmt(c)}`] }; } }
       ]},
       { id: "car_repair", title: "عطل في السيارة", desc: "تحتاج سيارتك إصلاحًا عاجلاً بـ180 ريالًا.", choices: [
         { label: "ادفع من الطوارئ", hint: gapHint(180, "emergency"),
@@ -974,12 +1004,16 @@
     }
 
     function openEvent(ev) {
+      // بعض الأحداث تسحب شدّتها مرة واحدة: تُسحب هنا وتُمرَّر إلى الوصف
+      // والأزرار والأثر معًا، كي يطابق ما وُعد به اللاعبُ ما يقع فعلاً.
+      const roll = ev.roll ? ev.roll() : null;
+      const desc = typeof ev.desc === "function" ? ev.desc(state, roll) : ev.desc;
       pushModal(`
         <h2>${ev.title}</h2>
         <canvas class="event-art" id="eventArt" width="340" height="120"></canvas>
-        <p style="margin:12px 0;line-height:1.8">${ev.desc}</p>
+        <p style="margin:12px 0;line-height:1.8">${desc}</p>
         ${ev.choices.map((c, i) => {
-          const hint = c.hint ? c.hint(state) : "";
+          const hint = c.hint ? c.hint(state, roll) : "";
           return `<button class="event-btn" data-choice="${i}">${c.label}${hint ? `<span class="choice-hint">⚠ ${hint}</span>` : ""}</button>`;
         }).join("")}
       `, (root) => {
@@ -988,7 +1022,7 @@
         root.querySelectorAll("[data-choice]").forEach((btn) => {
           btn.addEventListener("click", once(() => {
             const choice = ev.choices[Number(btn.dataset.choice)];
-            setState(choice.effect(state));
+            setState(choice.effect(state, roll));
             closeAllModals();
           }));
         });
@@ -1209,8 +1243,13 @@
           <h3 style="font-size:14px;color:${state.insurance?.health ? "#2ecc71" : "#c9974a"};margin-bottom:4px">☂ ${term("التأمين")} الصحي</h3>
           <p class="muted" style="font-size:12px;line-height:1.8">
             ${state.insurance?.health
-              ? `مؤمَّن — قسط <b>${fmt(state.insurance.premium)}</b> ريالًا شهريًا، ويتحمل التأمين 75% من الطوارئ الصحية.`
-              : `قسط <b>${fmt(state.insurance?.premium ?? 25)}</b> ريالًا شهريًا يخفض كلفة الطارئ الصحي من 220 إلى 55.`}
+              ? `مؤمَّن — قسط <b>${fmt(state.insurance.premium)}</b> ريالًا شهريًا، ويتحمل التأمين 75% من أي فاتورة علاج.`
+              : `قسط <b>${fmt(state.insurance?.premium ?? INITIAL_STATE.insurance.premium)}</b> ريالًا شهريًا يتحمل 75% من أي فاتورة علاج.`}
+          </p>
+          <p class="muted" style="font-size:11px;line-height:1.8;margin-top:6px">
+            أغلب الفواتير صغيرة (${fmt(MEDICAL_TIERS[0].cost)}) لكن ${Math.round(MEDICAL_TIERS[2].p * 100)}% منها تبلغ
+            <b style="color:#e74c3c">${fmt(MEDICAL_TIERS[2].cost)}</b> ريالًا. القسط أغلى قليلاً من متوسط ما يوفّره —
+            وهذا ثمن ألّا تصطدم بفاتورة تعادل دخل شهرين وأنت غير مستعد.
           </p>
           <button class="btn btn-sm ${state.insurance?.health ? "btn-outline" : ""}" style="margin-top:8px" id="insBtn">
             ${state.insurance?.health ? "إلغاء التأمين" : "اشترك في التأمين"}
@@ -1911,9 +1950,11 @@
         test: (s, d) => s.cash > d.effExpenses * 6 && d.totalInv < s.cash * 0.5
                         && !(["land", "building"].includes(s.housing.stage) && s.housing.built < HOME_COST),
         text: (s, d) => `لديك ${fmt(s.cash)} ريالًا نقدًا خاملاً — أكثر من ٦ أشهر مصروفات. النقد الزائد يتآكل بالتضخم بدل أن ينمو.` },
+      // المعيار الصحيح ليس "هل التأمين رابح في المتوسط" — ليس كذلك، وهذا
+      // طبيعي — بل: هل تستطيع دفع أسوأ فاتورة نقدًا دون أن تنهار ميزانيتك؟
       { id: "no_insurance", sev: 2, icon: "☂", term: "التأمين",
-        test: (s, d) => !s.insurance?.health && d.coverage < 4,
-        text: () => `لا تأمين صحي لديك وصندوق طوارئك ضعيف. قسط ٢٥ ريالًا يخفض الطارئ الصحي من ٢٢٠ إلى ٥٥.` },
+        test: (s) => !s.insurance?.health && (s.cash + s.emergency) < MEDICAL_TIERS[2].cost,
+        text: (s) => `أسوأ فاتورة علاج تبلغ ${fmt(MEDICAL_TIERS[2].cost)} ريالًا، ولا تملك سوى ${fmt(s.cash + s.emergency)} سائلة. قسط ${fmt(s.insurance?.premium ?? INITIAL_STATE.insurance.premium)} ريالًا يهبط بنصيبك منها إلى ${fmt(insuredShare(MEDICAL_TIERS[2].cost))} — ليس ربحًا في المتوسط، بل حماية من ضربة لا تحتملها.` },
       { id: "no_land", sev: 1, icon: "🏜", term: "منحة الأرض",
         test: (s) => s.housing.stage === "renting" && s.year >= 1,
         text: (s) => `ما زلت تدفع ${fmt(s.rent)} ريالًا إيجارًا شهريًا. طلب منحة الأرض مجاني ويستغرق ٦ أشهر — كلما بكّرت بكّر توقّف الإيجار.` },
