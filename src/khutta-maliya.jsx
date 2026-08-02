@@ -84,6 +84,10 @@ const ASSETS = [
 ];
 const LIABS = [["قروض بنكية",0],["بطاقات ائتمان",0],["قرض عقاري",0],["قرض سيارة",0],["التزامات أخرى",1]];
 
+// الافتراض الفقهي الشائع: السيولة والتوفير والاستثمارات القابلة للتداول زكوية،
+// والعقار والمركبة الشخصيان والتقاعد غير المتاح حالياً ليست كذلك — قابل للتعديل يدوياً لكل حالة.
+const ZAKAT_DEFAULT_FLAGS = () => ({ cash:true, save:true, inv:true, ret:false, prop:false, car:false, other:false });
+
 const STORE_KEY = "khutta-maliya:v2";
 
 const blank = () => ({
@@ -94,6 +98,7 @@ const blank = () => ({
   exp: EXPENSES.map(([k, l, t]) => ({ key:k, label:l, type:t, cost:0 })),
   inc: INCOMES.map(([l]) => ({ label:l, amount:0 })),
   efNow:0, efOverride:0,
+  zakat: { flags: ZAKAT_DEFAULT_FLAGS(), nisab:0, hawl:true },
 });
 
 const migrate = (raw) => {
@@ -103,6 +108,11 @@ const migrate = (raw) => {
       .map((g, k) => ({ id:`m${k}`, m:g.m, type:g.type || "", tier:g.tier || "", cost:g.cost || 0, fund:g.fund || "" }));
   }
   if (!Array.isArray(o.debts)) o.debts = [];
+  o.zakat = {
+    flags: { ...ZAKAT_DEFAULT_FLAGS(), ...((raw.zakat && raw.zakat.flags) || {}) },
+    nisab: (raw.zakat && raw.zakat.nisab) || 0,
+    hawl: raw.zakat ? raw.zakat.hawl !== false : true,
+  };
   delete o.months; delete o.lik; delete o.ch; delete o.risk;
   return o;
 };
@@ -506,6 +516,9 @@ export default function App() {
     return { ...s, goals:[...s.goals, { id:`g${Date.now()}${Math.random().toString(36).slice(2,6)}`, m, type:"", tier:"", cost:0, fund:"" }] };
   }), []);
 
+  const upZakat = useCallback((p) => setD((s) => ({ ...s, zakat:{ ...s.zakat, ...p } })), []);
+  const toggleZakatFlag = useCallback((key) => setD((s) => ({ ...s, zakat:{ ...s.zakat, flags:{ ...s.zakat.flags, [key]:!s.zakat.flags[key] } } })), []);
+
   const upDebt = useCallback((id, p) => setD((s) => ({ ...s, debts:s.debts.map((x) => (x.id === id ? { ...x, ...p } : x)) })), []);
   const delDebt = useCallback((id) => setD((s) => ({ ...s, debts:s.debts.filter((x) => x.id !== id) })), []);
   const addDebt = useCallback(() => setD((s) => ({
@@ -542,6 +555,11 @@ export default function App() {
     const totalAssets = sum(d.assets), totalLiabs = sum(d.liabs);
     const net = totalAssets - totalLiabs;
     const invested = (d.assets[2] || 0) + (d.assets[3] || 0);
+
+    /* الزكاة — 2.5٪ على الأصول الزكوية إذا بلغت النصاب ومضى عليها الحول */
+    const zakatableTotal = ASSETS.reduce((s, [k], i) => s + (d.zakat.flags[k] ? (d.assets[i] || 0) : 0), 0);
+    const zakatMeetsNisab = d.zakat.nisab > 0 ? zakatableTotal >= d.zakat.nisab : null;
+    const zakatDue = d.zakat.hawl && zakatMeetsNisab ? zakatableTotal * 0.025 : 0;
 
     const get = (k) => (d.exp.find((e) => e.key === k) || {}).cost || 0;
     const totalExp = sum(d.exp.map((e) => e.cost));
@@ -619,7 +637,8 @@ export default function App() {
       savingsRate, r503020, dtiHousing, dtiTotal, efRec, efMonths, efTarget, efGap, efCover, behav,
       expectedNet, netClass, netRatio, fiTarget, fiYears, fiPlus, equity,
       capYear, costYear, efDone, efNever, firstShort, worstShort:-worst, endPot:pot,
-      goalsTotal, goalsTotalNominal, goalsAllReal, goalsAllNominal, byTier, untyped, manualFunded, annualExp, nominalOf };
+      goalsTotal, goalsTotalNominal, goalsAllReal, goalsAllNominal, byTier, untyped, manualFunded, annualExp, nominalOf,
+      zakatableTotal, zakatMeetsNisab, zakatDue };
   }, [d, horizon, id]);
 
   /* ── جدول سداد الديون: الانهيار الجليدي مقابل كرة الثلج ── */
@@ -730,6 +749,7 @@ export default function App() {
         const chosen = debtPlan[d.debtMethod === "snowball" ? "snowball" : "avalanche"];
         return chosen.neverPaidOff ? "لن تُسدَّد بالدفعات الحالية" : `${chosen.months} شهراً — فائدة إجمالية ${M(chosen.totalInterest)}`;
       })()]] : []),
+      ...(d.zakat.nisab > 0 ? [["الزكاة المستحقة", c.zakatDue > 0 ? M(c.zakatDue) : c.zakatMeetsNisab === false ? "دون النصاب" : "لم يكتمل الحول"]] : []),
     ];
 
     const profile = [
@@ -1191,6 +1211,54 @@ ${rep.goals.map((g) => `<tr>${g.map((x) => `<td>${esc(x)}</td>`).join("")}</tr>`
                     </p>
                   )}
                 </>
+              )}
+            </Card>
+
+            <Card style={{ marginTop:16 }}>
+              <div style={{ fontFamily:T.display, fontWeight:700, marginBottom:6 }}>حاسبة الزكاة</div>
+              <p style={{ fontSize:12.5, color:T.muted, marginTop:0, marginBottom:14, lineHeight:1.75 }}>
+                2.5٪ على الأصول الزكوية إذا بلغت النصاب ومضى عليها الحول. حدّد أي فئات أصولك تعتبرها زكوية — الافتراض هنا
+                هو الرأي الشائع (السيولة والتوفير والاستثمارات القابلة للتداول زكوية، والعقار والمركبة الشخصيان والتقاعد غير المتاح ليست كذلك)،
+                وهو اجتهاد عام لا فتوى؛ عدّل حسب حالتك أو استشر مختصاً شرعياً.
+              </p>
+
+              <div style={{ marginBottom:14 }}>
+                {ASSETS.map(([k, l], i) => (
+                  <label key={k} style={{ display:"flex", alignItems:"center", gap:10, padding:"6px 0", fontSize:13, cursor:"pointer" }}>
+                    <input type="checkbox" checked={!!d.zakat.flags[k]} onChange={() => toggleZakatFlag(k)} />
+                    <span style={{ flex:1, color:T.ink2 }}>{l}</span>
+                    <span style={{ fontFamily:T.mono, direction:"ltr", color:T.muted }}>{money(d.assets[i] || 0, d.cur)}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div style={{ borderTop:`1px solid ${T.line}`, paddingTop:12, marginBottom:14 }}>
+                <Row k="إجمالي الأصول الزكوية" v={money(c.zakatableTotal, d.cur)} bold />
+              </div>
+
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
+                <div>
+                  <div style={{ fontSize:12, color:T.muted, marginBottom:6 }}>قيمة النصاب بعملتك (595غم فضة أو 85غم ذهب — بسعر اليوم)</div>
+                  <NumberField value={d.zakat.nisab || 0} onChange={(v) => upZakat({ nisab:v })} placeholder="أدخل من مصدر أسعار موثوق" />
+                </div>
+                <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, cursor:"pointer", alignSelf:"end", paddingBottom:10 }}>
+                  <input type="checkbox" checked={!!d.zakat.hawl} onChange={() => upZakat({ hawl:!d.zakat.hawl })} />
+                  <span>مضى عليها حول كامل (سنة هجرية)</span>
+                </label>
+              </div>
+
+              {d.zakat.nisab > 0 ? (
+                <div style={{ padding:14, borderRadius:10, background:c.zakatDue > 0 ? T.fill : "#F7FAF8", border:`1px solid ${c.zakatDue > 0 ? T.fillLine : T.line}` }}>
+                  <Row k="بلغت النصاب؟" v={c.zakatMeetsNisab ? "نعم" : "لا"} col={c.zakatMeetsNisab ? T.good : T.muted} />
+                  <Row k="الزكاة المستحقة (2.5٪)" v={money(c.zakatDue, d.cur)} bold col={c.zakatDue > 0 ? "#9A7A18" : T.muted} />
+                  {c.zakatMeetsNisab && !d.zakat.hawl && (
+                    <p style={{ fontSize:11.5, color:T.muted, marginTop:8, marginBottom:0, lineHeight:1.7 }}>
+                      بلغت النصاب لكن الحول لم يكتمل بعد حسب ما حدّدته — لا زكاة مستحقة الآن.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p style={{ fontSize:12.5, color:T.muted, margin:0 }}>أدخل قيمة النصاب أعلاه لحساب الزكاة المستحقة.</p>
               )}
             </Card>
           </>
