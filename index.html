@@ -1541,6 +1541,9 @@
         overlay.addEventListener("click", (e) => { if (e.target === overlay) popModal(); });
       }
       document.getElementById("modalRoot").appendChild(overlay);
+      // مفتاح اتجاه كان مضغوطًا لحظة الفتح لن يصل له keyup مفيد، فتظل
+      // الشخصية تمشي خلف النافذة حتى تُغلق.
+      if (typeof pressed !== "undefined") pressed.clear();
       modalStack.push(overlay);
       mountCommon(overlay);
       if (onMount) onMount(overlay);
@@ -3533,11 +3536,22 @@
 
     // ==================== المدخلات ====================
     const KEY_MAP = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", w: "up", s: "down", a: "left", d: "right" };
+    // مفاتيح الحركة هي نفسها مفاتيح كتابة: w/a/s/d وأسهم الاتجاه. كان المستمع
+    // يبتلعها في كل الأحوال، فكتابة "wedding sofa" في اسم هدف تُنتج "eing of"،
+    // ولا يتحرك مؤشر الكتابة بالأسهم، ولا تزيد الحقول الرقمية بسهم أعلى.
+    function isTypingTarget(el) {
+      if (!el || !el.tagName) return false;
+      const tag = el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
+    }
     window.addEventListener("keydown", (e) => {
+      // Escape يبقى متاحًا حتى وأنت داخل حقل، كي تُغلق النافذة دون مغادرته
+      if (e.key === "Escape" && isModalOpen() && !topModalIsMandatory()) { popModal(); return; }
+      if (isTypingTarget(e.target)) return;
       const dir = KEY_MAP[e.key];
-      if (dir) { pressed.add(dir); e.preventDefault(); }
+      // ولا مشي خلف نافذة مفتوحة: كان الضغط يبعدك عن المبنى الذي تقف فيه
+      if (dir && !isModalOpen()) { pressed.add(dir); e.preventDefault(); }
       if ((e.key === "Enter" || e.key === " " || e.key === "e") && currentBuilding && !isModalOpen()) currentBuilding.open();
-      if (e.key === "Escape" && isModalOpen() && !topModalIsMandatory()) popModal();
     });
     window.addEventListener("keyup", (e) => {
       const dir = KEY_MAP[e.key];
