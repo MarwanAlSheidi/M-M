@@ -3202,16 +3202,31 @@
       const r = Math.round(((n >> 16) & 255) * f), g = Math.round(((n >> 8) & 255) * f), b = Math.round((n & 255) * f);
       return `rgb(${Math.min(255,r)},${Math.min(255,g)},${Math.min(255,b)})`;
     }
+    // الارتفاع كان يصنع ألواحًا: كتلة 172 بكسلًا طولًا مقابل 128 عرضًا تقرأ
+    // برجًا لا مبنى. الآن طابقان أو ثلاثة، وكل مبنى يتميّز بسقفه ونوافذه
+    // وعدد طوابقه لا بلونه وحده.
     const BUILDING_STYLE = {
-      bank:      { h: 74, accent: "#c9974a", roof: "dome",    arches: 3, merlons: true  },
-      market:    { h: 82, accent: "#2ecc71", roof: "flat",    arches: 3, merlons: true  },
-      goals:     { h: 34, accent: "#9b59b6", roof: "flat",    arches: 1, merlons: false },
-      work:      { h: 88, accent: "#4a90c9", roof: "flat",    arches: 4, merlons: false },
-      home:      { h: 62, accent: "#d98c4a", roof: "flat",    arches: 2, merlons: true  },
-      townhall:  { h: 70, accent: "#7f8c8d", roof: "tower",   arches: 3, merlons: true  },
-      library:   { h: 60, accent: "#16a085", roof: "flat",    arches: 3, merlons: false },
-      institute: { h: 56, accent: "#8e6bc9", roof: "dome",    arches: 3, merlons: false },
+      bank:      { h: 46, floors: 2, accent: "#c9974a", roof: "dome",  arches: 3, merlons: true,  props: "columns" },
+      market:    { h: 52, floors: 3, accent: "#2ecc71", roof: "flat",  arches: 3, merlons: true,  props: "screen"  },
+      goals:     { h: 22, floors: 1, accent: "#9b59b6", roof: "flat",  arches: 1, merlons: false, props: "banner"  },
+      work:      { h: 58, floors: 3, accent: "#4a90c9", roof: "flat",  arches: 4, merlons: false, props: "tanks"   },
+      home:      { h: 38, floors: 2, accent: "#d98c4a", roof: "flat",  arches: 2, merlons: true,  props: "yard"    },
+      townhall:  { h: 44, floors: 2, accent: "#7f8c8d", roof: "tower", arches: 3, merlons: true,  props: "flag"    },
+      library:   { h: 38, floors: 2, accent: "#16a085", roof: "flat",  arches: 3, merlons: false, props: "shelf"   },
+      institute: { h: 34, floors: 2, accent: "#8e6bc9", roof: "dome",  arches: 3, merlons: false, props: null      },
     };
+
+    // مضلّع على وجه جانبي: يتبع ميل الوجه فتبدو النافذة مغروسة فيه لا ملصقة
+    function faceQuad(c, x0, y0, x1, y1, u0, u1, fill, stroke) {
+      c.beginPath();
+      c.moveTo(isoX(x0, y0), isoY(x0, y0) - u0);
+      c.lineTo(isoX(x1, y1), isoY(x1, y1) - u0);
+      c.lineTo(isoX(x1, y1), isoY(x1, y1) - u1);
+      c.lineTo(isoX(x0, y0), isoY(x0, y0) - u1);
+      c.closePath();
+      if (fill) { c.fillStyle = fill; c.fill(); }
+      if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1; c.stroke(); }
+    }
 
     // وجه جانبي بين ركنين من قاعدة المبنى، بارتفاع h
     function isoFace(c, x1, y1, x2, y2, h, fill) {
@@ -3272,41 +3287,62 @@
       c.fillStyle = shade(CLAY, 1.0); c.fill();
       c.strokeStyle = "rgba(38,28,18,0.55)"; c.lineWidth = 1; c.stroke();
 
-      // شرفات القلاع على حافّة السطح الأمامية
-      if (st.merlons) {
-        const n = 6;
-        for (let i = 0; i < n; i++) {
-          const f0 = i / n + 0.02, f1 = (i + 0.62) / n;
-          const ax = x0 + (x1 - x0) * f0, bx2 = x0 + (x1 - x0) * f1;
-          const sy = isoY(ax, y1) - H;
-          c.beginPath();
-          c.moveTo(isoX(ax, y1), sy); c.lineTo(isoX(bx2, y1), isoY(bx2, y1) - H);
-          c.lineTo(isoX(bx2, y1), isoY(bx2, y1) - H - 7); c.lineTo(isoX(ax, y1), sy - 7);
-          c.closePath();
-          c.fillStyle = shade(CLAY, 0.94); c.fill();
-          c.strokeStyle = "rgba(38,28,18,0.5)"; c.stroke();
+      // نوافذ على الوجهين: صفّ لكل طابق. الجانب الأيمن كان فارغًا تمامًا
+      // فيبدو المبنى لوحًا مصمتًا من نصفه.
+      const rows = st.floors, ff = (x1 - x0);
+      for (let r = 0; r < rows; r++) {
+        const u0 = 10 + r * ((H - 14) / rows), u1 = u0 + Math.min(11, (H - 16) / rows - 3);
+        if (u1 >= H - 3) continue;
+        const perRow = 3;
+        for (let i = 0; i < perRow; i++) {
+          const f0 = (i + 0.22) / perRow, f1 = (i + 0.78) / perRow;
+          // الواجهة السفلى
+          faceQuad(c, x0 + ff * f0, y1, x0 + ff * f1, y1, u0, u1,
+                   "rgba(30,42,52,0.85)", "rgba(232,217,168,0.35)");
+          // الجانب الأيمن
+          const g0 = y1 + (y0 - y1) * f0, g1 = y1 + (y0 - y1) * f1;
+          faceQuad(c, x1, g0, x1, g1, u0, u1,
+                   "rgba(22,32,40,0.9)", "rgba(232,217,168,0.22)");
         }
       }
+
+      // سياج السطح يدور على الحافّتين المرئيتين، والشرفات فوقه
+      const parapet = st.merlons ? 8 : 5;
+      faceQuad(c, x0, y1, x1, y1, H, H + parapet, shade(CLAY, 0.9), "rgba(38,28,18,0.5)");
+      faceQuad(c, x1, y1, x1, y0, H, H + parapet, shade(CLAY, 0.72), "rgba(38,28,18,0.5)");
+      if (st.merlons) {
+        const n = 7;
+        for (let i = 0; i < n; i++) {
+          const f0 = (i + 0.12) / n, f1 = (i + 0.72) / n;
+          faceQuad(c, x0 + ff * f0, y1, x0 + ff * f1, y1, H + parapet, H + parapet + 6,
+                   shade(CLAY, 0.96), "rgba(38,28,18,0.45)");
+          const g0 = y1 + (y0 - y1) * f0, g1 = y1 + (y0 - y1) * f1;
+          faceQuad(c, x1, g0, x1, g1, H + parapet, H + parapet + 6,
+                   shade(CLAY, 0.78), "rgba(38,28,18,0.45)");
+        }
+      }
+
+      // إفريز بلون المبنى تحت سياج السطح
+      faceQuad(c, x0, y1, x1, y1, H - 5, H - 1, st.accent, null);
+      faceQuad(c, x1, y1, x1, y0, H - 5, H - 1, shade(st.accent, 0.75), null);
 
       // قبّة أو برج فوق السطح
       const cxw = (x0 + x1) / 2, cyw = (y0 + y1) / 2;
       const cx = isoX(cxw, cyw), cy = isoY(cxw, cyw) - H;
       if (st.roof === "dome") {
-        const r = b.w * 0.16, ry = r * (ISO_KY / ISO_KX), drum = 7;
-        // قاعدة أسطوانية تحمل القبّة، وإلا بدت كرة طافية فوق السطح
+        const r = b.w * 0.16, ry2 = r * (ISO_KY / ISO_KX), drum = 7;
         c.beginPath();
         c.moveTo(cx - r, cy); c.lineTo(cx - r, cy - drum);
         c.lineTo(cx + r, cy - drum); c.lineTo(cx + r, cy);
         c.closePath(); c.fillStyle = shade(CLAY, 0.78); c.fill();
-        c.beginPath(); c.ellipse(cx, cy, r, ry, 0, 0, Math.PI * 2);
+        c.beginPath(); c.ellipse(cx, cy, r, ry2, 0, 0, Math.PI * 2);
         c.fillStyle = shade(CLAY, 0.7); c.fill();
-        // نصف كرة مظلَّلة
-        const g = c.createLinearGradient(cx - r, cy - drum - r, cx + r, cy - drum);
-        g.addColorStop(0, shade(st.accent, 1.15));
-        g.addColorStop(0.55, st.accent);
-        g.addColorStop(1, shade(st.accent, 0.6));
+        const dg = c.createLinearGradient(cx - r, cy - drum - r, cx + r, cy - drum);
+        dg.addColorStop(0, shade(st.accent, 1.15));
+        dg.addColorStop(0.55, st.accent);
+        dg.addColorStop(1, shade(st.accent, 0.6));
         c.beginPath(); c.ellipse(cx, cy - drum, r, r * 0.95, 0, Math.PI, 0);
-        c.fillStyle = g; c.fill();
+        c.fillStyle = dg; c.fill();
         c.strokeStyle = "rgba(38,28,18,0.5)"; c.lineWidth = 1; c.stroke();
         c.strokeStyle = "#e8d9a8"; c.lineWidth = 1.5;
         c.beginPath(); c.moveTo(cx, cy - drum - r * 0.95); c.lineTo(cx, cy - drum - r * 0.95 - 6); c.stroke();
@@ -3318,37 +3354,53 @@
         isoFace(c, cxw + tw, cyw + tw, cxw + tw, cyw - tw, H + th, shade(CLAY, 0.7));
         c.beginPath();
         [[cxw-tw,cyw-tw],[cxw+tw,cyw-tw],[cxw+tw,cyw+tw],[cxw-tw,cyw+tw]].forEach(([px,py],i) => {
-          const sx = isoX(px,py), sy = isoY(px,py) - H - th;
-          i === 0 ? c.moveTo(sx,sy) : c.lineTo(sx,sy); });
+          const sx2 = isoX(px,py), sy2 = isoY(px,py) - H - th;
+          i === 0 ? c.moveTo(sx2,sy2) : c.lineTo(sx2,sy2); });
         c.closePath(); c.fillStyle = st.accent; c.fill();
         c.strokeStyle = "rgba(38,28,18,0.5)"; c.stroke();
       }
 
-      // أقواس على الواجهة + شريط لون المبنى
-      const arches = st.arches, fw = x1 - x0;
-      for (let i = 0; i < arches; i++) {
-        const f = (i + 0.5) / arches;
-        const ax = x0 + fw * f;
-        const sx = isoX(ax, y1), sy = isoY(ax, y1);
-        const aw = Math.min(11, fw / arches * 0.42), ah = Math.min(H * 0.42, 20);
-        c.beginPath();
-        c.moveTo(sx - aw, sy - 6);
-        c.lineTo(sx - aw, sy - 6 - ah);
-        c.quadraticCurveTo(sx, sy - 10 - ah - aw * 0.8, sx + aw, sy - 6 - ah);
-        c.lineTo(sx + aw, sy - 6);
-        c.closePath();
-        c.fillStyle = "rgba(28,22,14,0.55)"; c.fill();
-        c.strokeStyle = st.accent; c.lineWidth = 1.4; c.stroke();
+      // ما يميّز كل مبنى فوق سطحه
+      const rx = isoX((x0 + x1) / 2, (y0 + y1) / 2), ry = isoY((x0 + x1) / 2, (y0 + y1) / 2) - H;
+      if (st.props === "tanks") {
+        for (let i = 0; i < 2; i++) {
+          const tx = rx - 16 + i * 26, ty = ry - 4 + i * 5;
+          c.fillStyle = "#8f9aa0"; c.fillRect(tx - 6, ty - 11, 12, 11);
+          c.fillStyle = "#b6c0c4"; c.beginPath(); c.ellipse(tx, ty - 11, 6, 2.6, 0, 0, Math.PI * 2); c.fill();
+        }
+      } else if (st.props === "screen") {
+        c.fillStyle = "#0d1f18"; c.fillRect(rx - 22, ry - 20, 44, 16);
+        c.strokeStyle = st.accent; c.lineWidth = 1.5; c.strokeRect(rx - 22, ry - 20, 44, 16);
+        c.strokeStyle = "#2ecc71"; c.lineWidth = 1.6;
+        c.beginPath(); c.moveTo(rx - 18, ry - 8); c.lineTo(rx - 8, ry - 13);
+        c.lineTo(rx, ry - 10); c.lineTo(rx + 9, ry - 17); c.lineTo(rx + 18, ry - 14); c.stroke();
+      } else if (st.props === "flag") {
+        c.strokeStyle = "#cfd8d3"; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(rx + 22, ry); c.lineTo(rx + 22, ry - 28); c.stroke();
+        c.fillStyle = "#c9974a";
+        c.beginPath(); c.moveTo(rx + 22, ry - 28); c.lineTo(rx + 40, ry - 23); c.lineTo(rx + 22, ry - 18); c.closePath(); c.fill();
+      } else if (st.props === "columns") {
+        for (let i = 0; i < 4; i++) {
+          const f = (i + 0.5) / 4;
+          faceQuad(c, x0 + ff * f - 3, y1, x0 + ff * f + 3, y1, 6, H - 6,
+                   "rgba(232,217,168,0.16)", "rgba(232,217,168,0.35)");
+        }
+      } else if (st.props === "shelf") {
+        c.fillStyle = st.accent;
+        for (let i = 0; i < 5; i++) c.fillRect(rx - 20 + i * 9, ry - 12 - (i % 3) * 2, 6, 12 + (i % 3) * 2);
+      } else if (st.props === "banner") {
+        c.strokeStyle = "#cfd8d3"; c.lineWidth = 1.5;
+        c.beginPath(); c.moveTo(rx - 18, ry - 4); c.lineTo(rx + 18, ry - 10); c.stroke();
+        for (let i = 0; i < 5; i++) {
+          c.fillStyle = ["#c9974a","#2ecc71","#4a90c9","#9b59b6","#e74c3c"][i];
+          c.beginPath(); c.moveTo(rx - 14 + i * 8, ry - 5.2 - i * 1.1);
+          c.lineTo(rx - 9 + i * 8, ry - 6 - i * 1.1); c.lineTo(rx - 11.5 + i * 8, ry + 2 - i * 1.1);
+          c.closePath(); c.fill();
+        }
+      } else if (st.props === "yard") {
+        c.fillStyle = "rgba(46,140,90,0.5)";
+        c.beginPath(); c.ellipse(rx + 14, ry + 6, 9, 5, 0, 0, Math.PI * 2); c.fill();
       }
-      // إفريز بلون المبنى تحت حافّة السطح
-      c.save();
-      c.beginPath();
-      c.moveTo(isoX(x0, y1), isoY(x0, y1) - H + 3);
-      c.lineTo(isoX(x1, y1), isoY(x1, y1) - H + 3);
-      c.lineTo(isoX(x1, y1), isoY(x1, y1) - H + 8);
-      c.lineTo(isoX(x0, y1), isoY(x0, y1) - H + 8);
-      c.closePath(); c.fillStyle = st.accent; c.globalAlpha = 0.8; c.fill();
-      c.restore();
 
       // الباب المنقوش عند نقطة التفاعل
       const dx = isoX(b.doorX, y1), dy = isoY(b.doorX, y1);
@@ -3598,7 +3650,8 @@
       }
       const cxw = b.x + b.w / 2, cyw = b.y + b.h / 2;
       const bob = Math.sin(now / 500 + b.x) * 2;
-      const x = isoX(cxw, cyw), y = isoY(cxw, cyw) - H - 16 + bob;
+      const extra = st.roof === "dome" ? 30 : st.roof === "tower" ? 34 : 12;
+      const x = isoX(cxw, cyw), y = isoY(cxw, cyw) - H - extra - 8 + bob;
       c.font = "bold 10px 'Noto Kufi Arabic', sans-serif";
       c.textAlign = "center"; c.textBaseline = "middle";
       const w = c.measureText(text).width + 12;
