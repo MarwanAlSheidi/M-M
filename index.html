@@ -137,7 +137,7 @@
     </div>
 
     <div class="stage">
-      <canvas id="game" width="512" height="640"></canvas>
+      <canvas id="game" width="576" height="520"></canvas>
       <button class="interact-btn hidden" id="interactBtn"></button>
     </div>
 
@@ -2840,6 +2840,21 @@
 
     function rect(tx, ty, tw, th) { return { x: tx * TILE, y: ty * TILE, w: tw * TILE, h: th * TILE }; }
 
+    // ==================== الإسقاط الإيزومتري ====================
+    // منطق اللعبة كله يبقى بإحداثيات العالم المستطيلة (حركة، تصادم، قرب من
+    // الباب). الإسقاط طبقة عرض فقط: نقطة العالم (x,y) تصير معيّنًا على الشاشة.
+    // النسبة أحدّ قليلًا من 2:1 كي يملأ المعيّن شاشة الهاتف الطولية.
+    const ISO_KX = 0.5, ISO_KY = 0.33;
+    const ISO_W = (WORLD_W + WORLD_H) * ISO_KX;      // عرض المعيّن
+    const ISO_H = (WORLD_W + WORLD_H) * ISO_KY;      // ارتفاعه
+    const ISO_SKY = 96;                              // فسحة فوقه لارتفاع المباني
+    const ISO_OX = WORLD_H * ISO_KX;                 // إزاحة الأصل أفقيًا
+    const ISO_OY = ISO_SKY;
+    function isoX(wx, wy) { return (wx - wy) * ISO_KX + ISO_OX; }
+    function isoY(wx, wy) { return (wx + wy) * ISO_KY + ISO_OY; }
+    // عمق الرسم: كل ما زاد (x+y) كان أقرب إلى الناظر
+    function isoDepth(wx, wy) { return wx + wy; }
+
     const BUILDINGS = [
       { id: "bank", name: "البنك", emoji: "🏦", color: "#c9974a", open: openBank, ...rect(1, 1, 4, 4) },
       { id: "market", name: "البورصة", emoji: "📈", color: "#2ecc71", open: openMarket, ...rect(11, 1, 4, 4) },
@@ -2871,18 +2886,25 @@
 
     function updatePlayer(dt) {
       player.animT += dt;
+      // في الإيزومتري محورا العالم مائلان على الشاشة. لو حرّكنا اللاعب على
+      // محاور العالم لسار قُطريًا وهو يضغط "أعلى". فنُدير الاتجاه: "أعلى"
+      // على الشاشة = ‎(-1,-1) في العالم، و"يمين" = ‎(+1,-1).
+      let ix = 0, iy = 0;
+      if (pressed.has("up")) iy -= 1;
+      if (pressed.has("down")) iy += 1;
+      if (pressed.has("left")) ix -= 1;
+      if (pressed.has("right")) ix += 1;
       let dx = 0, dy = 0;
-      if (pressed.has("up")) dy -= 1;
-      if (pressed.has("down")) dy += 1;
-      if (pressed.has("left")) dx -= 1;
-      if (pressed.has("right")) dx += 1;
-      if (dx !== 0 || dy !== 0) {
-        if (dy < 0) player.facing = "up";
-        else if (dy > 0) player.facing = "down";
-        else if (dx < 0) player.facing = "left";
-        else if (dx > 0) player.facing = "right";
+      if (ix !== 0 || iy !== 0) {
+        dx = ix + iy;
+        dy = iy - ix;
+        const m = Math.hypot(dx, dy);
+        dx /= m; dy /= m;
+        if (iy < 0) player.facing = "up";
+        else if (iy > 0) player.facing = "down";
+        else if (ix < 0) player.facing = "left";
+        else player.facing = "right";
       }
-      if (dx !== 0 && dy !== 0) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
       const step = player.speed * dt;
 
       let nx = clamp(player.x + dx * step, 0, WORLD_W - player.w);
@@ -3170,278 +3192,281 @@
       }
     }
 
-    // ==================== رسم المباني (تفصيلية حسب النوع) ====================
-    function drawBank(c, b) {
-      const { x, y, w, h, color } = b;
-      const roofH = 16;
-      c.fillStyle = shade(color, -40);
-      c.beginPath(); c.moveTo(x - 6, y + roofH); c.lineTo(x + w / 2, y - 10); c.lineTo(x + w + 6, y + roofH); c.closePath(); c.fill();
-      c.fillStyle = shade(color, -15);
-      c.fillRect(x, y + roofH, w, h - roofH);
-      c.fillStyle = shade(color, 25);
-      const cols = 4, colW = 6, gap = (w - cols * colW) / (cols + 1);
-      for (let i = 0; i < cols; i++) c.fillRect(x + gap + i * (colW + gap), y + roofH + 6, colW, h - roofH - 16);
-      c.fillStyle = "#2a1c0d";
-      c.fillRect(x + w / 2 - 9, y + h - 18, 18, 18);
-      c.fillStyle = shade(color, 45);
-      c.beginPath(); c.arc(x + w / 2, y + roofH - 4, 4, 0, Math.PI * 2); c.fill();
+    // ==================== المباني: مجسّم إيزومتري واحد بمعاملات ====================
+    // ثمانية رسّامين منفصلين أنتجوا ثمانية صناديق بألوان مشبعة عشوائية بلا
+    // لغة مشتركة. الآن رسّام واحد بطابع عُماني موحّد — جدار طيني، شرفات،
+    // أقواس، باب منقوش — وما يميّز كل مبنى معاملاته لا أسلوبه.
+    const CLAY = "#c8a77a";                     // جدار طيني: أساس اللوحة كلها
+    function shade(hex, f) {
+      const n = parseInt(hex.slice(1), 16);
+      const r = Math.round(((n >> 16) & 255) * f), g = Math.round(((n >> 8) & 255) * f), b = Math.round((n & 255) * f);
+      return `rgb(${Math.min(255,r)},${Math.min(255,g)},${Math.min(255,b)})`;
     }
+    const BUILDING_STYLE = {
+      bank:      { h: 74, accent: "#c9974a", roof: "dome",    arches: 3, merlons: true  },
+      market:    { h: 82, accent: "#2ecc71", roof: "flat",    arches: 3, merlons: true  },
+      goals:     { h: 34, accent: "#9b59b6", roof: "flat",    arches: 1, merlons: false },
+      work:      { h: 88, accent: "#4a90c9", roof: "flat",    arches: 4, merlons: false },
+      home:      { h: 62, accent: "#d98c4a", roof: "flat",    arches: 2, merlons: true  },
+      townhall:  { h: 70, accent: "#7f8c8d", roof: "tower",   arches: 3, merlons: true  },
+      library:   { h: 60, accent: "#16a085", roof: "flat",    arches: 3, merlons: false },
+      institute: { h: 56, accent: "#8e6bc9", roof: "dome",    arches: 3, merlons: false },
+    };
 
-    function drawMarket(c, b) {
-      const { x, y, w, h, color } = b;
-      c.fillStyle = shade(color, -20);
-      c.fillRect(x, y, w, h);
-      c.fillStyle = shade(color, 15);
-      c.fillRect(x, y - 8, w, 8);
-      c.fillStyle = "#0a1e1a";
-      c.fillRect(x + 8, y + 10, w - 16, 26);
-      c.strokeStyle = shade(color, 30); c.lineWidth = 2;
-      c.strokeRect(x + 8, y + 10, w - 16, 26);
-      c.fillStyle = shade(color, 10);
-      for (let r = 0; r < 2; r++) for (let col = 0; col < 3; col++) c.fillRect(x + 10 + col * ((w - 20) / 3), y + 46 + r * 16, 12, 10);
-      c.fillStyle = "#2a1c0d";
-      c.fillRect(x + w / 2 - 9, y + h - 18, 18, 18);
-      c.strokeStyle = shade(color, 20); c.lineWidth = 2;
-      c.beginPath(); c.moveTo(x + w - 12, y - 8); c.lineTo(x + w - 12, y - 18); c.stroke();
-    }
-
-    function drawGoals(c, b) {
-      const { x, y, w, h, color } = b;
-      c.strokeStyle = shade(color, -20); c.lineWidth = 5;
-      c.beginPath(); c.moveTo(x + w / 2, y + h); c.lineTo(x + w / 2, y + 10); c.stroke();
-      c.fillStyle = shade(color, -15);
-      roundRect(c, x, y, w, h * 0.65, 6); c.fill();
-      c.strokeStyle = shade(color, 30); c.lineWidth = 2;
-      roundRect(c, x, y, w, h * 0.65, 6); c.stroke();
-      c.strokeStyle = shade(color, 45); c.lineWidth = 2;
-      c.beginPath(); c.arc(x + w / 2, y + h * 0.32, 10, 0, Math.PI * 2); c.stroke();
-      c.beginPath(); c.arc(x + w / 2, y + h * 0.32, 5, 0, Math.PI * 2); c.stroke();
-      c.fillStyle = shade(color, 45);
-      c.beginPath(); c.arc(x + w / 2, y + h * 0.32, 1.6, 0, Math.PI * 2); c.fill();
-    }
-
-    function drawWork(c, b) {
-      const { x, y, w, h, color } = b;
-      c.fillStyle = shade(color, -20);
-      c.fillRect(x, y, w, h);
-      c.fillStyle = shade(color, 10);
-      c.fillRect(x, y, w, 6);
-      const rows = 3, cols = 3;
-      for (let r = 0; r < rows; r++) for (let col = 0; col < cols; col++) {
-        const lit = (r * cols + col) % 3 !== 1;
-        c.fillStyle = lit ? "#f4d58d" : "#0a1e1a";
-        c.fillRect(x + 10 + col * ((w - 20) / cols), y + 12 + r * ((h - 40) / rows), (w - 20) / cols - 6, (h - 40) / rows - 6);
-      }
-      c.fillStyle = "#2a1c0d";
-      c.fillRect(x + w / 2 - 9, y + h - 18, 18, 18);
-    }
-
-    function drawHome(c, b) {
-      const hs = state.housing || INITIAL_STATE.housing;
-      // ما دمت مستأجرًا نرسم بيت الإيجار؛ وبعد منحة الأرض نرسم الأرض ثم البناء وهو يرتفع
-      if (hs.stage === "land" || hs.stage === "building") return drawHomeUnderConstruction(c, b, Math.min(1, hs.built / HOME_COST));
-      const { x, y, w, h, color } = b;
-      const roofH = 20;
-      c.fillStyle = shade(color, -35);
-      c.beginPath(); c.moveTo(x - 8, y + roofH); c.lineTo(x + w / 2, y - 14); c.lineTo(x + w + 8, y + roofH); c.closePath(); c.fill();
-      c.fillStyle = shade(color, -10);
-      c.fillRect(x, y + roofH, w, h - roofH);
-      c.fillStyle = shade(color, -40);
-      c.fillRect(x + w - 22, y - 6, 10, 18);
-      c.fillStyle = "#f4d58d";
-      c.fillRect(x + 10, y + roofH + 10, 16, 16);
-      c.fillRect(x + w - 26, y + roofH + 10, 16, 16);
-      c.strokeStyle = shade(color, -30); c.lineWidth = 1.5;
-      c.strokeRect(x + 10, y + roofH + 10, 16, 16);
-      c.strokeRect(x + w - 26, y + roofH + 10, 16, 16);
-      c.fillStyle = "#2a1c0d";
-      c.fillRect(x + w / 2 - 9, y + h - 18, 18, 18);
-      // بعد التملك: سور ونخلة وعلامة ملكية
-      if (hs.stage === "owned") {
-        c.strokeStyle = "#c9974a"; c.lineWidth = 1.5;
-        c.beginPath(); c.moveTo(x - 6, y + h + 2); c.lineTo(x + w + 6, y + h + 2); c.stroke();
-        for (let i = 0; i <= 6; i++) {
-          const px = x - 6 + i * ((w + 12) / 6);
-          c.beginPath(); c.moveTo(px, y + h + 2); c.lineTo(px, y + h - 4); c.stroke();
-        }
-        c.fillStyle = "#3a2a1a";
-        c.fillRect(x - 16, y + h - 18, 3, 18);
-        c.fillStyle = "#2f7a52";
-        for (let i = 0; i < 5; i++) {
-          const a = Math.PI + (i / 4) * Math.PI;
-          c.beginPath();
-          c.ellipse(x - 14.5 + Math.cos(a) * 7, y + h - 20 + Math.sin(a) * 4, 7, 2.6, a, 0, Math.PI * 2);
-          c.fill();
-        }
-        c.fillStyle = "#2ecc71";
-        c.beginPath(); c.arc(x + w - 6, y + roofH - 6, 4, 0, Math.PI * 2); c.fill();
-      }
-    }
-
-    // الأرض ثم المبنى وهو يرتفع مرحلة بعد مرحلة
-    function drawHomeUnderConstruction(c, b, progress) {
-      const { x, y, w, h } = b;
-      // أرض المنحة: تراب وحدود قطعة الأرض
-      c.fillStyle = "#3a3226";
-      c.fillRect(x, y + h * 0.35, w, h * 0.65);
-      c.strokeStyle = "rgba(201,151,74,0.7)"; c.lineWidth = 2;
-      c.setLineDash([5, 4]);
-      c.strokeRect(x + 1, y + h * 0.35, w - 2, h * 0.65 - 1);
-      c.setLineDash([]);
-
-      if (progress > 0) {
-        // الجدران ترتفع مع التقدّم
-        const maxH = h * 0.62;
-        const wallH = Math.max(4, maxH * Math.min(1, progress / 0.9));
-        const wy = y + h - wallH;
-        c.fillStyle = progress >= 0.9 ? "#d98c4a" : "#8a7a63";
-        c.fillRect(x + 6, wy, w - 12, wallH);
-        // أعمدة خرسانية
-        c.fillStyle = "#6e6252";
-        for (let i = 0; i < 3; i++) c.fillRect(x + 8 + i * ((w - 20) / 2), wy, 4, wallH);
-        // السقف يظهر بعد 70%
-        if (progress >= 0.7) {
-          c.fillStyle = "#a86a33";
-          c.beginPath(); c.moveTo(x + 2, wy); c.lineTo(x + w / 2, wy - 14); c.lineTo(x + w - 2, wy); c.closePath(); c.fill();
-        }
-        // النوافذ والباب في التشطيب
-        if (progress >= 0.9) {
-          c.fillStyle = "#f4d58d";
-          c.fillRect(x + 12, wy + 8, 12, 12);
-          c.fillRect(x + w - 24, wy + 8, 12, 12);
-          c.fillStyle = "#2a1c0d";
-          c.fillRect(x + w / 2 - 8, y + h - 16, 16, 16);
-        }
-      }
-      // سقالة ورافعة ما دام البناء جاريًا
-      if (progress < 1) {
-        c.strokeStyle = "#c9974a"; c.lineWidth = 1.5;
-        c.beginPath(); c.moveTo(x + w - 6, y + h); c.lineTo(x + w - 6, y + 4); c.lineTo(x + w - 22, y + 4); c.stroke();
-        c.beginPath(); c.moveTo(x + w - 22, y + 4); c.lineTo(x + w - 22, y + 12); c.stroke();
-        c.fillStyle = "#c9974a"; c.fillRect(x + w - 26, y + 12, 8, 5);
-      }
-    }
-
-    function drawTownHall(c, b) {
-      const { x, y, w, h, color } = b;
-      const roofH = 14;
-      c.fillStyle = shade(color, -30);
-      c.beginPath(); c.moveTo(x - 4, y + roofH); c.lineTo(x + w / 2, y - 8); c.lineTo(x + w + 4, y + roofH); c.closePath(); c.fill();
-      c.fillStyle = shade(color, -10);
-      c.fillRect(x, y + roofH, w, h - roofH);
-      c.fillStyle = shade(color, -20);
-      c.beginPath(); c.arc(x + w / 2, y - 8, 9, Math.PI, 0); c.fill();
-      c.strokeStyle = shade(color, 15); c.lineWidth = 2;
-      c.beginPath(); c.moveTo(x + w / 2, y - 17); c.lineTo(x + w / 2, y - 30); c.stroke();
-      c.fillStyle = "#c9974a";
-      c.fillRect(x + w / 2, y - 30, 10, 7);
-      c.fillStyle = "#2a1c0d";
-      c.beginPath(); c.arc(x + w / 2, y + h - 18, 9, Math.PI, 0); c.fill();
-      c.fillRect(x + w / 2 - 9, y + h - 18, 18, 18);
-    }
-
-    function drawLibrary(c, b) {
-      const { x, y, w, h, color } = b;
-      c.fillStyle = shade(color, -20);
-      c.fillRect(x, y, w, h);
-      c.fillStyle = shade(color, 15);
-      c.fillRect(x, y, w, 8);
-      const spineColors = ["#e74c3c", "#3498db", "#f1c40f", "#9b59b6", "#2ecc71", "#e67e22"];
-      for (let r = 0; r < 2; r++) for (let i = 0; i < 8; i++) {
-        c.fillStyle = spineColors[(i + r * 3) % spineColors.length];
-        c.fillRect(x + 8 + i * ((w - 16) / 8), y + 14 + r * 18, (w - 16) / 8 - 2, 14);
-      }
-      c.fillStyle = "#2a1c0d";
-      c.fillRect(x + w / 2 - 9, y + h - 18, 18, 18);
-    }
-
-    function drawInstitute(c, b) {
-      const { x, y, w, h, color } = b;
-      c.fillStyle = shade(color, -20);
-      c.fillRect(x, y + 10, w, h - 10);
-      // سقف مسطّح وشرفة
-      c.fillStyle = shade(color, 10);
-      c.fillRect(x - 3, y + 4, w + 6, 8);
-      // نوافذ صف واحد
-      c.fillStyle = "#f4d58d";
-      for (let i = 0; i < 4; i++) c.fillRect(x + 8 + i * ((w - 16) / 4), y + 20, (w - 16) / 4 - 5, 12);
-      // قبعة التخرّج فوق المدخل
-      c.fillStyle = "#1d1430";
+    // وجه جانبي بين ركنين من قاعدة المبنى، بارتفاع h
+    function isoFace(c, x1, y1, x2, y2, h, fill) {
       c.beginPath();
-      c.moveTo(x + w / 2, y + h - 30); c.lineTo(x + w / 2 + 13, y + h - 24);
-      c.lineTo(x + w / 2, y + h - 18); c.lineTo(x + w / 2 - 13, y + h - 24);
-      c.closePath(); c.fill();
-      c.strokeStyle = "#c9974a"; c.lineWidth = 1.5;
-      c.beginPath(); c.moveTo(x + w / 2 + 11, y + h - 25); c.lineTo(x + w / 2 + 11, y + h - 17); c.stroke();
-      c.fillStyle = "#2a1c0d";
-      c.fillRect(x + w / 2 - 8, y + h - 16, 16, 16);
+      c.moveTo(isoX(x1, y1), isoY(x1, y1));
+      c.lineTo(isoX(x2, y2), isoY(x2, y2));
+      c.lineTo(isoX(x2, y2), isoY(x2, y2) - h);
+      c.lineTo(isoX(x1, y1), isoY(x1, y1) - h);
+      c.closePath();
+      c.fillStyle = fill; c.fill();
+      c.strokeStyle = "rgba(38,28,18,0.55)"; c.lineWidth = 1; c.stroke();
     }
 
-    const BUILDING_DRAW = { bank: drawBank, market: drawMarket, goals: drawGoals, work: drawWork, home: drawHome, townhall: drawTownHall, library: drawLibrary, institute: drawInstitute };
+    function drawIsoBuilding(c, b) {
+      const st = BUILDING_STYLE[b.id] || BUILDING_STYLE.home;
+      let H = st.h;
+      // المنزل يرتفع مع البناء بدل أن يظهر فجأة
+      if (b.id === "home") {
+        const hs = state.housing || INITIAL_STATE.housing;
+        if (hs.stage === "renting" || hs.stage === "waiting") H = 0;
+        else if (hs.stage === "land") H = 6;
+        else if (hs.stage === "building") H = 6 + Math.round((st.h - 6) * Math.min(1, (hs.built || 0) / HOME_COST));
+      }
+      const x0 = b.x, y0 = b.y, x1 = b.x + b.w, y1 = b.y + b.h;
+
+      // ظل مائل على الأرض في اتجاه الشمس
+      c.save();
+      c.beginPath();
+      c.moveTo(isoX(x0, y1), isoY(x0, y1));
+      c.lineTo(isoX(x1, y1), isoY(x1, y1));
+      c.lineTo(isoX(x1 + H * 0.5, y1 + H * 0.5), isoY(x1 + H * 0.5, y1 + H * 0.5));
+      c.lineTo(isoX(x0 + H * 0.5, y1 + H * 0.5), isoY(x0 + H * 0.5, y1 + H * 0.5));
+      c.closePath();
+      c.fillStyle = "rgba(0,0,0,0.22)"; c.fill();
+      c.restore();
+
+      if (H <= 0) {                       // أرض مسوّرة بلا بناء بعد
+        c.beginPath();
+        [[x0,y0],[x1,y0],[x1,y1],[x0,y1]].forEach(([px,py],i) => {
+          i === 0 ? c.moveTo(isoX(px,py), isoY(px,py)) : c.lineTo(isoX(px,py), isoY(px,py)); });
+        c.closePath();
+        c.fillStyle = "rgba(180,150,100,0.18)"; c.fill();
+        c.setLineDash([5, 4]); c.strokeStyle = "rgba(201,151,74,0.6)"; c.lineWidth = 1.5; c.stroke();
+        c.setLineDash([]);
+        return;
+      }
+
+      // الوجهان المرئيان: الأمامي الأيسر أفتح والأيمن أغمق
+      isoFace(c, x0, y1, x1, y1, H, shade(CLAY, 0.86));   // الواجهة السفلى
+      isoFace(c, x1, y1, x1, y0, H, shade(CLAY, 0.66));   // الجانب الأيمن
+
+      // السطح
+      c.beginPath();
+      [[x0,y0],[x1,y0],[x1,y1],[x0,y1]].forEach(([px,py],i) => {
+        const sx = isoX(px,py), sy = isoY(px,py) - H;
+        i === 0 ? c.moveTo(sx,sy) : c.lineTo(sx,sy); });
+      c.closePath();
+      c.fillStyle = shade(CLAY, 1.0); c.fill();
+      c.strokeStyle = "rgba(38,28,18,0.55)"; c.lineWidth = 1; c.stroke();
+
+      // شرفات القلاع على حافّة السطح الأمامية
+      if (st.merlons) {
+        const n = 6;
+        for (let i = 0; i < n; i++) {
+          const f0 = i / n + 0.02, f1 = (i + 0.62) / n;
+          const ax = x0 + (x1 - x0) * f0, bx2 = x0 + (x1 - x0) * f1;
+          const sy = isoY(ax, y1) - H;
+          c.beginPath();
+          c.moveTo(isoX(ax, y1), sy); c.lineTo(isoX(bx2, y1), isoY(bx2, y1) - H);
+          c.lineTo(isoX(bx2, y1), isoY(bx2, y1) - H - 7); c.lineTo(isoX(ax, y1), sy - 7);
+          c.closePath();
+          c.fillStyle = shade(CLAY, 0.94); c.fill();
+          c.strokeStyle = "rgba(38,28,18,0.5)"; c.stroke();
+        }
+      }
+
+      // قبّة أو برج فوق السطح
+      const cxw = (x0 + x1) / 2, cyw = (y0 + y1) / 2;
+      const cx = isoX(cxw, cyw), cy = isoY(cxw, cyw) - H;
+      if (st.roof === "dome") {
+        const r = b.w * 0.16, ry = r * (ISO_KY / ISO_KX), drum = 7;
+        // قاعدة أسطوانية تحمل القبّة، وإلا بدت كرة طافية فوق السطح
+        c.beginPath();
+        c.moveTo(cx - r, cy); c.lineTo(cx - r, cy - drum);
+        c.lineTo(cx + r, cy - drum); c.lineTo(cx + r, cy);
+        c.closePath(); c.fillStyle = shade(CLAY, 0.78); c.fill();
+        c.beginPath(); c.ellipse(cx, cy, r, ry, 0, 0, Math.PI * 2);
+        c.fillStyle = shade(CLAY, 0.7); c.fill();
+        // نصف كرة مظلَّلة
+        const g = c.createLinearGradient(cx - r, cy - drum - r, cx + r, cy - drum);
+        g.addColorStop(0, shade(st.accent, 1.15));
+        g.addColorStop(0.55, st.accent);
+        g.addColorStop(1, shade(st.accent, 0.6));
+        c.beginPath(); c.ellipse(cx, cy - drum, r, r * 0.95, 0, Math.PI, 0);
+        c.fillStyle = g; c.fill();
+        c.strokeStyle = "rgba(38,28,18,0.5)"; c.lineWidth = 1; c.stroke();
+        c.strokeStyle = "#e8d9a8"; c.lineWidth = 1.5;
+        c.beginPath(); c.moveTo(cx, cy - drum - r * 0.95); c.lineTo(cx, cy - drum - r * 0.95 - 6); c.stroke();
+        c.beginPath(); c.arc(cx, cy - drum - r * 0.95 - 8, 2, 0, Math.PI * 2);
+        c.fillStyle = "#e8d9a8"; c.fill();
+      } else if (st.roof === "tower") {
+        const tw = b.w * 0.17, th = 22;
+        isoFace(c, cxw - tw, cyw + tw, cxw + tw, cyw + tw, H + th, shade(CLAY, 0.9));
+        isoFace(c, cxw + tw, cyw + tw, cxw + tw, cyw - tw, H + th, shade(CLAY, 0.7));
+        c.beginPath();
+        [[cxw-tw,cyw-tw],[cxw+tw,cyw-tw],[cxw+tw,cyw+tw],[cxw-tw,cyw+tw]].forEach(([px,py],i) => {
+          const sx = isoX(px,py), sy = isoY(px,py) - H - th;
+          i === 0 ? c.moveTo(sx,sy) : c.lineTo(sx,sy); });
+        c.closePath(); c.fillStyle = st.accent; c.fill();
+        c.strokeStyle = "rgba(38,28,18,0.5)"; c.stroke();
+      }
+
+      // أقواس على الواجهة + شريط لون المبنى
+      const arches = st.arches, fw = x1 - x0;
+      for (let i = 0; i < arches; i++) {
+        const f = (i + 0.5) / arches;
+        const ax = x0 + fw * f;
+        const sx = isoX(ax, y1), sy = isoY(ax, y1);
+        const aw = Math.min(11, fw / arches * 0.42), ah = Math.min(H * 0.42, 20);
+        c.beginPath();
+        c.moveTo(sx - aw, sy - 6);
+        c.lineTo(sx - aw, sy - 6 - ah);
+        c.quadraticCurveTo(sx, sy - 10 - ah - aw * 0.8, sx + aw, sy - 6 - ah);
+        c.lineTo(sx + aw, sy - 6);
+        c.closePath();
+        c.fillStyle = "rgba(28,22,14,0.55)"; c.fill();
+        c.strokeStyle = st.accent; c.lineWidth = 1.4; c.stroke();
+      }
+      // إفريز بلون المبنى تحت حافّة السطح
+      c.save();
+      c.beginPath();
+      c.moveTo(isoX(x0, y1), isoY(x0, y1) - H + 3);
+      c.lineTo(isoX(x1, y1), isoY(x1, y1) - H + 3);
+      c.lineTo(isoX(x1, y1), isoY(x1, y1) - H + 8);
+      c.lineTo(isoX(x0, y1), isoY(x0, y1) - H + 8);
+      c.closePath(); c.fillStyle = st.accent; c.globalAlpha = 0.8; c.fill();
+      c.restore();
+
+      // الباب المنقوش عند نقطة التفاعل
+      const dx = isoX(b.doorX, y1), dy = isoY(b.doorX, y1);
+      c.beginPath();
+      c.moveTo(dx - 7, dy); c.lineTo(dx - 7, dy - 12);
+      c.quadraticCurveTo(dx, dy - 22, dx + 7, dy - 12);
+      c.lineTo(dx + 7, dy);
+      c.closePath();
+      c.fillStyle = "#4a3520"; c.fill();
+      c.strokeStyle = st.accent; c.lineWidth = 1.6; c.stroke();
+      c.strokeStyle = "rgba(201,151,74,0.5)"; c.lineWidth = 1;
+      c.beginPath(); c.moveTo(dx, dy); c.lineTo(dx, dy - 16); c.stroke();
+
+    }
+
+    // أسماء المباني في تمريرة أخيرة فوق كل شيء: لو رُسم كل اسم مع مبناه
+    // لحجبه المبنى الأقرب، فيقرأ اللاعب نصف اسم.
+    function drawBuildingLabels(c) {
+      c.font = "11px 'Noto Kufi Arabic', sans-serif";
+      c.textAlign = "center"; c.textBaseline = "middle";
+      for (const b of BUILDINGS) {
+        const lx = isoX(b.x + b.w / 2, b.y + b.h / 2), ly = isoY(b.x + b.w / 2, b.y + b.h) + 13;
+        const tw = c.measureText(b.name).width;
+        c.fillStyle = "rgba(10,20,18,0.72)";
+        roundRect(c, lx - tw / 2 - 6, ly - 9, tw + 12, 18, 6); c.fill();
+        c.fillStyle = "#e8dcc0";
+        c.fillText(b.name, lx, ly);
+      }
+    }
+
+
 
     // ==================== الخلفية المُجهَّزة مسبقًا (لتفادي إعادة رسم التفاصيل الثابتة كل إطار) ====================
     const bgCanvas = document.createElement("canvas");
-    bgCanvas.width = WORLD_W; bgCanvas.height = WORLD_H;
+    bgCanvas.width = Math.ceil(ISO_W); bgCanvas.height = Math.ceil(ISO_H + ISO_SKY + 40);
     const bgCtx = bgCanvas.getContext("2d");
 
+    // الخلفية المُجهَّزة مسبقًا: أرض المعيّن وممراتها وساحتها ومبانيها.
+    // كل ما فيها ثابت بين الإطارات، فيُرسم مرة واحدة مهما بلغ تفصيله.
     function renderBackground() {
       const season = SEASONS[seasonForMonth(state.month)];
       const c = bgCtx;
-      c.clearRect(0, 0, WORLD_W, WORLD_H);
-      const grad = c.createLinearGradient(0, 0, 0, WORLD_H);
-      grad.addColorStop(0, season.ground[0]); grad.addColorStop(1, season.ground[1]);
-      c.fillStyle = grad; c.fillRect(0, 0, WORLD_W, WORLD_H);
+      c.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
 
+      // سماء متدرّجة خلف المدينة
+      const sky = c.createLinearGradient(0, 0, 0, ISO_OY + ISO_H);
+      sky.addColorStop(0, "#0d1b1f"); sky.addColorStop(1, "#132a28");
+      c.fillStyle = sky; c.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+
+      // سطح الأرض معيّنًا واحدًا بتدرّج، ثم بلاطاته
+      const corners = [[0,0],[WORLD_W,0],[WORLD_W,WORLD_H],[0,WORLD_H]];
+      c.beginPath();
+      corners.forEach(([x,y],i) => { const px = isoX(x,y), py = isoY(x,y);
+        i === 0 ? c.moveTo(px,py) : c.lineTo(px,py); });
+      c.closePath();
+      const g = c.createLinearGradient(0, ISO_OY, 0, ISO_OY + ISO_H);
+      g.addColorStop(0, season.ground[0]); g.addColorStop(1, season.ground[1]);
+      c.fillStyle = g; c.fill();
+
+      // شبكة البلاط: خطوط خافتة تكشف الاتجاه الإيزومتري
+      c.save(); c.clip();
+      c.strokeStyle = "rgba(0,0,0,0.10)"; c.lineWidth = 1;
+      for (let tx = 0; tx <= COLS; tx++) {
+        c.beginPath();
+        c.moveTo(isoX(tx*TILE, 0), isoY(tx*TILE, 0));
+        c.lineTo(isoX(tx*TILE, WORLD_H), isoY(tx*TILE, WORLD_H));
+        c.stroke();
+      }
+      for (let ty = 0; ty <= ROWS; ty++) {
+        c.beginPath();
+        c.moveTo(isoX(0, ty*TILE), isoY(0, ty*TILE));
+        c.lineTo(isoX(WORLD_W, ty*TILE), isoY(WORLD_W, ty*TILE));
+        c.stroke();
+      }
+      // حصى متناثر
       for (const d of GROUND_DOTS) {
-        c.fillStyle = d.tone < 0.5 ? "rgba(29,61,53,0.6)" : season.dot;
-        c.fillRect(d.x, d.y, d.s, d.s);
+        c.fillStyle = d.tone < 0.5 ? "rgba(0,0,0,0.16)" : season.dot;
+        const px = isoX(d.x, d.y), py = isoY(d.x, d.y);
+        c.beginPath(); c.ellipse(px, py, d.s * 1.1, d.s * 0.55, 0, 0, Math.PI * 2); c.fill();
       }
+      c.restore();
 
-      // ممرات مرصوفة من الساحة إلى كل باب
+      // حافة الأرض: سُمك ترابي يوحي بارتفاع الأرض عن الفراغ
+      const edge = 14;
+      const bottom = [[WORLD_W,0],[WORLD_W,WORLD_H],[0,WORLD_H]];
+      c.beginPath();
+      c.moveTo(isoX(WORLD_W,0), isoY(WORLD_W,0));
+      bottom.slice(1).forEach(([x,y]) => c.lineTo(isoX(x,y), isoY(x,y)));
+      c.lineTo(isoX(0,WORLD_H), isoY(0,WORLD_H) + edge);
+      c.lineTo(isoX(WORLD_W,WORLD_H), isoY(WORLD_W,WORLD_H) + edge);
+      c.lineTo(isoX(WORLD_W,0), isoY(WORLD_W,0) + edge);
+      c.closePath();
+      c.fillStyle = "#241d14"; c.fill();
+
+      // ممرات من الساحة إلى كل باب
       c.lineCap = "round";
-      c.strokeStyle = "rgba(160,190,175,0.18)"; c.lineWidth = 16;
-      for (const b of BUILDINGS) {
-        c.beginPath(); c.moveTo(PLAZA_X, PLAZA_Y); c.lineTo(b.doorX, b.doorY); c.stroke();
-      }
-      c.strokeStyle = "rgba(200,225,210,0.10)"; c.lineWidth = 12;
-      for (const b of BUILDINGS) {
-        c.beginPath(); c.moveTo(PLAZA_X, PLAZA_Y); c.lineTo(b.doorX, b.doorY); c.stroke();
-      }
-      // خطوط بلاط عرضية على الممرات
-      c.strokeStyle = "rgba(10,30,26,0.25)"; c.lineWidth = 1.5; c.lineCap = "butt";
-      for (const b of BUILDINGS) {
-        const dx = b.doorX - PLAZA_X, dy = b.doorY - PLAZA_Y;
-        const len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
-        for (let d = 14; d < len - 8; d += 13) {
-          const px = PLAZA_X + ux * d, py = PLAZA_Y + uy * d;
-          c.beginPath(); c.moveTo(px - uy * 6, py + ux * 6); c.lineTo(px + uy * 6, py - ux * 6); c.stroke();
+      for (const pass of [[13, "rgba(214,198,160,0.30)"], [8, "rgba(232,220,190,0.22)"]]) {
+        c.lineWidth = pass[0]; c.strokeStyle = pass[1];
+        for (const b of BUILDINGS) {
+          c.beginPath();
+          c.moveTo(isoX(PLAZA_X, PLAZA_Y), isoY(PLAZA_X, PLAZA_Y));
+          c.lineTo(isoX(b.doorX, b.doorY), isoY(b.doorX, b.doorY));
+          c.stroke();
         }
       }
 
-      // حوض النافورة في الساحة
-      c.beginPath(); c.arc(PLAZA_X, PLAZA_Y, 27, 0, Math.PI * 2);
-      c.fillStyle = "rgba(160,190,175,0.18)"; c.fill();
-      c.strokeStyle = "rgba(201,151,74,0.55)"; c.lineWidth = 3; c.stroke();
-      c.beginPath(); c.arc(PLAZA_X, PLAZA_Y, 15, 0, Math.PI * 2);
-      c.fillStyle = "rgba(74,144,201,0.40)"; c.fill();
-      c.strokeStyle = "rgba(140,200,230,0.35)"; c.lineWidth = 1.5; c.stroke();
-      c.fillStyle = "rgba(201,151,74,0.75)";
-      c.fillRect(PLAZA_X - 2.5, PLAZA_Y - 12, 5, 12);
-      c.beginPath(); c.arc(PLAZA_X, PLAZA_Y - 13, 4, 0, Math.PI * 2); c.fill();
-
-      for (const b of BUILDINGS) {
-        c.beginPath(); c.ellipse(b.x + b.w / 2, b.y + b.h + 4, b.w * 0.45, 6, 0, 0, Math.PI * 2);
-        c.fillStyle = "rgba(0,0,0,0.3)"; c.fill();
-        (BUILDING_DRAW[b.id] || (() => {}))(c, b);
-        c.font = "11px 'Noto Kufi Arabic', sans-serif";
-        c.textAlign = "center"; c.textBaseline = "middle";
-        c.fillStyle = "#e0e8e4";
-        c.fillText(b.name, b.x + b.w / 2, b.y + b.h + 16);
-      }
+      // الساحة: حوض دائري يصير بيضاويًا في الإسقاط
+      const px = isoX(PLAZA_X, PLAZA_Y), py = isoY(PLAZA_X, PLAZA_Y);
+      c.beginPath(); c.ellipse(px, py, 30, 30 * (ISO_KY / ISO_KX), 0, 0, Math.PI * 2);
+      c.fillStyle = "rgba(214,198,160,0.35)"; c.fill();
+      c.strokeStyle = "rgba(201,151,74,0.65)"; c.lineWidth = 2.5; c.stroke();
+      c.beginPath(); c.ellipse(px, py, 16, 16 * (ISO_KY / ISO_KX), 0, 0, Math.PI * 2);
+      c.fillStyle = "rgba(74,144,201,0.45)"; c.fill();
 
       renderedSeason = seasonForMonth(state.month);
       renderedBgKey = bgKey(state);
     }
+
     renderBackground();
 
     // النخلة بدل "المصّاصة": جذع مقطّع منحنٍ وتاج من سعف مقوّس يتمايل.
@@ -3449,38 +3474,40 @@
     function drawTree(c, t, season, now) {
       const sway = Math.sin(now / 1000 * 0.9 + t.seed * 6.28) * 0.045;
       const H = t.r * 3.2;                       // ارتفاع الجذع
-      const topX = t.x + Math.sin(sway) * H * 0.42;
-      const topY = t.y - H;
+      // النخلة لافتة قائمة عند موضعها المُسقَط، كما تُرسم في الألعاب الإيزومترية
+      const bx = isoX(t.x, t.y), by = isoY(t.x, t.y);
+      const topX = bx + Math.sin(sway) * H * 0.42;
+      const topY = by - H;
 
       // ظل بيضاوي على الأرض
-      c.beginPath(); c.ellipse(t.x + 2, t.y + 2, t.r * 0.85, t.r * 0.3, 0, 0, Math.PI * 2);
+      c.beginPath(); c.ellipse(bx + 2, by + 1, t.r * 0.85, t.r * 0.85 * (ISO_KY / ISO_KX), 0, 0, Math.PI * 2);
       c.fillStyle = "rgba(0,0,0,0.28)"; c.fill();
 
       // الجذع: منحنى مخروطي بحلقات
       const bw = t.r * 0.42, tw = t.r * 0.24;
-      const cx1 = t.x + (topX - t.x) * 0.25, cy1 = t.y - H * 0.45;
+      const cx1 = bx + (topX - bx) * 0.25, cy1 = by - H * 0.45;
       c.beginPath();
-      c.moveTo(t.x - bw, t.y);
+      c.moveTo(bx - bw, by);
       c.quadraticCurveTo(cx1 - tw, cy1, topX - tw, topY);
       c.lineTo(topX + tw, topY);
-      c.quadraticCurveTo(cx1 + tw, cy1, t.x + bw, t.y);
+      c.quadraticCurveTo(cx1 + tw, cy1, bx + bw, by);
       c.closePath();
       c.fillStyle = "#6b5535"; c.fill();
       c.strokeStyle = "rgba(52,40,24,0.55)"; c.lineWidth = 1;
       const rings = Math.max(4, Math.round(H / 5));
       for (let i = 1; i < rings; i++) {
         const f = i / rings;
-        const rx = t.x + (topX - t.x) * f * f, ry = t.y - H * f;
+        const rx = bx + (topX - bx) * f * f, ry = by - H * f;
         const hw = bw + (tw - bw) * f;
         c.beginPath(); c.moveTo(rx - hw * 0.9, ry); c.lineTo(rx + hw * 0.9, ry); c.stroke();
       }
       // إضاءة جانبية على الجذع
       c.globalAlpha = 0.25; c.fillStyle = "#a68a55";
       c.beginPath();
-      c.moveTo(t.x - bw, t.y);
+      c.moveTo(bx - bw, by);
       c.quadraticCurveTo(cx1 - tw, cy1, topX - tw, topY);
       c.lineTo(topX - tw * 0.35, topY);
-      c.quadraticCurveTo(cx1 - tw * 0.35, cy1, t.x - bw * 0.35, t.y);
+      c.quadraticCurveTo(cx1 - tw * 0.35, cy1, bx - bw * 0.35, by);
       c.closePath(); c.fill();
       c.globalAlpha = 1;
 
@@ -3524,10 +3551,12 @@
     // ==================== الشخصيات ====================
     const PLAYER_PALETTE = { shirt: "#c9974a", sleeve: "#b98a44", skin: "#e8b88a", hair: "#3a2a1a" };
 
-    function drawCharacter(c, cx, cy, facing, animT, moving, palette) {
+    // تُستدعى بإحداثيات العالم؛ الإسقاط يقع هنا فتبقى مواضع اللعب كما هي
+    function drawCharacter(c, wx, wy, facing, animT, moving, palette) {
       const walk = moving ? Math.sin(animT * 12) : 0;
       const legOffset = walk * 4, armOffset = -walk * 3;
       const bob = moving ? Math.abs(Math.sin(animT * 12)) * 1.2 : 0;
+      const cx = isoX(wx, wy), cy = isoY(wx, wy);
       c.save();
       c.translate(cx, cy - bob);
       c.beginPath(); c.ellipse(0, 13 + bob, 9, 3, 0, 0, Math.PI * 2);
@@ -3554,69 +3583,74 @@
     }
 
     // ==================== مؤشرات حيّة فوق المباني تعكس وضعك المالي ====================
+    // مؤشرات حالة تطفو فوق سطح كل مبنى. في المنظور العلوي كانت تُرسم على
+    // واجهته؛ وفي الإيزومتري السطح هو ما يُرى، فالشارة فوقه أوضح ولا تشوّه
+    // العمارة.
+    function isoBadge(c, b, text, color, now, pulse) {
+      const st = BUILDING_STYLE[b.id] || { h: 60 };
+      let H = st.h;
+      if (b.id === "home") {
+        const hs = state.housing || INITIAL_STATE.housing;
+        H = hs.stage === "renting" || hs.stage === "waiting" ? 0
+          : hs.stage === "land" ? 6
+          : hs.stage === "owned" ? st.h
+          : 6 + Math.round((st.h - 6) * Math.min(1, (hs.built || 0) / HOME_COST));
+      }
+      const cxw = b.x + b.w / 2, cyw = b.y + b.h / 2;
+      const bob = Math.sin(now / 500 + b.x) * 2;
+      const x = isoX(cxw, cyw), y = isoY(cxw, cyw) - H - 16 + bob;
+      c.font = "bold 10px 'Noto Kufi Arabic', sans-serif";
+      c.textAlign = "center"; c.textBaseline = "middle";
+      const w = c.measureText(text).width + 12;
+      const a = pulse ? 0.75 + 0.25 * ((Math.sin(now / 280) + 1) / 2) : 1;
+      c.globalAlpha = a;
+      c.fillStyle = "rgba(10,22,20,0.82)";
+      roundRect(c, x - w / 2, y - 9, w, 18, 9); c.fill();
+      c.strokeStyle = color; c.lineWidth = 1.4; c.stroke();
+      c.fillStyle = color;
+      c.fillText(text, x, y);
+      c.globalAlpha = 1;
+    }
+
     function drawBuildingIndicators(now) {
       const d = derive(state);
+      const find = (id) => BUILDINGS.find((b) => b.id === id);
 
-      const bankB = BUILDINGS.find((b) => b.id === "bank");
+      // البنك: نسبة امتلاء صندوق الطوارئ
+      const bankB = find("bank");
       if (bankB) {
         const pct = Math.max(0, Math.min(1, state.emergency / d.emergencyTarget));
-        const bw = bankB.w - 20, bx = bankB.x + 10, by = bankB.y + bankB.h - 26;
-        ctx.fillStyle = "rgba(10,30,26,0.75)"; ctx.fillRect(bx, by, bw, 5);
-        ctx.fillStyle = pct >= 1 ? "#2ecc71" : "#c9974a"; ctx.fillRect(bx, by, bw * pct, 5);
-        if (pct >= 1) {
-          const g = (Math.sin(now / 300) + 1) / 2;
-          ctx.strokeStyle = `rgba(46,204,113,${0.3 + g * 0.4})`; ctx.lineWidth = 1.5;
-          ctx.strokeRect(bx - 1.5, by - 1.5, bw + 3, 8);
-        }
+        isoBadge(ctx, bankB, `🛡 ${Math.round(pct * 100)}%`,
+                 pct >= 1 ? "#2ecc71" : "#c9974a", now, pct >= 1);
       }
-
-      const marketB = BUILDINGS.find((b) => b.id === "market");
-      if (marketB) {
-        for (let i = 0; i < 3; i++) {
-          const on = Math.sin(now / 400 + i) > 0;
-          ctx.fillStyle = on ? "#2ecc71" : "#123b2a";
-          ctx.fillRect(marketB.x + 12 + i * 10, marketB.y + 16, 6, 6);
-        }
-        const up = lastStockDelta >= 0;
-        const ax = marketB.x + marketB.w - 20, ay = marketB.y + 23;
-        ctx.fillStyle = up ? "#2ecc71" : "#e74c3c";
-        ctx.beginPath();
-        if (up) { ctx.moveTo(ax, ay - 6); ctx.lineTo(ax + 6, ay + 4); ctx.lineTo(ax - 6, ay + 4); }
-        else { ctx.moveTo(ax, ay + 6); ctx.lineTo(ax + 6, ay - 4); ctx.lineTo(ax - 6, ay - 4); }
-        ctx.closePath(); ctx.fill();
+      // البورصة: اتجاه آخر حركة للأسهم
+      const marketB = find("market");
+      if (marketB && d.totalInv > 0) {
+        const up = (lastStockDelta ?? 0) >= 0;
+        isoBadge(ctx, marketB, `${up ? "▲" : "▼"} ${fmt(Math.round(d.totalInv))}`,
+                 up ? "#2ecc71" : "#e74c3c", now, false);
       }
-
-      const homeB = BUILDINGS.find((b) => b.id === "home");
+      // المنزل: تقدّم البناء أو الدين
+      const homeB = find("home");
       if (homeB) {
-        const t = (now / 1000) % 2;
-        ctx.globalAlpha = Math.max(0, 1 - t / 2) * 0.4;
-        ctx.beginPath(); ctx.arc(homeB.x + homeB.w - 17, homeB.y - 10 - t * 14, 3 + t * 3, 0, Math.PI * 2);
-        ctx.fillStyle = "#cfd8d3"; ctx.fill();
-        ctx.globalAlpha = 1;
-        if (state.debt > 0) {
-          ctx.fillStyle = "rgba(231,76,60,0.85)";
-          roundRect(ctx, homeB.x + 4, homeB.y + 24, 20, 11, 3); ctx.fill();
-          ctx.fillStyle = "#fff"; ctx.font = "9px sans-serif";
-          ctx.textAlign = "center"; ctx.textBaseline = "middle";
-          ctx.fillText("دين", homeB.x + 14, homeB.y + 30);
+        const hs = state.housing || INITIAL_STATE.housing;
+        if (hs.stage === "building") {
+          isoBadge(ctx, homeB, `🏗 ${Math.round((hs.built / HOME_COST) * 100)}%`, "#c9974a", now, false);
+        } else if (state.debt > 0) {
+          isoBadge(ctx, homeB, `💳 ${fmt(state.debt)}`, "#e74c3c", now, true);
         }
       }
-
-      const goalsB = BUILDINGS.find((b) => b.id === "goals");
+      // لوحة الأهداف: أقرب هدف إلى الاكتمال
+      const goalsB = find("goals");
       const openGoalsList = (state.goals || []).filter((g) => g && !g.spent && g.target > 0);
       if (goalsB && openGoalsList.length) {
         const best = Math.max(...openGoalsList.map((g) => Math.min(1, g.saved / g.target)));
-        const gx = goalsB.x + goalsB.w / 2, gy = goalsB.y + goalsB.h * 0.32;
-        ctx.beginPath(); ctx.arc(gx, gy, 10, -Math.PI / 2, -Math.PI / 2 + best * Math.PI * 2);
-        ctx.strokeStyle = "#2ecc71"; ctx.lineWidth = 3; ctx.stroke();
+        isoBadge(ctx, goalsB, `🎯 ${Math.round(best * 100)}%`, best >= 1 ? "#2ecc71" : "#9b59b6", now, best >= 1);
       }
-
-      const workB = BUILDINGS.find((b) => b.id === "work");
+      // العمل: راتب بانتظارك
+      const workB = find("work");
       if (workB && d.surplus > 0) {
-        const g = (Math.sin(now / 320) + 1) / 2;
-        ctx.fillStyle = `rgba(201,151,74,${0.55 + g * 0.45})`;
-        ctx.font = "13px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText("💰", workB.x + workB.w / 2, workB.y - 12 - g * 3);
+        isoBadge(ctx, workB, "💰 راتب", "#c9974a", now, true);
       }
     }
 
@@ -3627,7 +3661,7 @@
       const season = SEASONS[seasonKey];
       const night = nightFactor(now);
 
-      ctx.clearRect(0, 0, WORLD_W, WORLD_H);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.save();
       if (shake > 0.05) {
         ctx.translate((Math.random() - 0.5) * shake * 2, (Math.random() - 0.5) * shake * 2);
@@ -3638,93 +3672,103 @@
       for (const dr of DROPS) {
         const a = Math.max(0, 1 - dr.life / dr.max);
         ctx.fillStyle = `rgba(150,210,240,${a * 0.8})`;
-        ctx.fillRect(dr.x, dr.y, 2, 2);
+        ctx.fillRect(isoX(dr.x, dr.y), isoY(dr.x, dr.y) - 10, 2, 2);
       }
 
       // غبار خطوات اللاعب
       for (const d of DUST) {
         ctx.globalAlpha = Math.max(0, 1 - d.life / d.max) * 0.35;
         ctx.fillStyle = "#cfd8d3";
-        ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(isoX(d.x, d.y), isoY(d.x, d.y), d.r, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1;
       }
-
-      drawBuildingIndicators(now);
 
       // ظلال السحب على الأرض. كانت تُرسم أقراصًا بيضاء صلبة *فوق* المباني
       // فتبدو صحونًا طائرة تحجب المدينة؛ والظل المتحرك على الأرض هو ما يُرى
       // فعلاً من أعلى، ولا يحجب شيئًا.
       for (const cl of CLOUDS) {
-        const g = ctx.createRadialGradient(cl.x, cl.y, cl.r * 0.15, cl.x, cl.y, cl.r * 1.6);
+        const sx = isoX(cl.x, cl.y), sy = isoY(cl.x, cl.y);
+        const g = ctx.createRadialGradient(sx, sy, cl.r * 0.15, sx, sy, cl.r * 1.6);
         g.addColorStop(0, `rgba(8,20,18,${cl.alpha * 2.4})`);
         g.addColorStop(0.6, `rgba(8,20,18,${cl.alpha * 1.1})`);
         g.addColorStop(1, "rgba(8,20,18,0)");
         ctx.fillStyle = g;
-        ctx.beginPath(); ctx.ellipse(cl.x, cl.y, cl.r * 1.6, cl.r * 1.05, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(sx, sy, cl.r * 1.7, cl.r * 1.7 * (ISO_KY / ISO_KX), 0, 0, Math.PI * 2); ctx.fill();
       }
 
-      // ترتيب حسب العمق: الأشجار والشخصيات تُرسم بترتيب موضعها الرأسي
+      // العمق في الإيزومتري هو (x+y): ما زاد مجموعه كان أقرب فرُسم فوق غيره
       const entities = [];
-      for (const t of TREES) entities.push({ footY: t.y, kind: "tree", ref: t });
-      for (const n of NPCS) entities.push({ footY: n.y + 14, kind: "npc", ref: n });
-      entities.push({ footY: player.y + player.h, kind: "player" });
-      entities.sort((a, b) => a.footY - b.footY);
+      for (const t of TREES) entities.push({ d: isoDepth(t.x, t.y), kind: "tree", ref: t });
+      for (const n of NPCS) entities.push({ d: isoDepth(n.x, n.y + 14), kind: "npc", ref: n });
+      for (const l of LAMPS) entities.push({ d: isoDepth(l.x, l.y), kind: "lamp", ref: l });
+      // المباني في نفس قائمة العمق: كانت في الخلفية الثابتة فترسم النخلة
+      // والشخصية فوقها دائمًا ولو وقفتا خلفها — وهو ما لا يُغتفر في الإيزومتري
+      for (const b of BUILDINGS) entities.push({ d: isoDepth(b.x + b.w, b.y + b.h), kind: "building", ref: b });
+      entities.push({ d: isoDepth(player.x + player.w / 2, player.y + player.h), kind: "player" });
+      entities.sort((a, b) => a.d - b.d);
       for (const e of entities) {
-        if (e.kind === "tree") drawTree(ctx, e.ref, season, now);
+        if (e.kind === "building") drawIsoBuilding(ctx, e.ref);
+        else if (e.kind === "tree") drawTree(ctx, e.ref, season, now);
         else if (e.kind === "npc") drawCharacter(ctx, e.ref.x, e.ref.y, e.ref.facing, e.ref.animT, e.ref.moving, e.ref.palette);
+        else if (e.kind === "lamp") {
+          const lx = isoX(e.ref.x, e.ref.y), ly = isoY(e.ref.x, e.ref.y);
+          ctx.fillStyle = "rgba(0,0,0,0.25)";
+          ctx.beginPath(); ctx.ellipse(lx, ly, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#3b4a44"; ctx.fillRect(lx - 1.5, ly - 18, 3, 18);
+          ctx.fillStyle = night > 0.12 ? "#f4d58d" : "#8a9a92";
+          ctx.beginPath(); ctx.arc(lx, ly - 20, 3.4, 0, Math.PI * 2); ctx.fill();
+        }
         else drawCharacter(ctx, player.x + player.w / 2, player.y + player.h / 2, player.facing, player.animT, pressed.size > 0, PLAYER_PALETTE);
       }
 
-      // أعمدة الإنارة (العمود نفسه فوق المشهد، وهالته تُضاف بعد ستارة الليل)
-      for (const l of LAMPS) {
-        ctx.fillStyle = "#3b4a44";
-        ctx.fillRect(l.x - 1.5, l.y - 16, 3, 16);
-        ctx.fillStyle = night > 0.12 ? "#f4d58d" : "#6b7a72";
-        ctx.beginPath(); ctx.arc(l.x, l.y - 18, 3.4, 0, Math.PI * 2); ctx.fill();
-      }
+      drawBuildingLabels(ctx);
+      drawBuildingIndicators(now);
 
       drawWeather(ctx);
 
       // صبغة الفصل فوق المشهد كله
       if (season.tint) {
         ctx.fillStyle = season.tint;
-        ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
 
       // ستارة الليل ثم مصادر الضوء الدافئة فوقها
       if (night > 0.02) {
         ctx.fillStyle = `rgba(12,24,48,${night})`;
-        ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
         for (const l of LAMPS) {
-          const g = ctx.createRadialGradient(l.x, l.y - 16, 2, l.x, l.y - 16, 46);
+          const lx = isoX(l.x, l.y), ly = isoY(l.x, l.y) - 16;
+          const g = ctx.createRadialGradient(lx, ly, 2, lx, ly, 46);
           g.addColorStop(0, `rgba(255,214,140,${0.42 * night})`);
           g.addColorStop(1, "rgba(255,214,140,0)");
           ctx.fillStyle = g;
-          ctx.beginPath(); ctx.arc(l.x, l.y - 16, 46, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(lx, ly, 46, 0, Math.PI * 2); ctx.fill();
         }
         for (const b of BUILDINGS) {
           if (b.id === "goals") continue;
-          const g = ctx.createRadialGradient(b.doorX, b.doorY - 8, 2, b.doorX, b.doorY - 8, 34);
+          const dx = isoX(b.doorX, b.doorY), dy = isoY(b.doorX, b.doorY) - 8;
+          const g = ctx.createRadialGradient(dx, dy, 2, dx, dy, 34);
           g.addColorStop(0, `rgba(255,206,128,${0.34 * night})`);
           g.addColorStop(1, "rgba(255,206,128,0)");
           ctx.fillStyle = g;
-          ctx.beginPath(); ctx.arc(b.doorX, b.doorY - 8, 34, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(dx, dy, 34, 0, Math.PI * 2); ctx.fill();
         }
-        const fg = ctx.createRadialGradient(PLAZA_X, PLAZA_Y, 2, PLAZA_X, PLAZA_Y, 40);
+        const pfx = isoX(PLAZA_X, PLAZA_Y), pfy = isoY(PLAZA_X, PLAZA_Y);
+        const fg = ctx.createRadialGradient(pfx, pfy, 2, pfx, pfy, 40);
         fg.addColorStop(0, `rgba(150,200,255,${0.22 * night})`);
         fg.addColorStop(1, "rgba(150,200,255,0)");
         ctx.fillStyle = fg;
-        ctx.beginPath(); ctx.arc(PLAZA_X, PLAZA_Y, 40, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(pfx, pfy, 40, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
       }
 
       if (currentBuilding) {
         const glowT = (Math.sin(now / 220) + 1) / 2;
         ctx.beginPath();
-        ctx.arc(currentBuilding.doorX, currentBuilding.doorY, 6 + glowT * 3, 0, Math.PI * 2);
+        ctx.arc(isoX(currentBuilding.doorX, currentBuilding.doorY), isoY(currentBuilding.doorX, currentBuilding.doorY), 6 + glowT * 3, 0, Math.PI * 2);
         ctx.strokeStyle = `rgba(201,151,74,${0.4 + glowT * 0.4})`;
         ctx.lineWidth = 2; ctx.stroke();
       }
@@ -3770,7 +3814,7 @@
       // وميض أحمر خافت أثناء الاهتزاز (خسارة كبيرة)
       if (shake > 0.05) {
         ctx.fillStyle = `rgba(231,76,60,${Math.min(0.16, shake * 0.022)})`;
-        ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
 
       // شارة الفصل والوقت
