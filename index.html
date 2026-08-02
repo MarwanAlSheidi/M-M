@@ -824,21 +824,21 @@
     }
     const BADGES = [];
 
-    // تُستدعى بعد كل تغيير؛ تعرض شاشة النهاية مرة واحدة فقط
+    // تُستدعى بعد كل تغيير. الزر "تابع الاستكشاف" يُبقي اللعبة جارية بعد
+    // النهاية، وكان العلم يُقفل حينها إلى الأبد: من أفلس ثم تعافى وبلغ
+    // الاستقلال المالي لا يُخبَر بفوزه أبدًا. الآن يُسجَّل آخر مصير عُرض،
+    // فتظهر النهاية المعاكسة إذا انقلبت حالك فعلاً.
     function checkEnding() {
-      if (state.finished) return;
+      // أي قيمة غير "win"/"lose" تعني تعطيل شاشات النهاية (تستعملها المحاكاة)
+      if (state.finished && state.finished !== "win" && state.finished !== "lose") return;
       const d = derive(state);
-      const nw = d.netWorth;
       // الفوز يقاس بالثروة المُدِرّة للدخل: امتلاك بيت السكن وحده لا يعني استقلالًا ماليًا
-      if (d.investableNetWorth >= fiTarget(state)) {
-        state.finished = "win";
-        saveState();
-        showEnding("win");
-      } else if (nw <= BANKRUPT_AT) {
-        state.finished = "lose";
-        saveState();
-        showEnding("lose");
-      }
+      const kind = d.investableNetWorth >= fiTarget(state) ? "win"
+                 : d.netWorth <= BANKRUPT_AT ? "lose" : null;
+      if (!kind || state.finished === kind) return;
+      state.finished = kind;
+      saveState();
+      showEnding(kind);
     }
 
     function resetGame() {
@@ -2169,7 +2169,7 @@
         <canvas class="celebrate-art" id="endArt" width="340" height="140"></canvas>
         <p style="line-height:1.9;text-align:center">
           ${win
-            ? `وصلت باستثماراتك إلى ما يكفي لتغطية مصروفاتك دون الحاجة إلى راتب.`
+            ? `بلغت ثروتك المُدِرّة ثمانية أضعاف مصروفاتك السنوية — أول عتبة على طريق ${term("الاستقلال المالي")}.`
             : `تراكمت الديون وتجاوزت خسائرك ما تملك. جرّب توازنًا أفضل بين الطوارئ والاستثمار.`}
         </p>
         <div class="card" style="margin:14px 0;padding:12px">
