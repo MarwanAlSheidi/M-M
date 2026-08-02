@@ -704,12 +704,18 @@
         }
       }
 
+      // تقرير الشهر: نلتقط ما تغيّر فعلاً كي يراه اللاعب بدل أن يتغيّر بصمت
+      const rep = { assets: {}, rent: 0, loanPaid: 0, debtInterest: 0,
+                    creditFrom: s.creditScore, moraleFrom: Math.round(s.morale ?? 70),
+                    premium: 0, inflation: false };
+
       // قسط قرض الإسكان
       if (s.housing.loan > 0) {
         const interest = Math.round(s.housing.loan * HOUSING_LOAN_RATE);
         const pay = Math.min(s.housing.loanPayment, s.housing.loan + interest);
         s.housing.loan = Math.max(0, s.housing.loan + interest - pay);
         s.cash -= pay;
+        rep.loanPaid = pay;
         if (s.housing.loan === 0) {
           s.housing.loanPayment = 0;
           s.eventLog = [...s.eventLog, "✅ سُدّد قرض الإسكان بالكامل"];
@@ -718,6 +724,7 @@
       if (s.month % 12 === 0) {
         s.monthlyIncome = Math.round(s.monthlyIncome * 1.02);
         s.monthlyExpenses = Math.round(s.monthlyExpenses * 1.015);
+        rep.inflation = true;
       }
       // كل أصل يسحب عائده الشهري مستقلاً عن الآخر، فيقلّ تقلّب المحفظة كلما نوّعت
       lastAssetMoves = {};
@@ -726,11 +733,14 @@
         const { growth, income, crashed } = drawAssetReturn(key);
         lastAssetMoves[key] = { pct: growth + income, crashed };
         if (inv.amount <= 0) continue;
+        const before = inv.amount;
         if (income > 0) {
           inv.rentalIncome = Math.round(inv.amount * income);
           s.cash += inv.rentalIncome;
+          rep.rent += inv.rentalIncome;
         }
         inv.amount = Math.max(0, Math.round(inv.amount * (1 + growth)));
+        rep.assets[key] = { delta: inv.amount - before, pct: growth, crashed };
         // إن أفنى الانهيار المركز بالكامل فقد تحققت الخسارة وأُغلق المركز:
         // إبقاء التكلفة كان يجعل أي شراء جديد يظهر خاسرًا بمبلغ قديم إلى الأبد.
         if (inv.amount === 0) { inv.cost = 0; inv.rentalIncome = 0; }
@@ -741,10 +751,14 @@
       // التصنيف الائتماني يتحرك تدريجيًا نحو ما تستحقه نسبة دينك إلى دخلك،
       // وهو من يحدد فائدة الدين بدل النسبة الثابتة السابقة.
       s.creditScore = Math.round(s.creditScore + (creditTarget(s) - s.creditScore) * 0.15);
-      if (s.debt > 0) s.debt = Math.round(s.debt * (1 + debtMonthlyRate(s.creditScore)));
+      if (s.debt > 0) {
+        const before = s.debt;
+        s.debt = Math.round(s.debt * (1 + debtMonthlyRate(s.creditScore)));
+        rep.debtInterest = s.debt - before;
+      }
 
       // قسط التأمين الصحي
-      if (s.insurance?.health) s.cash -= s.insurance.premium;
+      if (s.insurance?.health) { s.cash -= s.insurance.premium; rep.premium = s.insurance.premium; }
 
       // إتمام الدراسة: الزيادة تُصرف عند التخرّج لا عند الدفع
       if (s.education?.pending) {
@@ -782,6 +796,11 @@
       // نحدّ من نمو الحفظ: يكفي آخر 600 شهر و400 حدث لأي جولة واقعية
       if (s.history.length > 600) s.history = s.history.slice(-600);
       if (s.eventLog.length > 400) s.eventLog = s.eventLog.slice(-400);
+
+      rep.creditTo = s.creditScore;
+      rep.moraleTo = Math.round(s.morale ?? 70);
+      rep.surplus = surplus;
+      s.lastReport = rep;
 
       setState(s);
 
@@ -1216,6 +1235,7 @@
       } else {
         pushModal(`
           <h2>💼 العمل</h2>
+          ${lastReportHtml()}
           <p style="margin:12px 0;line-height:1.8">الدخل الشهري (${fmt(d.effIncome)}) لا يغطي المصروفات (${fmt(d.effExpenses)}) هذا الشهر. سينتقل الراتب مباشرة دون تخصيص فائض.</p>
           <button class="btn" id="proceedBtn">بدء الشهر التالي</button>
         `, (root) => {
@@ -1247,6 +1267,7 @@
           → بعد التوزيع <b id="moraleAfter">${Math.round(state.morale ?? 70)}</b>
           <span id="burnoutWarn" style="color:#e74c3c"></span>
         </p>
+        ${lastReportHtml()}
         ${(() => {
           // أهم تحذير واحد عند لحظة القرار نفسها، لا بعد فوات الأوان
           const top = currentAdvice(1)[0];
@@ -1683,6 +1704,36 @@
         }
         requestAnimationFrame(frame);
       })(last);
+    }
+
+    // ==================== تقرير الشهر المنصرم ====================
+    // كان الشهر يمرّ فتتغيّر الاستثمارات والتصنيف والرضا والأقساط في صمت،
+    // ولا يرى اللاعب إلا رقمًا طائرًا واحدًا. هذا يعرض ما حدث فعلاً.
+    function lastReportHtml() {
+      const r = state.lastReport;
+      if (!r) return "";
+      const rows = [];
+      for (const [key, a] of Object.entries(r.assets || {})) {
+        if (!a.delta && !a.crashed) continue;
+        rows.push([`${ASSETS[key].label}${a.crashed ? " ⚠" : ""}`,
+          `${a.delta >= 0 ? "+" : "−"}${fmt(Math.abs(a.delta))}`,
+          a.delta >= 0 ? "#2ecc71" : "#e74c3c"]);
+      }
+      if (r.rent) rows.push(["دخل إيجاري", `+${fmt(r.rent)}`, "#2ecc71"]);
+      if (r.loanPaid) rows.push(["قسط الإسكان", `−${fmt(r.loanPaid)}`, "#e67e22"]);
+      if (r.debtInterest) rows.push(["فائدة الدين", `−${fmt(r.debtInterest)}`, "#e74c3c"]);
+      if (r.premium) rows.push(["قسط التأمين", `−${fmt(r.premium)}`, "#e67e22"]);
+      const credit = (r.creditTo ?? 0) - (r.creditFrom ?? 0);
+      if (credit) rows.push(["التصنيف الائتماني", `${credit > 0 ? "+" : "−"}${Math.abs(credit)}`, credit > 0 ? "#2ecc71" : "#e74c3c"]);
+      const morale = (r.moraleTo ?? 0) - (r.moraleFrom ?? 0);
+      if (morale) rows.push(["الرضا", `${morale > 0 ? "+" : "−"}${Math.abs(morale)}`, morale > 0 ? "#2ecc71" : "#e74c3c"]);
+      if (!rows.length && !r.inflation) return "";
+      return `<div class="card" style="padding:10px;margin-bottom:12px">
+        <h3 style="font-size:13px;color:#c9974a;margin-bottom:6px">📄 ما حدث الشهر الماضي</h3>
+        ${rows.map(([k, v, c]) => `<div style="display:flex;justify-content:space-between;padding:2px 0">
+          <span class="muted" style="font-size:12px">${k}</span><b style="font-size:12px;color:${c}">${v}</b></div>`).join("")}
+        ${r.inflation ? `<p class="muted" style="font-size:11px;margin-top:6px">📈 ${term("التضخم")} السنوي: ارتفع دخلك 2% ومصروفاتك 1.5%.</p>` : ""}
+      </div>`;
     }
 
     // ==================== المستشار المالي ====================
