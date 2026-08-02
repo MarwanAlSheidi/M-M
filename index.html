@@ -1055,8 +1055,10 @@
       setState(s);
 
       // حلول الحول: تُعرض الزكاة مرة واحدة كل سنة
+      // تُفتح أيضًا إذا كان في ذمته متأخرات ولو لم تجب زكاة جديدة هذا العام
       const due = zakatDue(s);
-      if (s.year > (s.zakat?.lastDueYear ?? 0) && s.month === 1 && due > 0) {
+      const owed = s.zakat?.unpaid ?? 0;
+      if (s.year > (s.zakat?.lastDueYear ?? 0) && s.month === 1 && (due > 0 || owed > 0)) {
         openZakat(due);
         return;
       }
@@ -1086,7 +1088,7 @@
         <div class="card" style="padding:12px;margin-bottom:12px">
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">وعاء الزكاة</span><b>${fmt(wealth)}</b></div>
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">النصاب</span><b>${fmt(ZAKAT_NISAB)}</b></div>
-          <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">زكاة هذا العام (2.5%)</span><b style="color:#c9974a">${fmt(due)}</b></div>
+          ${due > 0 ? `<div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">زكاة هذا العام (2.5%)</span><b style="color:#c9974a">${fmt(due)}</b></div>` : `<div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">زكاة هذا العام</span><b class="muted">لا شيء — مالك دون النصاب</b></div>`}
           ${arrears > 0 ? `<div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">متأخرات في ذمتك</span><b style="color:#e74c3c">${fmt(arrears)}</b></div>
           <div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid rgba(29,61,53,0.8);margin-top:3px"><span class="muted">الإجمالي الواجب</span><b style="color:#c9974a">${fmt(total)}</b></div>` : ""}
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">النقد المتاح</span><b style="color:${canPay ? "#2ecc71" : "#e74c3c"}">${fmt(state.cash)}</b></div>
@@ -2490,6 +2492,14 @@
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">سنوات زكّيت فيها</span><b>${state.zakat?.paidCount ?? 0}</b></div>
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">مجموع ما أخرجت</span><b style="color:#2ecc71">${fmt(state.zakat?.totalPaid ?? 0)}</b></div>
           ${(state.zakat?.unpaid ?? 0) > 0 ? `<div style="display:flex;justify-content:space-between;padding:3px 0"><span class="muted">مؤجّلة في ذمتك</span><b style="color:#e74c3c">${fmt(state.zakat.unpaid)}</b></div>` : ""}
+          ${(state.zakat?.unpaid ?? 0) > 0 ? `
+          <div class="inline-error" id="arrearsErr"></div>
+          <button class="btn btn-sm" style="margin-top:8px;width:100%" id="payArrears" ${state.cash >= state.zakat.unpaid ? "" : "disabled"}>
+            ${state.cash >= state.zakat.unpaid ? `أخرج ما في ذمتك الآن (${fmt(state.zakat.unpaid)})` : `النقد لا يكفي (تحتاج ${fmt(state.zakat.unpaid)})`}
+          </button>
+          <p class="muted" style="font-size:11px;margin-top:6px;line-height:1.7">
+            الزكاة المؤجّلة دَينٌ في ذمتك يُدفع متى قدرت، لا مرة واحدة في السنة.
+          </p>` : ""}
         </div>
         <div class="card" style="margin:10px 0;padding:12px">
           <h3 style="font-size:14px;color:#c9974a;margin-bottom:8px">🏅 الإنجازات (${(state.achievements || []).length}/${ACHIEVEMENTS.length})</h3>
@@ -2519,6 +2529,24 @@
           applyBtn.addEventListener("click", once(() => {
             setState({ ...state, housing: { ...state.housing, stage: "waiting", waitMonths: LAND_WAIT_MONTHS },
               eventLog: [...state.eventLog, "📝 قدّمت طلب منحة أرض سكنية"] });
+            popModal(); openTownHall();
+          }));
+        }
+        // الزكاة المؤجّلة دَين في الذمة: كان لا يُدفع إلا من الشاشة السنوية،
+        // وتلك لا تُفتح إلا إذا وجبت زكاة جديدة. فمن أجّل ثم هبط ماله دون
+        // النصاب بقيت في ذمته أبدًا — تحذير دائم بلا فعل ممكن.
+        const arrearsBtn = root.querySelector("#payArrears");
+        if (arrearsBtn) {
+          arrearsBtn.addEventListener("click", once(() => {
+            const owed = state.zakat?.unpaid ?? 0;
+            if (owed <= 0) return;
+            if (state.cash < owed) { root.querySelector("#arrearsErr").textContent = "النقد لا يكفي."; return; }
+            const z = state.zakat;
+            SFX.success();
+            setState({ ...state, cash: state.cash - owed,
+              morale: Math.min(100, (state.morale ?? 70) + 6),
+              zakat: { ...z, paidCount: (z.paidCount || 0) + 1, totalPaid: (z.totalPaid || 0) + owed, unpaid: 0 },
+              eventLog: [...state.eventLog, `🤲 أخرجت زكاة متأخرة ${fmt(owed)}`] });
             popModal(); openTownHall();
           }));
         }
