@@ -3507,13 +3507,41 @@
         }
       }
 
-      // الساحة: حوض دائري يصير بيضاويًا في الإسقاط
+      // الساحة: بلاط مشعّ حول حوض فلج مرفوع — كانت حلقة باهتة بلا حضور
       const px = isoX(PLAZA_X, PLAZA_Y), py = isoY(PLAZA_X, PLAZA_Y);
-      c.beginPath(); c.ellipse(px, py, 30, 30 * (ISO_KY / ISO_KX), 0, 0, Math.PI * 2);
-      c.fillStyle = "rgba(214,198,160,0.35)"; c.fill();
-      c.strokeStyle = "rgba(201,151,74,0.65)"; c.lineWidth = 2.5; c.stroke();
-      c.beginPath(); c.ellipse(px, py, 16, 16 * (ISO_KY / ISO_KX), 0, 0, Math.PI * 2);
-      c.fillStyle = "rgba(74,144,201,0.45)"; c.fill();
+      const ky = ISO_KY / ISO_KX;
+      c.beginPath(); c.ellipse(px, py, 44, 44 * ky, 0, 0, Math.PI * 2);
+      c.fillStyle = "rgba(214,198,160,0.30)"; c.fill();
+      c.strokeStyle = "rgba(232,217,168,0.35)"; c.lineWidth = 1.5; c.stroke();
+      // بلاط مشعّ
+      c.strokeStyle = "rgba(120,100,70,0.35)"; c.lineWidth = 1;
+      for (let i = 0; i < 12; i++) {
+        const a2 = (i / 12) * Math.PI * 2;
+        c.beginPath();
+        c.moveTo(px + Math.cos(a2) * 17, py + Math.sin(a2) * 17 * ky);
+        c.lineTo(px + Math.cos(a2) * 44, py + Math.sin(a2) * 44 * ky);
+        c.stroke();
+      }
+      // جدار الحوض المرفوع
+      const rimH = 7;
+      c.beginPath();
+      c.moveTo(px - 17, py); c.lineTo(px - 17, py - rimH);
+      c.ellipse(px, py - rimH, 17, 17 * ky, 0, Math.PI, 0);
+      c.lineTo(px + 17, py); c.ellipse(px, py, 17, 17 * ky, 0, 0, Math.PI);
+      c.closePath();
+      c.fillStyle = shade(CLAY, 0.72); c.fill();
+      c.strokeStyle = "rgba(38,28,18,0.55)"; c.lineWidth = 1; c.stroke();
+      // سطح الماء داخله
+      c.beginPath(); c.ellipse(px, py - rimH, 15, 15 * ky, 0, 0, Math.PI * 2);
+      c.fillStyle = "#2f6f8f"; c.fill();
+      c.beginPath(); c.ellipse(px - 4, py - rimH - 1, 6, 6 * ky, 0, 0, Math.PI * 2);
+      c.fillStyle = "rgba(150,210,240,0.35)"; c.fill();
+      // عمود النافورة
+      c.fillStyle = shade(CLAY, 0.95);
+      c.fillRect(px - 2.5, py - rimH - 13, 5, 13);
+      c.strokeStyle = "rgba(38,28,18,0.5)"; c.strokeRect(px - 2.5, py - rimH - 13, 5, 13);
+      c.beginPath(); c.arc(px, py - rimH - 15, 3.4, 0, Math.PI * 2);
+      c.fillStyle = "#e8d9a8"; c.fill(); c.stroke();
 
       renderedSeason = seasonForMonth(state.month);
       renderedBgKey = bgKey(state);
@@ -3604,32 +3632,65 @@
     const PLAYER_PALETTE = { shirt: "#c9974a", sleeve: "#b98a44", skin: "#e8b88a", hair: "#3a2a1a" };
 
     // تُستدعى بإحداثيات العالم؛ الإسقاط يقع هنا فتبقى مواضع اللعب كما هي
+    // الشخصية في الإيزومتري: كتلة لها حجم وظلّ يتبع ميل الأرض، بخطّ خارجي
+    // داكن يفصلها عن الجدار الطيني خلفها، وبثوب عُماني وكُمّة على الرأس.
     function drawCharacter(c, wx, wy, facing, animT, moving, palette) {
       const walk = moving ? Math.sin(animT * 12) : 0;
-      const legOffset = walk * 4, armOffset = -walk * 3;
-      const bob = moving ? Math.abs(Math.sin(animT * 12)) * 1.2 : 0;
+      const legOffset = walk * 3.5, armOffset = -walk * 3;
+      const bob = moving ? Math.abs(Math.sin(animT * 12)) * 1.3 : 0;
       const cx = isoX(wx, wy), cy = isoY(wx, wy);
+      const away = facing === "up";                 // مُدبِر عن الناظر
+      const ink = "rgba(26,20,12,0.75)";
+
+      // ظلّ بيضاوي بنسبة الأرض الإيزومترية
       c.save();
+      c.beginPath(); c.ellipse(cx + 1, cy + 13, 9, 9 * (ISO_KY / ISO_KX), 0, 0, Math.PI * 2);
+      c.fillStyle = "rgba(0,0,0,0.32)"; c.fill();
+
       c.translate(cx, cy - bob);
-      c.beginPath(); c.ellipse(0, 13 + bob, 9, 3, 0, 0, Math.PI * 2);
-      c.fillStyle = "rgba(0,0,0,0.35)"; c.fill();
       if (facing === "left") c.scale(-1, 1);
+      c.lineJoin = "round";
+      c.strokeStyle = ink; c.lineWidth = 1.4;
+
+      // الساقان
       c.fillStyle = "#2a1c0d";
-      c.fillRect(-6, 4 + legOffset, 5, 10);
-      c.fillRect(1, 4 - legOffset, 5, 10);
-      c.fillStyle = palette.shirt;
-      roundRect(c, -8, -6, 16, 14, 4); c.fill();
+      for (const [ox, off] of [[-6, legOffset], [1, -legOffset]]) {
+        c.beginPath(); c.rect(ox, 4 + off, 5, 10); c.fill(); c.stroke();
+      }
+      // الثوب: أوسع عند الأسفل
+      c.beginPath();
+      c.moveTo(-7, -7); c.lineTo(7, -7); c.lineTo(9.5, 8);
+      c.quadraticCurveTo(0, 10.5, -9.5, 8); c.closePath();
+      c.fillStyle = palette.shirt; c.fill(); c.stroke();
+      // ظلّ خلوي على الجانب البعيد عن الضوء
+      c.save(); c.clip();
+      c.fillStyle = "rgba(0,0,0,0.16)";
+      c.fillRect(1.5, -8, 10, 20);
+      c.restore();
+      // فتحة الرقبة
+      c.beginPath(); c.moveTo(-3, -7); c.lineTo(3, -7); c.lineTo(0, -3.5); c.closePath();
+      c.fillStyle = "rgba(0,0,0,0.18)"; c.fill();
+
+      // الذراعان
       c.fillStyle = palette.sleeve;
-      c.fillRect(-10, -4 + armOffset, 4, 9);
-      c.fillRect(6, -4 - armOffset, 4, 9);
-      c.beginPath(); c.arc(0, -12, 7, 0, Math.PI * 2);
-      c.fillStyle = palette.skin; c.fill();
-      c.beginPath(); c.arc(0, -15, 7.2, Math.PI, Math.PI * 2);
-      c.fillStyle = palette.hair; c.fill();
-      if (facing !== "up") {
+      for (const [ox, off] of [[-10.5, armOffset], [6.5, -armOffset]]) {
+        c.beginPath(); c.rect(ox, -5 + off, 4, 10); c.fill(); c.stroke();
+      }
+
+      // الرأس
+      c.beginPath(); c.arc(0, -12.5, 6.6, 0, Math.PI * 2);
+      c.fillStyle = palette.skin; c.fill(); c.stroke();
+      // كُمّة عُمانية: طاقية مطرّزة بدل شعر مرسوم
+      c.beginPath(); c.arc(0, -14.5, 6.9, Math.PI * 1.02, Math.PI * 1.98);
+      c.lineTo(6.7, -13.6); c.lineTo(-6.7, -13.6); c.closePath();
+      c.fillStyle = palette.hair; c.fill(); c.stroke();
+      c.strokeStyle = "rgba(232,217,168,0.55)"; c.lineWidth = 1;
+      c.beginPath(); c.moveTo(-5.6, -15.4); c.lineTo(5.6, -15.4); c.stroke();
+
+      if (!away) {
         c.fillStyle = "#2a1c0d";
-        c.beginPath(); c.arc(-2.5, -12, 1, 0, Math.PI * 2); c.fill();
-        c.beginPath(); c.arc(2.5, -12, 1, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(-2.4, -12.2, 1.05, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(2.4, -12.2, 1.05, 0, Math.PI * 2); c.fill();
       }
       c.restore();
     }
