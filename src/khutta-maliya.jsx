@@ -89,7 +89,7 @@ const STORE_KEY = "khutta-maliya:v2";
 const blank = () => ({
   cur:"OMR", age:0,
   stage:"", income:"", dependents:"", horizon:"", priority:"", debtMethod:"",
-  ans:{}, goals:[],
+  ans:{}, goals:[], debts:[], debtExtra:0,
   assets: ASSETS.map(() => 0), liabs: LIABS.map(() => 0),
   exp: EXPENSES.map(([k, l, t]) => ({ key:k, label:l, type:t, cost:0 })),
   inc: INCOMES.map(([l]) => ({ label:l, amount:0 })),
@@ -102,6 +102,7 @@ const migrate = (raw) => {
     o.goals = raw.months.map((m, i) => ({ ...m, m:i })).filter((g) => g.type || g.cost > 0)
       .map((g, k) => ({ id:`m${k}`, m:g.m, type:g.type || "", tier:g.tier || "", cost:g.cost || 0, fund:g.fund || "" }));
   }
+  if (!Array.isArray(o.debts)) o.debts = [];
   delete o.months; delete o.lik; delete o.ch; delete o.risk;
   return o;
 };
@@ -284,6 +285,37 @@ const money = (n, c) => {
 };
 const sum = (a) => a.reduce((x, y) => x + (Number(y) || 0), 0);
 const pct = (n) => (isFinite(n) ? (n * 100).toFixed(1) + "%" : "—");
+
+/* محاكاة سداد الديون — تُطبّق الحد الأدنى على كل دين شهرياً ثم توجّه الدفعة الإضافية
+   حسب ترتيب الطريقة (الأعلى فائدة أولاً للانهيار الجليدي، الأصغر رصيداً أولاً لكرة الثلج). */
+const DEBT_MAX_MONTHS = 600;
+function simulateDebts(rows, extra, orderFn) {
+  const list = rows.map((r) => ({ apr:Number(r.apr) || 0, min:Number(r.min) || 0, bal:Number(r.balance) || 0 }));
+  let totalInterest = 0, months = 0;
+  while (list.some((x) => x.bal > 0.01) && months < DEBT_MAX_MONTHS) {
+    months++;
+    for (const x of list) {
+      if (x.bal <= 0.01) continue;
+      const interest = x.bal * (x.apr / 100 / 12);
+      totalInterest += interest;
+      x.bal += interest;
+      x.bal -= Math.min(x.min, x.bal);
+    }
+    let pool = extra;
+    for (const x of [...list].filter((y) => y.bal > 0.01).sort(orderFn)) {
+      if (pool <= 0) break;
+      const pay = Math.min(pool, x.bal);
+      x.bal -= pay; pool -= pay;
+    }
+  }
+  const neverPaidOff = list.some((x) => x.bal > 0.01);
+  const originalTotal = sum(rows.map((r) => r.balance));
+  return { months:neverPaidOff ? null : months, totalInterest, totalPaid:originalTotal + totalInterest, neverPaidOff };
+}
+const DEBT_ORDER = {
+  avalanche: (a, b) => b.apr - a.apr,
+  snowball: (a, b) => a.bal - b.bal,
+};
 
 const fieldStyle = {
   width:"100%", background:T.fill, border:`1px solid ${T.fillLine}55`, borderRadius:8,
@@ -474,6 +506,12 @@ export default function App() {
     return { ...s, goals:[...s.goals, { id:`g${Date.now()}${Math.random().toString(36).slice(2,6)}`, m, type:"", tier:"", cost:0, fund:"" }] };
   }), []);
 
+  const upDebt = useCallback((id, p) => setD((s) => ({ ...s, debts:s.debts.map((x) => (x.id === id ? { ...x, ...p } : x)) })), []);
+  const delDebt = useCallback((id) => setD((s) => ({ ...s, debts:s.debts.filter((x) => x.id !== id) })), []);
+  const addDebt = useCallback(() => setD((s) => ({
+    ...s, debts:[...s.debts, { id:`b${Date.now()}${Math.random().toString(36).slice(2,6)}`, label:"", balance:0, apr:0, min:0 }],
+  })), []);
+
   /* ── نتيجة البطاقات ── */
   const id = useMemo(() => {
     const ans = d.ans || {};
@@ -576,6 +614,20 @@ export default function App() {
       goalsTotal, byTier, untyped, manualFunded, annualExp };
   }, [d, horizon, id]);
 
+  /* ── جدول سداد الديون: الانهيار الجليدي مقابل كرة الثلج ── */
+  const debtPlan = useMemo(() => {
+    const rows = d.debts.filter((x) => (x.balance || 0) > 0);
+    if (!rows.length) return null;
+    const extra = Math.max(0, d.debtExtra || 0);
+    const totalMin = sum(rows.map((r) => r.min));
+    const totalBalance = sum(rows.map((r) => r.balance));
+    return {
+      extra, totalMin, totalBalance,
+      avalanche: simulateDebts(rows, extra, DEBT_ORDER.avalanche),
+      snowball: simulateDebts(rows, extra, DEBT_ORDER.snowball),
+    };
+  }, [d.debts, d.debtExtra]);
+
   const factsDone = QKEYS.filter((k) => d[k]).length;
   const lbl = (spec, v) => { const o = spec.o.find((x) => x[0] === v); return o ? o[1] : "لم يُجب"; };
 
@@ -641,9 +693,14 @@ export default function App() {
     if (id.prof) id.prof.acts.slice(0, 2).forEach((a) => A.push(a));
     if (c.firstShort !== null)
       A.push(`إعادة جدولة الأهداف حول ${when(c.firstShort)} أو خفضها بمقدار ${M(c.worstShort)}؛ تأجيل أهداف الطموح (${M(c.byTier[2])}) هو المدخل الأقل ضرراً.`);
-    if (c.totalLiabs > 0)
+    const chosenPlan = debtPlan && debtPlan[d.debtMethod === "snowball" ? "snowball" : "avalanche"];
+    if (chosenPlan && !chosenPlan.neverPaidOff)
+      A.push(`سداد الديون بطريقة ${d.debtMethod === "snowball" ? "كرة الثلج" : "الانهيار الجليدي"} — تنتهي خلال ${chosenPlan.months < 12 ? `${chosenPlan.months} شهراً` : `${(chosenPlan.months / 12).toFixed(1)} سنة`} بفائدة إجمالية ${M(chosenPlan.totalInterest)}.`);
+    else if (c.totalLiabs > 0)
       A.push(d.debtMethod === "snowball" ? "سداد الديون بترتيب الأصغر رصيداً أولاً، بما يوافق اختياره."
                                         : "سداد الديون بترتيب الأعلى فائدة أولاً — الأقل كلفة إجمالية.");
+    if (debtPlan && debtPlan.avalanche.neverPaidOff && debtPlan.snowball.neverPaidOff)
+      add("high","جدول الديون لن يُسدَّد بالدفعات الحالية", "الحد الأدنى مع الدفعة الإضافية الحالية لا يكفي لتغطية الفائدة المتراكمة على مدى 50 سنة.");
 
     const diag = [
       ["النمط المالي", id.prof ? `${id.prof.name} — ${id.prof.sub}` : "لم تكتمل البطاقات"],
@@ -661,6 +718,10 @@ export default function App() {
       ["أول شهر يعجز", c.firstShort !== null ? `${when(c.firstShort)} — عجز ${M(c.worstShort)}` : "لا عجز خلال الخطة"],
       ["نطاق الأصول النامية", c.equity || "—"],
       ["سنوات الاستقلال المالي", c.fiYears ? `${c.fiYears} سنة (هدف ${M(c.fiTarget)})` : c.surplus > 0 ? "أكثر من 60 سنة" : "لا فائض"],
+      ...(debtPlan ? [["جدول سداد الديون", (() => {
+        const chosen = debtPlan[d.debtMethod === "snowball" ? "snowball" : "avalanche"];
+        return chosen.neverPaidOff ? "لن تُسدَّد بالدفعات الحالية" : `${chosen.months} شهراً — فائدة إجمالية ${M(chosen.totalInterest)}`;
+      })()]] : []),
     ];
 
     const profile = [
@@ -677,7 +738,7 @@ export default function App() {
       .map((g) => [when(g.m), GOAL_LABEL[g.type] || "بلا نوع", TIER_LABEL[g.tier] || "—", M(g.cost), FUND_LABEL[g.fund] || "—"]);
 
     return { flags:F, actions:A.slice(0, 5), diag, profile, goals };
-  }, [d, c, id, factsDone]);
+  }, [d, c, id, factsDone, debtPlan]);
 
   const exportJson = () => {
     try {
@@ -1042,6 +1103,71 @@ ${rep.goals.map((g) => `<tr>${g.map((x) => `<td>${esc(x)}</td>`).join("")}</tr>`
                   تصنيفك: <b style={{ color:"#EAF2EE" }}>{c.netClass}</b>.
                   {d.age < 35 && " المعادلة قاسية على من هم دون الخامسة والثلاثين لأنها لا تحتسب سنوات الدراسة ولا سداد الديون المبكر."}
                 </div>
+              )}
+            </Card>
+
+            <Card style={{ marginTop:16 }}>
+              <div style={{ fontFamily:T.display, fontWeight:700, marginBottom:6 }}>جدول سداد الديون</div>
+              <p style={{ fontSize:12.5, color:T.muted, marginTop:0, marginBottom:14, lineHeight:1.75 }}>
+                سجّل كل دين برصيده ونسبة فائدته السنوية وحدّه الأدنى، وقارن بين الانهيار الجليدي وكرة الثلج قبل أن تختار.
+              </p>
+
+              {d.debts.length === 0 ? (
+                <p style={{ color:T.muted, fontSize:13.5, marginBottom:14 }}>لا ديون مسجّلة بالتفصيل بعد.</p>
+              ) : (
+                <div style={{ marginBottom:12 }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"1.4fr 1fr 90px 1fr 60px", gap:8, marginBottom:6, fontSize:11, color:T.muted }}>
+                    <span>الدين</span><span>الرصيد</span><span>فائدة٪</span><span>الحد الأدنى</span><span></span>
+                  </div>
+                  {d.debts.map((x) => (
+                    <div key={x.id} style={{ display:"grid", gridTemplateColumns:"1.4fr 1fr 90px 1fr 60px", gap:8, alignItems:"center", marginBottom:8 }}>
+                      <TextField value={x.label} placeholder="اسم الدين" onChange={(v) => upDebt(x.id, { label:v })} />
+                      <NumberField value={x.balance} placeholder="الرصيد" onChange={(v) => upDebt(x.id, { balance:v })} />
+                      <NumberField value={x.apr} placeholder="0" onChange={(v) => upDebt(x.id, { apr:v })} />
+                      <NumberField value={x.min} placeholder="الحد الأدنى" onChange={(v) => upDebt(x.id, { min:v })} />
+                      <button onClick={() => delDebt(x.id)} style={{ ...btn, padding:"6px 8px", fontSize:11.5, color:T.bad, borderColor:"#E9C8CE" }}>حذف</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button onClick={addDebt} style={{ ...btn, marginBottom:debtPlan ? 16 : 0 }}>+ أضف ديناً</button>
+
+              {debtPlan && (
+                <>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 140px", gap:10, alignItems:"center", marginBottom:14, marginTop:16, paddingTop:14, borderTop:`1px solid ${T.line}` }}>
+                    <div style={{ fontSize:12.5, color:T.muted }}>دفعة إضافية شهرية فوق الحد الأدنى (إجماليه {money(debtPlan.totalMin, d.cur)})</div>
+                    <NumberField value={d.debtExtra || 0} onChange={(v) => up({ debtExtra:v })} />
+                  </div>
+                  <div className="grid gap-4" style={{ gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))" }}>
+                    {[["avalanche", "الانهيار الجليدي", debtPlan.avalanche], ["snowball", "كرة الثلج", debtPlan.snowball]].map(([key, label, r]) => (
+                      <div key={key} style={{
+                        padding:14, borderRadius:10,
+                        background:d.debtMethod === key ? T.fill : "#F7FAF8",
+                        border:`1px solid ${d.debtMethod === key ? T.fillLine : T.line}`,
+                      }}>
+                        <div style={{ fontSize:12.5, fontWeight:600, marginBottom:8 }}>
+                          {label} {d.debtMethod === key && <span style={{ fontSize:10.5, color:"#9A7A18" }}>— اختيارك</span>}
+                        </div>
+                        <Row k="مدة السداد" v={r.neverPaidOff ? "لن تُسدَّد بالدفعات الحالية" : r.months < 12 ? `${r.months} شهراً` : `${(r.months / 12).toFixed(1)} سنة`} />
+                        <Row k="إجمالي الفائدة" v={r.neverPaidOff ? "—" : money(r.totalInterest, d.cur)} />
+                        <Row k="إجمالي المسدَّد" v={r.neverPaidOff ? "—" : money(r.totalPaid, d.cur)} />
+                      </div>
+                    ))}
+                  </div>
+                  {!debtPlan.avalanche.neverPaidOff && !debtPlan.snowball.neverPaidOff && debtPlan.avalanche.totalInterest !== debtPlan.snowball.totalInterest && (
+                    <p style={{ fontSize:12, color:T.ink2, marginTop:10, lineHeight:1.85 }}>
+                      {debtPlan.avalanche.totalInterest < debtPlan.snowball.totalInterest
+                        ? `الانهيار الجليدي يوفّر ${money(debtPlan.snowball.totalInterest - debtPlan.avalanche.totalInterest, d.cur)} من الفائدة مقارنة بكرة الثلج — هو الأقل كلفة رياضياً.`
+                        : `كرة الثلج توفّر ${money(debtPlan.avalanche.totalInterest - debtPlan.snowball.totalInterest, d.cur)} من الفائدة هنا، وهذا نادر ويحدث عندما تتقارب نسب الفائدة وتتفاوت الأرصدة بشدة.`}
+                      {" "}كرة الثلج تبقى الخيار الأنسب لمن يحتاج زخماً نفسياً بإغلاق دين كامل بسرعة، حتى لو كانت كلفتها أعلى بقليل.
+                    </p>
+                  )}
+                  {(debtPlan.avalanche.neverPaidOff || debtPlan.snowball.neverPaidOff) && (
+                    <p style={{ fontSize:12, color:T.bad, marginTop:10, lineHeight:1.85 }}>
+                      الحد الأدنى مع الدفعة الإضافية الحالية لا يكفي لتغطية الفائدة المتراكمة — الديون لن تُسدَّد أبداً بهذا المستوى من الدفع. زِد الدفعة الإضافية أو راجع الفوائد المرتفعة أولاً.
+                    </p>
+                  )}
+                </>
               )}
             </Card>
           </>
