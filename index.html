@@ -296,6 +296,9 @@
       creditScore: 700,
       morale: 70,
       hadDebt: false,
+      // الربح/الخسارة المحقَّقة تراكميًا من عمليات البيع والانهيارات:
+      // بدونها كان من يبيع مركزًا رابحًا يرى "أرباح الاستثمار: 0" وكأنه لم يربح.
+      realizedPL: 0,
       insurance: { health: false, premium: INSURANCE_PREMIUM },
       education: { level: 0, pending: null },
       zakat: { paidCount: 0, totalPaid: 0, lastDueYear: 0, unpaid: 0 },
@@ -971,7 +974,10 @@
         rep.assets[key] = { delta: inv.amount - before, pct: growth, crashed };
         // إن أفنى الانهيار المركز بالكامل فقد تحققت الخسارة وأُغلق المركز:
         // إبقاء التكلفة كان يجعل أي شراء جديد يظهر خاسرًا بمبلغ قديم إلى الأبد.
-        if (inv.amount === 0) { inv.cost = 0; inv.rentalIncome = 0; }
+        if (inv.amount === 0) {
+          s.realizedPL = (s.realizedPL || 0) - inv.cost;
+          inv.cost = 0; inv.rentalIncome = 0;
+        }
         if (crashed) s.eventLog = [...s.eventLog, `📉 انهيار مفاجئ في ${ASSETS[key].label}`];
       }
       lastStockDelta = lastAssetMoves.stocks.pct;
@@ -1697,8 +1703,12 @@
             ? { ...inv, amount: 0, cost: 0, rentalIncome: 0 }
             : { ...inv, amount: left, cost: Math.round(inv.cost * share),
                 rentalIncome: Math.round((inv.rentalIncome || 0) * share) };
+          // ما تحقّق فعلاً = ثمن البيع ناقص التكلفة التي خرجت معه
+          const costOut = inv.cost - next.cost;
+          const prev = Number.isFinite(Number(state.realizedPL)) ? Number(state.realizedPL) : 0;
           SFX.coin();
-          setState({ ...state, cash: state.cash + sold, investments: { ...state.investments, [key]: next } });
+          setState({ ...state, cash: state.cash + sold, realizedPL: prev + (sold - costOut),
+            investments: { ...state.investments, [key]: next } });
           popModal(); openMarket();
         };
         root.querySelectorAll("[data-sell]").forEach((btn) => {
@@ -2395,6 +2405,8 @@
       const growth = hist.length > 1 ? d.netWorth - hist[0].netWorth : 0;
       const invested = Object.values(state.investments).reduce((a, i) => a + i.cost, 0);
       const gains = d.totalInv - invested;
+      // المحقَّقة تُقرأ من الحفظ فقد تكون تالفة؛ نحرسها كي لا يفسد السطر
+      const realized = Number.isFinite(Number(state.realizedPL)) ? Math.round(Number(state.realizedPL)) : 0;
       const eduName = ["لا شيء", "دورة مهنية", "دبلوم تخصصي", "شهادة احترافية"][state.education?.level ?? 0] || "—";
       const rows = [
         ["المدة", `${months} شهرًا (${(months / 12).toFixed(1)} سنة)`],
@@ -2404,8 +2416,10 @@
         ["أعلى ثروة بلغتها", fmt(peak)],
         ["أدنى ثروة مررت بها", fmt(trough)],
         ["نمو الثروة منذ البداية", (growth >= 0 ? "+" : "−") + fmt(Math.abs(growth))],
-        ["رأس المال المستثمر", fmt(invested)],
-        ["أرباح/خسائر الاستثمار", (gains >= 0 ? "+" : "−") + fmt(Math.abs(gains))],
+        ["رأس المال المستثمر حاليًا", fmt(invested)],
+        ["ربح/خسارة غير محقَّقة (ما تملكه الآن)", (gains >= 0 ? "+" : "−") + fmt(Math.abs(gains))],
+        ["ربح/خسارة محقَّقة (مما بِعته)", (realized >= 0 ? "+" : "−") + fmt(Math.abs(realized))],
+        ["إجمالي أداء استثماراتك", (gains + realized >= 0 ? "+" : "−") + fmt(Math.abs(gains + realized))],
         ["دخل إيجاري شهري", fmt(state.investments.realEstate.rentalIncome || 0)],
         ["مستواك التعليمي", eduName],
         ["التأمين الصحي", state.insurance?.health ? "مفعّل" : "غير مفعّل"],
