@@ -296,6 +296,7 @@
       creditScore: 700,
       morale: 70,
       hadDebt: false,
+      scenario: "fresh",
       // الربح/الخسارة المحقَّقة تراكميًا من عمليات البيع والانهيارات:
       // بدونها كان من يبيع مركزًا رابحًا يرى "أرباح الاستثمار: 0" وكأنه لم يربح.
       realizedPL: 0,
@@ -317,6 +318,49 @@
       eventLog: [],
       tempEffects: [],
     };
+
+    // ==================== سيناريوهات البداية ====================
+    // كل اللاعبين كانوا يبدؤون من نقطة واحدة، فتتشابه كل جولة. هذه أربع
+    // بدايات عُمانية مألوفة، كلٌّ منها يُبرز درسًا مختلفًا ويُختبر أنه قابل
+    // للفوز. patch يُدمج فوق INITIAL_STATE عند بدء الجولة.
+    const SCENARIOS = [
+      { id: "fresh", icon: "🎓", name: "موظف مبتدئ",
+        desc: "وظيفتك الأولى: دخل متواضع ومصروفات معقولة وبلا التزامات. البداية المتوازنة.",
+        lesson: "بناء العادة من الصفر",
+        patch: {} },
+      // تحمل أسهمًا بينما تدفع فائدة أعلى من عائدها — الخطأ الشائع الذي
+      // يُفترض أن يكتشفه اللاعب بنفسه. وصافي الثروة يبدأ فوق حدّ الإفلاس
+      // بهامش كافٍ، وإلا خسر اللاعب قبل أن يلعب.
+      { id: "indebted", icon: "💳", name: "مثقل بالدين",
+        desc: "عليك 6,000 ريال دَينًا استهلاكيًا وتصنيفك الائتماني ضعيف فالفائدة أغلى — ومع ذلك تحتفظ بـ3,000 في الأسهم.",
+        lesson: "الدين الغالي يسبق الاستثمار",
+        patch: { monthlyIncome: 1150, monthlyExpenses: 660, cash: 1000, emergency: 700,
+                 debt: 6000, hadDebt: true, creditScore: 580,
+                 investments: { stocks: { amount: 3000, cost: 3000 },
+                                bonds: { amount: 0, cost: 0 },
+                                realEstate: { amount: 0, cost: 0, rentalIncome: 0 },
+                                crypto: { amount: 0, cost: 0 } } } },
+      { id: "provider", icon: "👨‍👩‍👦", name: "معيل أسرة",
+        desc: "متزوج ولك طفلان: دخلك أعلى ومصروفاتك أعلى منه نسبيًا، وفائضك ضيق من أول شهر.",
+        lesson: "إدارة فائض ضيق مع مسؤوليات",
+        patch: { monthlyIncome: 1450, monthlyExpenses: 1080, rent: 300, cash: 900, emergency: 600,
+                 married: true, children: 2 } },
+      { id: "landed", icon: "🏜", name: "أرض ومسؤولية",
+        desc: "خُصّصت لك أرض سكنية بالفعل، لكن دخلك أقل. أمامك بناء يبدأ مبكرًا وميزانية أضيق.",
+        lesson: "التملك المبكر بموارد محدودة",
+        patch: { monthlyIncome: 920, monthlyExpenses: 615, cash: 600, emergency: 300,
+                 housing: { granted: true, stage: "land", built: 0, loan: 0, loanPayment: 0, waitMonths: 0 } } },
+    ];
+    function scenarioById(id) { return SCENARIOS.find((x) => x.id === id) || SCENARIOS[0]; }
+    function scenarioState(id) {
+      const sc = scenarioById(id);
+      const st = structuredClone(INITIAL_STATE);
+      for (const [k, v] of Object.entries(sc.patch)) {
+        st[k] = v && typeof v === "object" && !Array.isArray(v) ? { ...st[k], ...v } : v;
+      }
+      st.scenario = sc.id;
+      return st;
+    }
 
     // ==================== الأحداث المالية ====================
     // كانت خيارات الأحداث تطرح كلفتها مباشرة من الطوارئ أو النقد بلا تحقق، فيهبط
@@ -845,9 +889,9 @@
       showEnding(kind);
     }
 
-    function resetGame() {
+    function resetGame(scenarioId) {
       lsRemove(SAVE_KEY);
-      state = structuredClone(INITIAL_STATE);
+      state = scenarioState(typeof scenarioId === "string" ? scenarioId : (state?.scenario || "fresh"));
       saveState();
       // نعيد اللاعب إلى الساحة أيضًا؛ بدونها تبدأ الجولة الجديدة وأنت واقف
       // عند باب مبنى من الجولة السابقة وزر الدخول ظاهر.
@@ -2225,7 +2269,9 @@
       `, (root) => {
         const cv = root.querySelector("#endArt");
         if (cv) win ? animateConfetti(cv) : drawEndSlump(cv);
-        root.querySelector("#restartBtn").addEventListener("click", once(resetGame));
+        root.querySelector("#restartBtn").addEventListener("click", once(() => {
+          closeAllModals(); openScenarioPicker();
+        }));
       }, { mandatory: true });
     }
 
@@ -2459,6 +2505,7 @@
       const realized = Number.isFinite(Number(state.realizedPL)) ? Math.round(Number(state.realizedPL)) : 0;
       const eduName = ["لا شيء", "دورة مهنية", "دبلوم تخصصي", "شهادة احترافية"][state.education?.level ?? 0] || "—";
       const rows = [
+        ["بدايتك", `${scenarioById(state.scenario).icon} ${scenarioById(state.scenario).name}`],
         ["المدة", `${months} شهرًا (${(months / 12).toFixed(1)} سنة)`],
         ["الدخل الشهري", `${fmt(state.monthlyIncome)} (بدأت بـ1,000)`],
         ["التزامات ثابتة شهريًا", `${fmt(d.commitments)} (قسط إسكان وتأمين)`],
@@ -2601,7 +2648,9 @@
             <p style="line-height:1.9">سيُمحى تقدّمك بالكامل ويعود كل شيء إلى البداية. هل أنت متأكد؟</p>
             <button class="btn" style="margin-top:14px" id="confirmReset">نعم، ابدأ من جديد</button>
             <button class="btn btn-outline" style="margin-top:10px" data-close>تراجع</button>
-          `, (r2) => { r2.querySelector("#confirmReset").addEventListener("click", once(resetGame)); });
+          `, (r2) => { r2.querySelector("#confirmReset").addEventListener("click", once(() => {
+              closeAllModals(); openScenarioPicker();
+            })); });
         });
         const canvas = root.querySelector("#chartCanvas");
         const ctx = canvas.getContext("2d");
@@ -3729,16 +3778,57 @@
           بيت السكن لا يُحتسب فيها — فهو لا يموّل مصروفاتك. (اقرأ في المكتبة عن
           ${term("الاستقلال المالي")} ولماذا يحتاج الواقع أكثر من ثلاثة أضعاف ذلك.)
         </p>
-        ${isIntro ? '<button class="btn" style="margin-top:16px" data-close-all>ابدأ</button>' : '<button class="btn" style="margin-top:16px" data-close>فهمت</button>'}
+        ${isIntro ? '<button class="btn" style="margin-top:16px" id="introStart" data-close-all>ابدأ</button>' : '<button class="btn" style="margin-top:16px" data-close>فهمت</button>'}
       `;
     }
     function openHowToPlay() { pushModal(howToPlayHtml(false)); }
+
+    // اختيار البداية: يُعرض في أول زيارة وعند كل إعادة بدء، فتختلف الجولة
+    // اختلافًا حقيقيًا لا تجميليًا — كل سيناريو يبدأ بدرس مختلف.
+    function openScenarioPicker(onPicked) {
+      const cards = SCENARIOS.map((sc) => {
+        const st = scenarioState(sc.id);
+        const d = derive(st);
+        return `<button class="event-btn" data-scenario="${sc.id}" style="line-height:1.8">
+          <b style="color:#c9974a">${sc.icon} ${esc(sc.name)}</b>
+          <span style="display:block;font-size:12px;margin-top:4px">${esc(sc.desc)}</span>
+          <span style="display:block;font-size:11px;color:#8aa89b;margin-top:6px">
+            دخل ${fmt(d.effIncome)} · مصروفات ${fmt(d.effExpenses)} · فائض ${fmt(d.surplus)}${
+              st.debt > 0 ? ` · دَين ${fmt(st.debt)}` : ""}
+          </span>
+          <span style="display:block;font-size:11px;color:#2ecc71;margin-top:3px">الدرس: ${esc(sc.lesson)}</span>
+        </button>`;
+      }).join("");
+      pushModal(`
+        <h2>🧭 اختر بدايتك</h2>
+        <p class="muted" style="font-size:12px;line-height:1.8;margin-bottom:10px">
+          كل بداية تضعك أمام تحدٍّ مختلف، وجميعها قابلة للفوز. الهدف واحد:
+          أن تبلغ ثروتك المُدِرّة ثمانية أضعاف مصروفاتك السنوية.
+        </p>
+        ${cards}
+      `, (root) => {
+        root.querySelectorAll("[data-scenario]").forEach((btn) => {
+          btn.addEventListener("click", once(() => {
+            const id = btn.dataset.scenario;
+            SFX.badge();
+            resetGame(id);
+            closeAllModals();
+            if (onPicked) onPicked(id);
+          }));
+        });
+      }, { mandatory: true });
+    }
 
     if (isFirstVisit) {
       // نحفظ فورًا وإلا اعتُبرت أي إعادة تحميل قبل أول إجراء زيارةً أولى جديدة
       // فتتكرر بطاقة الشرح على من لم يفعل شيئًا بعد.
       saveState();
-      pushModal(howToPlayHtml(true));
+      // الشرح أولًا ثم اختيار البداية: اختيارُ بدايةٍ قبل أن تعرف معنى
+      // "الفائض" أو "الثروة المُدِرّة" اختيارٌ في الظلام.
+      pushModal(howToPlayHtml(true), (root) => {
+        const btn = root.querySelector("#introStart");
+        if (btn) btn.addEventListener("click", () => openScenarioPicker());
+      });
     }
   </script>
 </body>
