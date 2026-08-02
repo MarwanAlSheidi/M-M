@@ -188,6 +188,15 @@
     const ZAKAT_RATE = 0.025;
     const ZAKAT_NISAB = 3000; // نصاب تقديري بقيمة 85 جرامًا من الذهب
 
+    // ما ادّخرته في الأهداف مالٌ ما زلت تملكه، مخصَّصًا لا مفقودًا. كان يختفي
+    // من صافي ثروتك ومن وعاء الزكاة معًا: يعاقب من يستعمل لوحة الأهداف كما
+    // صُمّمت، ويفتح باب إسقاط الزكاة بإيداع المال في هدف قبل حلول الحول.
+    function goalSavings(s) {
+      return (Array.isArray(s.goals) ? s.goals : [])
+        .filter((g) => g && !g.spent)
+        .reduce((a, g) => a + (Number(g.saved) || 0), 0);
+    }
+
     function zakatableWealth(s) {
       const inv = Object.values(s.investments).reduce((a, i) => a + i.amount, 0);
       // دار السكن ليست من أموال الزكاة. ويُخصم الدين الحالّ كاملاً، أما قرض
@@ -195,7 +204,7 @@
       // وإلا لأسقط قرضٌ لخمس عشرة سنة الزكاةَ طوال مدته.
       const h = s.housing || INITIAL_STATE.housing;
       const housingDueThisYear = Math.min(h.loan || 0, (h.loanPayment || 0) * 12);
-      return Math.max(0, s.cash + s.emergency + inv - s.debt - housingDueThisYear);
+      return Math.max(0, s.cash + s.emergency + inv + goalSavings(s) - s.debt - housingDueThisYear);
     }
     function zakatDue(s) {
       const w = zakatableWealth(s);
@@ -477,15 +486,16 @@
       // وكأنه تبديد لثروتك بينما هو تحويلها من نقد إلى عقار.
       const housing = state.housing || INITIAL_STATE.housing;
       const homeEquity = (housing.built || 0) - (housing.loan || 0);
-      const netWorth = state.cash + state.emergency + totalInv + homeEquity - state.debt;
+      const goalsSaved = goalSavings(state);
+      const netWorth = state.cash + state.emergency + totalInv + goalsSaved + homeEquity - state.debt;
       // الثروة المُدِرّة للدخل: تستثني منزل السكن وقرضه، لأن البيت الذي تسكنه
       // لا يموّل مصروفاتك. الاستقلال المالي يُقاس بها لا بصافي الثروة كاملًا.
-      const investableNetWorth = state.cash + state.emergency + totalInv - state.debt;
+      const investableNetWorth = state.cash + state.emergency + totalInv + goalsSaved - state.debt;
       const coverage = effExpenses > 0 ? state.emergency / effExpenses : 0;
       // هدف صندوق الطوارئ يتبع مصروفاتك الفعلية (6 أشهر) بدل رقم ثابت يتقادم
       const emergencyTarget = Math.round(effExpenses * 6);
       return { surplus, grossSurplus, commitments, netWorth, investableNetWorth, homeEquity,
-               totalInv, coverage, effIncome, effExpenses, emergencyTarget };
+               goalsSaved, totalInv, coverage, effIncome, effExpenses, emergencyTarget };
     }
 
     // ==================== نموذج الأصول ====================
@@ -1302,7 +1312,13 @@
         pushModal(`
           <h2>💼 العمل</h2>
           ${lastReportHtml()}
-          <p style="margin:12px 0;line-height:1.8">الدخل الشهري (${fmt(d.effIncome)}) لا يغطي المصروفات (${fmt(d.effExpenses)}) هذا الشهر. سينتقل الراتب مباشرة دون تخصيص فائض.</p>
+          <p style="margin:12px 0;line-height:1.8">${
+            // السبب يجب أن يكون صحيحًا: دخل يغطي المصروفات ثم تلتهمه الالتزامات
+            // ليس "دخلاً لا يغطي المصروفات" — والعلاج مختلف تمامًا بين الحالتين.
+            d.effIncome >= d.effExpenses && d.commitments > 0
+              ? `دخلك (${fmt(d.effIncome)}) يغطي مصروفاتك (${fmt(d.effExpenses)})، لكن التزاماتك الثابتة (${fmt(d.commitments)} — قسط الإسكان والتأمين) تستهلك الفائض وتزيد ${fmt(-d.surplus)}. سدّد جزءًا من قرض الإسكان لتخفيض القسط، أو ارفع دخلك.`
+              : `الدخل الشهري (${fmt(d.effIncome)}) لا يغطي المصروفات (${fmt(d.effExpenses)}) هذا الشهر.`
+          } سينتقل الراتب مباشرة دون تخصيص فائض، والعجز يغطّيه البنك دَينًا عليك.</p>
           <button class="btn" id="proceedBtn">بدء الشهر التالي</button>
         `, (root) => {
           root.querySelector("#proceedBtn").addEventListener("click", () => {
@@ -1635,12 +1651,19 @@
         <div class="card" style="margin:8px 0;padding:12px${g.done ? ";border-color:#2ecc71" : ""}">
           <div style="display:flex;justify-content:space-between"><span>${g.done ? "✅ " : ""}${esc(g.name)}</span><span>${fmt(g.saved)} / ${fmt(g.target)}</span></div>
           <div class="progress"><div class="progress-fill" style="width:${Math.min(100, (g.saved / g.target) * 100)}%;background:#2ecc71"></div></div>
-          ${g.done
-            ? `<p class="muted" style="margin-top:8px;font-size:13px;color:#2ecc71">مكتمل 🎉</p>`
-            : `<div class="row-actions" style="margin-top:8px">
-                 <input type="number" min="0" id="contrib_${g.id}" placeholder="مبلغ المساهمة" />
-                 <button class="btn btn-sm" data-contrib="${g.id}">ساهم</button>
-               </div>`}
+          ${g.spent
+            ? `<p class="muted" style="margin-top:8px;font-size:13px">صُرف الهدف ✔</p>`
+            : g.done
+              ? `<p class="muted" style="margin-top:8px;font-size:13px;color:#2ecc71">مكتمل 🎉 — المبلغ محفوظ لك ويُحتسب في ثروتك</p>
+                 <div class="row-actions" style="margin-top:8px">
+                   <button class="btn btn-sm" data-spend="${g.id}">اصرفه على ما ادّخرت له</button>
+                   <button class="btn btn-sm btn-outline" data-withdraw="${g.id}">أعِده نقدًا</button>
+                 </div>`
+              : `<div class="row-actions" style="margin-top:8px">
+                   <input type="number" min="0" id="contrib_${g.id}" placeholder="مبلغ المساهمة" />
+                   <button class="btn btn-sm" data-contrib="${g.id}">ساهم</button>
+                   ${g.saved > 0 ? `<button class="btn btn-sm btn-outline" data-withdraw="${g.id}">استرد ${fmt(g.saved)}</button>` : ""}
+                 </div>`}
         </div>
       `).join("") : `<p class="muted" style="margin-bottom:12px">لا توجد أهداف بعد.</p>`;
       pushModal(`
@@ -1670,6 +1693,33 @@
             setState({ ...state, cash: state.cash - amt, goals, eventLog: log });
             popModal();
             if (justCompleted) celebrateGoal(goal.name); else openGoals();
+          }));
+        });
+        // الاسترداد ضروري: بلا مخرج يصير الهدف احتجازًا لمالك لا ادّخارًا له
+        root.querySelectorAll("[data-withdraw]").forEach((btn) => {
+          btn.addEventListener("click", once(() => {
+            const id = Number(btn.dataset.withdraw);
+            const goal = state.goals.find((g) => g.id === id);
+            if (!goal || !(goal.saved > 0)) { err.textContent = "لا يوجد رصيد في هذا الهدف."; return; }
+            SFX.coin();
+            setState({ ...state, cash: state.cash + goal.saved,
+              goals: state.goals.map((g) => g.id === id ? { ...g, saved: 0, done: false } : g),
+              eventLog: [...state.eventLog, `↩️ استرددت ${fmt(goal.saved)} من هدف: ${goal.name}`] });
+            popModal(); openGoals();
+          }));
+        });
+        // صرف الهدف المكتمل: المال يخرج فعلاً مقابل ما ادّخرت له، ويرفع رضاك
+        root.querySelectorAll("[data-spend]").forEach((btn) => {
+          btn.addEventListener("click", once(() => {
+            const id = Number(btn.dataset.spend);
+            const goal = state.goals.find((g) => g.id === id);
+            if (!goal || goal.spent) return;
+            SFX.badge();
+            setState({ ...state,
+              goals: state.goals.map((g) => g.id === id ? { ...g, spent: true } : g),
+              morale: Math.min(100, (state.morale ?? 70) + 12),
+              eventLog: [...state.eventLog, `🛍️ صرفت ${fmt(goal.saved)} على هدف: ${goal.name}`] });
+            popModal(); openGoals();
           }));
         });
         root.querySelector("#addGoalBtn").addEventListener("click", once(() => {
@@ -1837,7 +1887,11 @@
         test: (s, d) => d.surplus < 0,
         text: (s, d) => {
           const months = d.effExpenses > 0 ? (s.emergency / -d.surplus) : 0;
-          return `مصروفاتك تتجاوز دخلك بـ${fmt(-d.surplus)} شهريًا. بهذا المعدّل يكفي صندوق طوارئك ${months.toFixed(1)} شهرًا — قلّل المصروف أو ارفع الدخل قبل أن ينفد.`;
+          const cover = `بهذا المعدّل يكفي صندوق طوارئك ${months.toFixed(1)} شهرًا، ثم يصير العجز دَينًا عليك.`;
+          // التزامات ثابتة تلتهم فائضًا موجبًا حالةٌ أخرى: قصّ المصروف لن يحلّها
+          return d.effIncome >= d.effExpenses && d.commitments > 0
+            ? `التزاماتك الثابتة (${fmt(d.commitments)}) تتجاوز ما يفيض عن مصروفاتك بـ${fmt(-d.surplus)} شهريًا. ${cover} سدّد جزءًا من قرض الإسكان ليقلّ القسط.`
+            : `مصروفاتك تتجاوز دخلك بـ${fmt(-d.surplus)} شهريًا. ${cover} قلّل المصروف أو ارفع الدخل.`;
         } },
       { id: "zakat_due", sev: 3, icon: "🤲", term: "الزكاة",
         test: (s) => (s.zakat?.unpaid ?? 0) > 0,
@@ -2851,8 +2905,9 @@
       }
 
       const goalsB = BUILDINGS.find((b) => b.id === "goals");
-      if (goalsB && state.goals.length) {
-        const best = Math.max(...state.goals.map((g) => Math.min(1, g.saved / g.target)));
+      const openGoalsList = (state.goals || []).filter((g) => g && !g.spent && g.target > 0);
+      if (goalsB && openGoalsList.length) {
+        const best = Math.max(...openGoalsList.map((g) => Math.min(1, g.saved / g.target)));
         const gx = goalsB.x + goalsB.w / 2, gy = goalsB.y + goalsB.h * 0.32;
         ctx.beginPath(); ctx.arc(gx, gy, 10, -Math.PI / 2, -Math.PI / 2 + best * Math.PI * 2);
         ctx.strokeStyle = "#2ecc71"; ctx.lineWidth = 3; ctx.stroke();
