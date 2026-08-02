@@ -1756,16 +1756,27 @@
       }
     }
 
+    // سداد الدين بند توزيع مثل غيره. كان المستشار يقول "سداده أعلى عائد
+    // مضمون متاح لك" وشاشة الراتب لا تعرض له سطرًا أصلاً، فيُطالَب اللاعب
+    // بقرار لا سبيل إليه في اللحظة التي يوزّع فيها ماله.
     const ALLOC_FIELDS = [
-      ["emergency", "🛡 صندوق الطوارئ"], ["savings", "💰 ادخار عام"], ["investStocks", "📈 أسهم"],
+      ["debtPay", "💳 سداد الدين"], ["emergency", "🛡 صندوق الطوارئ"], ["savings", "💰 ادخار عام"], ["investStocks", "📈 أسهم"],
       ["investBonds", "📋 سندات"], ["investReal", "🏠 عقار"], ["investCrypto", "₿ عملات رقمية"], ["leisure", "🎉 إنفاق شخصي (يُصرف، يرفع الرضا)"]
     ];
+    // بند لا معنى له الآن لا يُعرض: لا سطر لسداد دين لا وجود له
+    function allocFieldsFor(s) {
+      return ALLOC_FIELDS.filter(([k]) => k !== "debtPay" || (s.debt || 0) > 0);
+    }
+    function allocMax(key, surplus, s) {
+      return key === "debtPay" ? Math.min(surplus, Math.max(0, Math.round(s.debt || 0))) : surplus;
+    }
 
     function openAllocation(surplus) {
-      const rows = ALLOC_FIELDS.map(([key, label]) => `
+      const fields = allocFieldsFor(state);
+      const rows = fields.map(([key, label]) => `
         <div style="margin-bottom:12px">
-          <div class="slider-row"><span>${label}</span><span class="val" id="val_${key}">0</span></div>
-          <input type="range" min="0" max="${surplus}" value="0" id="range_${key}" />
+          <div class="slider-row"><span>${label}${key === "debtPay" ? ` <span class="muted" style="font-size:11px">(رصيدك ${fmt(state.debt)} بفائدة ${(debtMonthlyRate(state.creditScore) * 100).toFixed(2)}%/شهر)</span>` : ""}</span><span class="val" id="val_${key}">0</span></div>
+          <input type="range" min="0" max="${allocMax(key, surplus, state)}" value="0" id="range_${key}" />
         </div>
       `).join("");
       pushModal(`
@@ -1811,7 +1822,7 @@
           moraleAfterEl.style.color = moraleLabel(projected).color;
           burnoutWarn.textContent = projected < MORALE_BURNOUT ? " ⚠ خطر الإرهاق (دخلك سينخفض)" : "";
         }
-        ALLOC_FIELDS.forEach(([key]) => {
+        fields.forEach(([key]) => {
           root.querySelector(`#range_${key}`).addEventListener("input", (e) => {
             alloc[key] = Number(e.target.value);
             root.querySelector(`#val_${key}`).textContent = fmt(alloc[key]);
@@ -1860,6 +1871,10 @@
         if (share > biggestRatio) { biggestRatio = share; biggestKey = key; }
       }
       out[biggestKey] = Math.max(0, out[biggestKey] + surplus - running);
+      // نسبة الشهر الماضي قد تفوق دينك اليوم (أو تكون سدّدته كله):
+      // ما زاد يذهب إلى الادخار بدل أن يُرفض التوزيع أو يضيع
+      const cap = allocMax("debtPay", surplus, state);
+      if (out.debtPay > cap) { out.savings += out.debtPay - cap; out.debtPay = cap; }
       return out;
     }
 
@@ -1871,6 +1886,10 @@
 
     function applyAllocation(alloc, surplus) {
       let s = { ...state, investments: cloneInvestments(state.investments) };
+      // ما زاد عن رصيد الدين لا يُحرق: يعود إلى النقد
+      const payDebt = Math.min(Math.max(0, Math.round(alloc.debtPay || 0)), Math.max(0, Math.round(s.debt || 0)));
+      s.debt = Math.max(0, (s.debt || 0) - payDebt);
+      s.cash += Math.max(0, Math.round(alloc.debtPay || 0)) - payDebt;
       s.emergency += alloc.emergency;
       // الادخار العام يبقى نقدًا؛ أما الإنفاق الشخصي فيُصرف فعلاً ويشتري رضًا
       s.cash += alloc.savings;
