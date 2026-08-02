@@ -266,6 +266,20 @@
       return p;
     }
 
+    // شدّة الطارئ الصحي: المتوسط 456 ريالًا، لكن 8% من الحالات تعادل
+    // دخل شهرين — وهذا الذيل تحديدًا هو ما يشتريه قسط التأمين.
+    const MEDICAL_TIERS = [
+      { p: 0.70, cost: 180,  label: "زيارة طارئة وعلاج قصير" },
+      { p: 0.22, cost: 700,  label: "إصابة تستدعي جراحة صغرى" },
+      { p: 0.08, cost: 2200, label: "حالة خطيرة تستدعي تنويمًا" },
+    ];
+    const INSURANCE_COVER = 0.75;
+    // القسط مُسعَّر على تواتر الطارئ الفعلي (2.8–3.4% شهريًا حسب ما هو متاح
+    // من أحداث لحالتك) ومتوسط الفاتورة 456: التوفير المتوقع 9.7–11.5 ريالًا
+    // شهريًا، فالقسط 13 يعادل تحميلًا بين 1.13 و1.34 — كتأمين حقيقي.
+    // وهو ثابت لا يُقرأ من الحفظ، كي لا يبقى لاعب قديم على سعر قديم.
+    const INSURANCE_PREMIUM = 13;
+    function insuredShare(cost) { return Math.round(cost * (1 - INSURANCE_COVER)); }
     const INITIAL_STATE = {
       cash: 700,
       emergency: 450,
@@ -282,7 +296,7 @@
       creditScore: 700,
       morale: 70,
       hadDebt: false,
-      insurance: { health: false, premium: 25 },
+      insurance: { health: false, premium: INSURANCE_PREMIUM },
       education: { level: 0, pending: null },
       zakat: { paidCount: 0, totalPaid: 0, lastDueYear: 0, unpaid: 0 },
       achievements: [],
@@ -333,15 +347,6 @@
       return g > 0 ? ` (اقترض ${fmt(g)})` : "";
     }
 
-    // شدّة الطارئ الصحي: المتوسط 456 ريالًا، لكن 8% من الحالات تعادل
-    // دخل شهرين — وهذا الذيل تحديدًا هو ما يشتريه قسط التأمين.
-    const MEDICAL_TIERS = [
-      { p: 0.70, cost: 180,  label: "زيارة طارئة وعلاج قصير" },
-      { p: 0.22, cost: 700,  label: "إصابة تستدعي جراحة صغرى" },
-      { p: 0.08, cost: 2200, label: "حالة خطيرة تستدعي تنويمًا" },
-    ];
-    const INSURANCE_COVER = 0.75;
-    function insuredShare(cost) { return Math.round(cost * (1 - INSURANCE_COVER)); }
     function rollMedical() {
       let r = Math.random(), acc = 0;
       for (const t of MEDICAL_TIERS) { acc += t.p; if (r <= acc) return t; }
@@ -458,6 +463,142 @@
         { label: "احتفظ بنفس نمط الحياة", effect: (s) => ({ ...s, monthlyIncome: Math.round(s.monthlyIncome * 1.15), eventLog: [...s.eventLog, "ترقية - وفر الزيادة"] }) },
         { label: "ارفع مستوى المعيشة قليلاً", effect: (s) => ({ ...s, monthlyIncome: Math.round(s.monthlyIncome * 1.15), monthlyExpenses: Math.round(s.monthlyExpenses * 1.08), eventLog: [...s.eventLog, "ترقية - رفع معيشة"] }) }
       ]},
+
+      // ===== أحداث إضافية: رحلة تمتد أكثر من مئة شهر كانت تدور على أحد عشر
+      // حدثًا فتتكرّر حتى تفقد أثرها. هذه مقيّدة بشروط حالتك، وكل واحد منها
+      // يضع أمامك مفاضلة مالية حقيقية لا مجرد رقم يتغيّر.
+
+      // الاحتيال الاستثماري: أهم درس مالي لا تعلّمه اللعبة — العائد المضمون
+      // المرتفع لا وجود له، والاحتمالات معلنة هنا كي يكون القرار محسوبًا.
+      { id: "scam_offer", title: "عرض استثماري «مضمون»",
+        desc: "قريب يعرض عليك مشاركة برأس مال 1,000 ريال وعائد «مضمون» 40% خلال شهرين، بلا عقد ولا ضمان.",
+        when: (s) => s.cash >= 1000 && s.year >= 2, choices: [
+        { label: "أشارك (الاحتمال المعلن غير موثّق)", effect: (s) => {
+            const ok = Math.random() < 0.25;
+            const after = spend(s, 1000, "cash");
+            return { ...after, cash: after.cash + (ok ? 1400 : 0),
+              morale: Math.min(100, Math.max(0, (s.morale ?? 70) + (ok ? 6 : -14))),
+              eventLog: [...s.eventLog, ok ? "🍀 العرض «المضمون» نجح هذه المرة" : "🚩 ضاعت 1,000 في عرض بلا ضمان"] };
+          } },
+        { label: "أعتذر — لا عائد بلا مخاطرة", effect: (s) => ({ ...s,
+            morale: Math.min(100, (s.morale ?? 70) + 2), eventLog: [...s.eventLog, "رفضت عرضًا بلا ضمان"] }) }
+      ]},
+
+      // الالتزام الاجتماعي: واقع خليجي حاضر، ومفاضلة صادقة بين المال والرضا
+      { id: "family_help", title: "قريب في ضائقة",
+        desc: "قريب لك يمرّ بضائقة ويطلب 300 ريال. المساعدة واجب اجتماعي، لكنها تخرج من ميزانيتك.",
+        when: (s) => s.year >= 2, choices: [
+        { label: "أساعده كاملًا (300)", hint: gapHint(300, "cash"),
+          effect: (s) => ({ ...spend(s, 300, "cash"), morale: Math.min(100, (s.morale ?? 70) + 10),
+            eventLog: [...s.eventLog, "🤝 ساعدت قريبًا بـ300" + gapNote(s, 300, "cash")] }) },
+        { label: "أساعده بما أستطيع (100)", hint: gapHint(100, "cash"),
+          effect: (s) => ({ ...spend(s, 100, "cash"), morale: Math.min(100, (s.morale ?? 70) + 4),
+            eventLog: [...s.eventLog, "🤝 ساعدت قريبًا بـ100" + gapNote(s, 100, "cash")] }) },
+        { label: "أعتذر عن المساعدة", effect: (s) => ({ ...s, morale: Math.max(0, (s.morale ?? 70) - 8),
+            eventLog: [...s.eventLog, "اعتذرت عن مساعدة قريب"] }) }
+      ]},
+
+      // التملّك ليس مجانيًا: صيانة الدار تكلفة دورية لا يراها المستأجر
+      { id: "home_repair", title: "صيانة المنزل",
+        desc: "تسرّب في السباكة وتشقّق في الطلاء. صيانة المسكن كلفة دائمة لا يتحملها المستأجر.",
+        when: (s) => s.housing.stage === "owned", choices: [
+        { label: "أصلح الآن (350)", hint: gapHint(350, "cash"),
+          effect: (s) => ({ ...spend(s, 350, "cash"), eventLog: [...s.eventLog, "🔧 صيانة المنزل 350" + gapNote(s, 350, "cash")] }) },
+        { label: "أؤجّل (يتفاقم فيرتفع مصروفك 6 أشهر)", effect: (s) => ({ ...s,
+            tempEffects: [...s.tempEffects, { type: "expense", amount: 90, monthsLeft: 6 }],
+            morale: Math.max(0, (s.morale ?? 70) - 5), eventLog: [...s.eventLog, "أجّلت صيانة المنزل"] }) }
+      ]},
+
+      // العقار ليس دخلاً سلبيًا مضمونًا: المستأجر يتعثّر أحيانًا
+      { id: "tenant_default", title: "تعثّر مستأجر",
+        desc: "مستأجر وحدتك العقارية تأخّر عن السداد ثلاثة أشهر. الدخل الإيجاري ليس مضمونًا.",
+        when: (s) => s.investments.realEstate.amount >= 2000, choices: [
+        { label: "أمهله (يتوقف دخلك الإيجاري 3 أشهر)", effect: (s) => ({ ...s,
+            tempEffects: [...s.tempEffects, { type: "expense", amount: Math.round(s.investments.realEstate.amount * ASSETS.realEstate.income), monthsLeft: 3 }],
+            morale: Math.min(100, (s.morale ?? 70) + 3), eventLog: [...s.eventLog, "🏚️ أمهلت مستأجرًا متعثّرًا"] }) },
+        { label: "أُخليه وأتحمل كلفة الإخلاء (200)", hint: gapHint(200, "cash"),
+          effect: (s) => ({ ...spend(s, 200, "cash"), morale: Math.max(0, (s.morale ?? 70) - 3),
+            eventLog: [...s.eventLog, "أخليت مستأجرًا متعثّرًا" + gapNote(s, 200, "cash")] }) }
+      ]},
+
+      // دخل إضافي مقابل وقت وطاقة: ليس مالًا مجانيًا
+      { id: "extra_work", title: "عمل إضافي",
+        desc: "عرض دوام جزئي مسائي يضيف 120 ريالًا شهريًا لسنة كاملة — على حساب راحتك.",
+        when: (s) => (s.morale ?? 70) >= 40 && !(s.tempEffects || []).some((e) => e.type === "income" && e.amount === 120), choices: [
+        { label: "أقبل (+120 شهريًا لسنة، ‎-10 رضا)", effect: (s) => ({ ...s,
+            tempEffects: [...s.tempEffects, { type: "income", amount: 120, monthsLeft: 12 }],
+            morale: Math.max(0, (s.morale ?? 70) - 10), eventLog: [...s.eventLog, "🌙 قبلت عملاً إضافيًا"] }) },
+        { label: "أعتذر — وقتي أهم", effect: (s) => ({ ...s, eventLog: [...s.eventLog, "اعتذرت عن عمل إضافي"] }) }
+      ]},
+
+      // موسم العيد: نفقة متكرّرة في الواقع، ومفاضلة بين الرضا والادخار
+      { id: "eid_season", title: "موسم العيد",
+        desc: "العيد على الأبواب: ملابس وضيافة وعيديات. الإنفاق يرفع رضا الأسرة، والاقتصاد يبقي مالك.",
+        when: (s) => s.month >= 9, choices: [
+        { label: "عيد كامل (280)", hint: gapHint(280, "cash"),
+          effect: (s) => ({ ...spend(s, 280, "cash"), morale: Math.min(100, (s.morale ?? 70) + 14),
+            eventLog: [...s.eventLog, "🎊 عيد كامل 280" + gapNote(s, 280, "cash")] }) },
+        { label: "عيد مقتصد (90)", hint: gapHint(90, "cash"),
+          effect: (s) => ({ ...spend(s, 90, "cash"), morale: Math.min(100, (s.morale ?? 70) + 5),
+            eventLog: [...s.eventLog, "🎊 عيد مقتصد 90" + gapNote(s, 90, "cash")] }) }
+      ]},
+
+      // صدمة أسعار: موجة تمرّ، لا زيادة دائمة. الزيادة الدائمة المتكرّرة
+      // تتراكم بلا حدّ (‎+4% نحو 36 مرة عبر 400 شهر تعني أربعة أضعاف
+      // مصروفك) فتنتهي بحلقة دَين لا فكاك منها. والتضخم البنيوي مُنمذَج
+      // أصلاً سنويًا بـ1.5%.
+      { id: "price_shock", title: "موجة غلاء",
+        desc: "ارتفاع مؤقت في أسعار الغذاء والوقود يرفع مصروفك نحو 8% لثمانية أشهر.",
+        when: (s) => s.year >= 2 && !(s.tempEffects || []).some((e) => e.type === "expense" && e.tag === "price_shock"),
+        choices: [
+        { label: "أتحمّل الموجة", effect: (s) => ({ ...s,
+            tempEffects: [...s.tempEffects, { type: "expense", tag: "price_shock", amount: Math.round(s.monthlyExpenses * 0.08), monthsLeft: 8 }],
+            eventLog: [...s.eventLog, "📈 غلاء مؤقت - تحمّلت الزيادة"] }) },
+        { label: "أقتصد (‎-8 رضا بدل الزيادة)", effect: (s) => ({ ...s,
+            morale: Math.max(0, (s.morale ?? 70) - 8), eventLog: [...s.eventLog, "📈 غلاء - قلّصت إنفاقي"] }) }
+      ]},
+
+      // عرض البنك: يشتري تخفيض القسط بمالٍ حاضر — درس القيمة الزمنية للنقود
+      { id: "loan_offer", title: "عرض تسوية مبكرة",
+        desc: "يعرض بنكك إبراءً عند السداد المبكر: ادفع 1,500 اليوم فينخفض رصيد قرض الإسكان 1,650 — وينخفض القسط تناسبيًا.",
+        when: (s) => s.housing.loan >= 3000 && s.cash >= 1500, choices: [
+        { label: "أقبل العرض (وفّر 150 + فائدة ما تبقّى)", effect: (s) => {
+            const cut = Math.min(1650, s.housing.loan);
+            const ratio = (s.housing.loan - cut) / s.housing.loan;
+            return { ...s, cash: s.cash - 1500,
+              housing: { ...s.housing, loan: s.housing.loan - cut, loanPayment: Math.round(s.housing.loanPayment * ratio) },
+              eventLog: [...s.eventLog, `🏦 سداد مبكر: القرض ‎-${fmt(cut)} مقابل 1,500`] };
+          } },
+        { label: "أحتفظ بسيولتي", effect: (s) => ({ ...s, eventLog: [...s.eventLog, "رفضت عرض السداد المبكر"] }) }
+      ]},
+
+      // تعليم الأبناء: أكبر بند ينمو مع الأسرة، ومفاضلته حقيقية
+      { id: "school_fees", title: "رسوم دراسة الأبناء",
+        desc: "بدأ العام الدراسي. رسوم وكتب ومواصلات لكل طفل.",
+        when: (s) => (s.children ?? 0) > 0 && s.month <= 3, choices: [
+        { label: "مدرسة خاصة (250 لكل طفل)",
+          hint: (s) => gapHint(250 * (s.children ?? 1), "cash")(s),
+          effect: (s) => { const c = 250 * (s.children ?? 1);
+            return { ...spend(s, c, "cash"), morale: Math.min(100, (s.morale ?? 70) + 6),
+              eventLog: [...s.eventLog, `🎒 رسوم دراسة ${fmt(c)}` + gapNote(s, c, "cash")] }; } },
+        { label: "مدرسة حكومية (60 لكل طفل)",
+          hint: (s) => gapHint(60 * (s.children ?? 1), "cash")(s),
+          effect: (s) => { const c = 60 * (s.children ?? 1);
+            return { ...spend(s, c, "cash"),
+              eventLog: [...s.eventLog, `🎒 مستلزمات دراسة ${fmt(c)}` + gapNote(s, c, "cash")] }; } }
+      ]},
+
+      // عطل منزلي صغير متكرّر — يذكّر بأن صندوق الطوارئ لأمثاله
+      { id: "appliance", title: "عطل جهاز منزلي",
+        desc: "تعطّلت الثلاجة. الإصلاح 130 ريالًا، والاستبدال 400 ريالًا لجهاز أوفر في الكهرباء.",
+        when: (s) => s.year >= 2, choices: [
+        { label: "أصلحها (130)", hint: gapHint(130, "emergency"),
+          effect: (s) => ({ ...spend(s, 130, "emergency"), eventLog: [...s.eventLog, "🔌 أصلحت الثلاجة" + gapNote(s, 130, "emergency")] }) },
+        { label: "أستبدلها (400، ‎-8 مصروف شهري)", hint: gapHint(400, "emergency"),
+          effect: (s) => ({ ...spend(s, 400, "emergency"),
+            monthlyExpenses: Math.max(0, s.monthlyExpenses - 8),
+            eventLog: [...s.eventLog, "🔌 استبدلت الثلاجة بأوفر" + gapNote(s, 400, "emergency")] }) }
+      ]},
     ];
 
     // ==================== الدوال المساعدة ====================
@@ -508,7 +649,7 @@
       const hh = state.housing || INITIAL_STATE.housing;
       const loanDue = hh.loan > 0
         ? Math.min(hh.loanPayment || 0, hh.loan + Math.round(hh.loan * HOUSING_LOAN_RATE)) : 0;
-      const commitments = loanDue + (state.insurance?.health ? (state.insurance.premium || 0) : 0);
+      const commitments = loanDue + (state.insurance?.health ? INSURANCE_PREMIUM : 0);
       const grossSurplus = effIncome - effExpenses;
       const surplus = grossSurplus - commitments;
       const totalInv = Object.values(state.investments).reduce((sum, inv) => sum + inv.amount, 0);
@@ -845,7 +986,7 @@
       }
 
       // قسط التأمين الصحي
-      if (s.insurance?.health) { s.cash -= s.insurance.premium; rep.premium = s.insurance.premium; }
+      if (s.insurance?.health) { s.cash -= INSURANCE_PREMIUM; rep.premium = INSURANCE_PREMIUM; }
 
       // إتمام الدراسة: الزيادة تُصرف عند التخرّج لا عند الدفع
       if (s.education?.pending) {
@@ -1129,6 +1270,217 @@
         c.fillStyle = "#2ecc71"; c.font = "bold 15px sans-serif"; c.textAlign = "left"; c.textBaseline = "middle";
         c.fillText("▲ 15%", 16, h - 14);
       },
+
+      // رسوم الأحداث الجديدة: بلا رسم كانت البطاقة تعرض مربعًا فارغًا
+      scam_offer(c, w, h, t) {
+        const cx = w / 2, cy = h / 2 + 6;
+        c.save(); c.translate(cx, cy); c.rotate(Math.sin(t * 2.2) * 0.09);
+        c.fillStyle = "#c9974a"; c.beginPath(); c.arc(0, 0, 26, 0, Math.PI * 2); c.fill();
+        c.fillStyle = "#0f2620"; c.font = "bold 18px sans-serif";
+        c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("40%", 0, 0);
+        c.restore();
+        const a = 0.5 + Math.abs(Math.sin(t * 3)) * 0.5;
+        c.globalAlpha = a; c.fillStyle = "#e74c3c";
+        c.beginPath(); c.moveTo(cx + 44, cy - 26); c.lineTo(cx + 76, cy - 16); c.lineTo(cx + 44, cy - 6);
+        c.closePath(); c.fill();
+        c.fillRect(cx + 42, cy - 28, 3, 34);
+        c.globalAlpha = 1;
+        c.fillStyle = "#8aa89b"; c.font = "11px sans-serif"; c.textAlign = "center";
+        c.fillText("بلا عقد ولا ضمان", cx - 60, cy);
+      },
+      family_help(c, w, h, t) {
+        drawMiniPerson(c, w / 2 - 30, h - 16, "#4a90c9", 0.42);
+        drawMiniPerson(c, w / 2 + 30, h - 16, "#8e6bc9", 0.42);
+        const p = (Math.sin(t * 1.6) + 1) / 2;
+        c.fillStyle = "#c9974a";
+        c.beginPath(); c.arc(w / 2 - 30 + 60 * p, h - 40, 6, 0, Math.PI * 2); c.fill();
+        c.fillStyle = "#0f2620"; c.font = "bold 8px sans-serif";
+        c.textAlign = "center"; c.textBaseline = "middle";
+        c.fillText("ر", w / 2 - 30 + 60 * p, h - 40);
+      },
+      home_repair(c, w, h, t) {
+        c.fillStyle = "#1d3d35"; c.fillRect(w / 2 - 40, h - 62, 80, 62);
+        c.fillStyle = "#2a5043";
+        c.beginPath(); c.moveTo(w / 2 - 50, h - 62); c.lineTo(w / 2, h - 92); c.lineTo(w / 2 + 50, h - 62);
+        c.closePath(); c.fill();
+        for (let i = 0; i < 3; i++) {
+          const y = ((t * 34 + i * 22) % 46);
+          c.globalAlpha = Math.max(0, 1 - y / 46);
+          c.fillStyle = "#4a90c9";
+          c.beginPath(); c.arc(w / 2 + 12, h - 52 + y, 2.6, 0, Math.PI * 2); c.fill();
+        }
+        c.globalAlpha = 1;
+        c.save(); c.translate(w / 2 - 20, h - 40); c.rotate(Math.sin(t * 4) * 0.5);
+        c.fillStyle = "#c9974a"; c.fillRect(-2, -14, 4, 20);
+        c.fillRect(-9, -18, 18, 6); c.restore();
+      },
+      tenant_default(c, w, h, t) {
+        c.fillStyle = "#1d3d35"; c.fillRect(w / 2 - 44, h - 70, 88, 70);
+        c.fillStyle = "#0a1e1a";
+        for (let r = 0; r < 2; r++) for (let i = 0; i < 3; i++)
+          c.fillRect(w / 2 - 34 + i * 24, h - 60 + r * 24, 16, 16);
+        c.fillStyle = "#e74c3c"; c.globalAlpha = 0.45 + Math.abs(Math.sin(t * 2)) * 0.4;
+        roundRect(c, w / 2 - 30, h - 92, 60, 18, 4); c.fill();
+        c.globalAlpha = 1;
+        c.fillStyle = "#fff"; c.font = "bold 10px sans-serif";
+        c.textAlign = "center"; c.textBaseline = "middle";
+        c.fillText("متأخر", w / 2, h - 83);
+      },
+      extra_work(c, w, h, t) {
+        c.fillStyle = "#f4d58d"; c.globalAlpha = 0.25 + Math.abs(Math.sin(t * 1.2)) * 0.2;
+        c.beginPath(); c.arc(w / 2 + 60, 34, 22, 0, Math.PI * 2); c.fill();
+        c.globalAlpha = 1;
+        c.fillStyle = "#f4d58d"; c.beginPath(); c.arc(w / 2 + 60, 34, 11, 0, Math.PI * 2); c.fill();
+        c.fillStyle = "#1d3d35"; c.fillRect(w / 2 - 62, h - 44, 76, 44);
+        c.fillStyle = "#c9974a"; c.fillRect(w / 2 - 54, h - 36, 60, 4);
+        drawMiniPerson(c, w / 2 - 32, h - 46, "#2a5043", 0.4);
+      },
+      eid_season(c, w, h, t) {
+        for (let i = 0; i < 9; i++) {
+          const x = 20 + i * ((w - 40) / 8);
+          const y = 22 + Math.sin(t * 1.6 + i) * 5;
+          c.strokeStyle = "rgba(201,151,74,0.4)"; c.lineWidth = 1;
+          c.beginPath(); c.moveTo(x, 0); c.lineTo(x, y - 7); c.stroke();
+          c.fillStyle = ["#c9974a", "#2ecc71", "#8e6bc9", "#4a90c9"][i % 4];
+          c.beginPath(); c.arc(x, y, 6, 0, Math.PI * 2); c.fill();
+        }
+        c.fillStyle = "#c9974a"; c.font = "bold 20px sans-serif";
+        c.textAlign = "center"; c.textBaseline = "middle";
+        c.fillText("عيد مبارك", w / 2, h - 26);
+      },
+      price_shock(c, w, h, t) {
+        const bars = [0.3, 0.42, 0.5, 0.66, 0.84];
+        const prog = Math.min(1, t / 1.3);
+        for (let i = 0; i < bars.length; i++) {
+          const bh = bars[i] * (h - 30) * prog;
+          c.fillStyle = i === bars.length - 1 ? "#e74c3c" : "#2a5043";
+          c.fillRect(24 + i * ((w - 60) / bars.length), h - 12 - bh, (w - 90) / bars.length, bh);
+        }
+        c.fillStyle = "#e74c3c"; c.font = "bold 14px sans-serif";
+        c.textAlign = "right"; c.textBaseline = "middle";
+        c.fillText("▲ الأسعار", w - 18, 20);
+      },
+      loan_offer(c, w, h, t) {
+        c.fillStyle = "#1d3d35"; c.fillRect(w / 2 - 46, h - 56, 92, 56);
+        c.fillStyle = "#2a5043";
+        c.beginPath(); c.moveTo(w / 2 - 54, h - 56); c.lineTo(w / 2, h - 82); c.lineTo(w / 2 + 54, h - 56);
+        c.closePath(); c.fill();
+        for (let i = 0; i < 4; i++) c.fillRect(w / 2 - 36 + i * 21, h - 48, 7, 40);
+        const p = Math.min(1, t / 1.5);
+        c.fillStyle = "#2ecc71"; c.font = "bold 15px sans-serif";
+        c.textAlign = "center"; c.textBaseline = "middle";
+        c.globalAlpha = p; c.fillText("▼ " + Math.round(1650 * p), w / 2, 22); c.globalAlpha = 1;
+      },
+      school_fees(c, w, h, t) {
+        c.fillStyle = "#8e6bc9"; roundRect(c, w / 2 - 24, h - 52, 48, 40, 6); c.fill();
+        c.fillStyle = "#6b4fa0"; c.fillRect(w / 2 - 24, h - 38, 48, 8);
+        c.fillStyle = "#c9974a"; c.fillRect(w / 2 - 6, h - 56, 12, 6);
+        const bob = Math.sin(t * 2) * 3;
+        c.fillStyle = "#e0e8e4";
+        for (let i = 0; i < 3; i++) {
+          c.save(); c.translate(w / 2 - 60 + i * 60, h - 76 + bob); c.rotate((i - 1) * 0.2);
+          c.fillStyle = ["#4a90c9", "#2ecc71", "#c9974a"][i];
+          c.fillRect(-9, -12, 18, 24);
+          c.fillStyle = "#0f2620"; c.fillRect(-9, -12, 3, 24);
+          c.restore();
+        }
+      },
+      car_repair(c, w, h, t) {
+        const bob = Math.sin(t * 8) * 1.5;
+        c.save(); c.translate(0, bob);
+        c.fillStyle = "#4a90c9"; roundRect(c, w / 2 - 46, h - 46, 92, 22, 5); c.fill();
+        c.fillStyle = "#3a76a4";
+        c.beginPath(); c.moveTo(w / 2 - 30, h - 46); c.lineTo(w / 2 - 20, h - 64);
+        c.lineTo(w / 2 + 20, h - 64); c.lineTo(w / 2 + 30, h - 46); c.closePath(); c.fill();
+        c.fillStyle = "#0a1e1a";
+        c.beginPath(); c.arc(w / 2 - 28, h - 22, 9, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(w / 2 + 28, h - 22, 9, 0, Math.PI * 2); c.fill();
+        c.restore();
+        for (let i = 0; i < 4; i++) {
+          const y = h - 70 - ((t * 26 + i * 16) % 44);
+          c.globalAlpha = Math.max(0, 0.55 - (h - 70 - y) / 60);
+          c.fillStyle = "#8aa89b";
+          c.beginPath(); c.arc(w / 2 + 4 + Math.sin(t * 2 + i) * 6, y, 5 + i, 0, Math.PI * 2); c.fill();
+        }
+        c.globalAlpha = 1;
+      },
+      wedding(c, w, h, t) {
+        drawMiniPerson(c, w / 2 - 22, h - 14, "#e0e8e4", 0.45);
+        drawMiniPerson(c, w / 2 + 22, h - 14, "#2a5043", 0.45);
+        for (let i = 0; i < 10; i++) {
+          const p = ((t * 0.55 + i / 10) % 1);
+          const x = 24 + ((i * 37) % (w - 48));
+          c.globalAlpha = 1 - p;
+          c.fillStyle = ["#c9974a", "#e0e8e4", "#2ecc71", "#8e6bc9"][i % 4];
+          c.fillRect(x, 6 + p * (h - 40), 4, 7);
+        }
+        c.globalAlpha = 1;
+        c.fillStyle = "#c9974a"; c.font = "16px sans-serif";
+        c.textAlign = "center"; c.textBaseline = "middle";
+        c.fillText("💍", w / 2, h - 74 + Math.sin(t * 2) * 3);
+      },
+      newborn(c, w, h, t) {
+        const s = 1 + Math.sin(t * 2.2) * 0.05;
+        c.save(); c.translate(w / 2, h - 40); c.scale(s, s);
+        c.fillStyle = "#f4d58d"; roundRect(c, -30, -14, 60, 34, 14); c.fill();
+        c.fillStyle = "#e8b88a"; c.beginPath(); c.arc(0, -18, 13, 0, Math.PI * 2); c.fill();
+        c.fillStyle = "#0f2620";
+        c.beginPath(); c.arc(-4.5, -19, 1.6, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(4.5, -19, 1.6, 0, Math.PI * 2); c.fill();
+        c.strokeStyle = "#0f2620"; c.lineWidth = 1.3;
+        c.beginPath(); c.arc(0, -15, 4.5, 0.2, Math.PI - 0.2); c.stroke();
+        c.restore();
+        for (let i = 0; i < 5; i++) {
+          const a = t * 1.1 + (i / 5) * Math.PI * 2;
+          c.fillStyle = "rgba(244,213,141,0.6)";
+          c.beginPath(); c.arc(w / 2 + Math.cos(a) * 52, h - 46 + Math.sin(a) * 22, 2.5, 0, Math.PI * 2); c.fill();
+        }
+      },
+      hajj(c, w, h, t) {
+        c.fillStyle = "#0a1e1a"; roundRect(c, w / 2 - 30, h - 66, 60, 66, 3); c.fill();
+        c.strokeStyle = "#c9974a"; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(w / 2 - 30, h - 40); c.lineTo(w / 2 + 30, h - 40); c.stroke();
+        for (let i = 0; i < 7; i++) {
+          const a = -t * 0.7 + (i / 7) * Math.PI * 2;
+          c.globalAlpha = 0.35 + 0.35 * Math.sin(a * 2 + t);
+          drawMiniPerson(c, w / 2 + Math.cos(a) * 74, h - 18 + Math.sin(a) * 9, "#e0e8e4", 0.24);
+        }
+        c.globalAlpha = 1;
+        c.fillStyle = "#f4d58d";
+        c.beginPath(); c.arc(w / 2, h - 82, 3 + Math.abs(Math.sin(t * 1.6)) * 2, 0, Math.PI * 2); c.fill();
+      },
+      side_business(c, w, h, t) {
+        c.fillStyle = "#1d3d35"; c.fillRect(w / 2 - 44, h - 52, 88, 52);
+        c.fillStyle = "#c9974a";
+        for (let i = 0; i < 5; i++) {
+          const up = i / 4;
+          c.globalAlpha = 0.35 + up * 0.65;
+          c.fillRect(w / 2 - 52 + i * 26, h - 62 - up * 24, 6, 8 + up * 20);
+        }
+        c.globalAlpha = 1;
+        c.fillStyle = "#2a5043";
+        c.beginPath(); c.moveTo(w / 2 - 52, h - 52); c.lineTo(w / 2, h - 74); c.lineTo(w / 2 + 52, h - 52);
+        c.closePath(); c.fill();
+        const flip = Math.sin(t * 3);
+        c.save(); c.translate(w / 2, h - 96); c.scale(1, Math.abs(flip) * 0.9 + 0.1);
+        c.fillStyle = flip > 0 ? "#2ecc71" : "#e74c3c";
+        c.beginPath(); c.arc(0, 0, 11, 0, Math.PI * 2); c.fill();
+        c.restore();
+      },
+      appliance(c, w, h, t) {
+        c.fillStyle = "#cfd8d3"; roundRect(c, w / 2 - 26, h - 82, 52, 82, 5); c.fill();
+        c.fillStyle = "#8aa89b"; c.fillRect(w / 2 - 26, h - 50, 52, 2);
+        c.fillStyle = "#2a5043"; c.fillRect(w / 2 + 16, h - 74, 3, 16); c.fillRect(w / 2 + 16, h - 44, 3, 16);
+        const flash = Math.sin(t * 9) > 0.4;
+        if (flash) {
+          c.fillStyle = "#f4d58d";
+          c.beginPath();
+          c.moveTo(w / 2 + 44, h - 74); c.lineTo(w / 2 + 32, h - 52);
+          c.lineTo(w / 2 + 42, h - 52); c.lineTo(w / 2 + 30, h - 28);
+          c.lineTo(w / 2 + 52, h - 58); c.lineTo(w / 2 + 41, h - 58);
+          c.closePath(); c.fill();
+        }
+      },
     };
 
     function drawMiniPerson(c, x, y, shirt, scale) {
@@ -1243,8 +1595,8 @@
           <h3 style="font-size:14px;color:${state.insurance?.health ? "#2ecc71" : "#c9974a"};margin-bottom:4px">☂ ${term("التأمين")} الصحي</h3>
           <p class="muted" style="font-size:12px;line-height:1.8">
             ${state.insurance?.health
-              ? `مؤمَّن — قسط <b>${fmt(state.insurance.premium)}</b> ريالًا شهريًا، ويتحمل التأمين 75% من أي فاتورة علاج.`
-              : `قسط <b>${fmt(state.insurance?.premium ?? INITIAL_STATE.insurance.premium)}</b> ريالًا شهريًا يتحمل 75% من أي فاتورة علاج.`}
+              ? `مؤمَّن — قسط <b>${fmt(INSURANCE_PREMIUM)}</b> ريالًا شهريًا، ويتحمل التأمين 75% من أي فاتورة علاج.`
+              : `قسط <b>${fmt(INSURANCE_PREMIUM)}</b> ريالًا شهريًا يتحمل 75% من أي فاتورة علاج.`}
           </p>
           <p class="muted" style="font-size:11px;line-height:1.8;margin-top:6px">
             أغلب الفواتير صغيرة (${fmt(MEDICAL_TIERS[0].cost)}) لكن ${Math.round(MEDICAL_TIERS[2].p * 100)}% منها تبلغ
@@ -1261,7 +1613,7 @@
         root.querySelector("#insBtn").addEventListener("click", once(() => {
           const on = !state.insurance?.health;
           SFX.build();
-          setState({ ...state, insurance: { ...(state.insurance || { premium: 25 }), health: on },
+          setState({ ...state, insurance: { ...(state.insurance || {}), premium: INSURANCE_PREMIUM, health: on },
             eventLog: [...state.eventLog, on ? "☂ اشتركت في التأمين الصحي" : "ألغيت التأمين الصحي"] });
           popModal(); openBank();
         }));
@@ -1975,7 +2327,7 @@
       // طبيعي — بل: هل تستطيع دفع أسوأ فاتورة نقدًا دون أن تنهار ميزانيتك؟
       { id: "no_insurance", sev: 2, icon: "☂", term: "التأمين",
         test: (s) => !s.insurance?.health && (s.cash + s.emergency) < MEDICAL_TIERS[2].cost,
-        text: (s) => `أسوأ فاتورة علاج تبلغ ${fmt(MEDICAL_TIERS[2].cost)} ريالًا، ولا تملك سوى ${fmt(s.cash + s.emergency)} سائلة. قسط ${fmt(s.insurance?.premium ?? INITIAL_STATE.insurance.premium)} ريالًا يهبط بنصيبك منها إلى ${fmt(insuredShare(MEDICAL_TIERS[2].cost))} — ليس ربحًا في المتوسط، بل حماية من ضربة لا تحتملها.` },
+        text: (s) => `أسوأ فاتورة علاج تبلغ ${fmt(MEDICAL_TIERS[2].cost)} ريالًا، ولا تملك سوى ${fmt(s.cash + s.emergency)} سائلة. قسط ${fmt(INSURANCE_PREMIUM)} ريالًا يهبط بنصيبك منها إلى ${fmt(insuredShare(MEDICAL_TIERS[2].cost))} — ليس ربحًا في المتوسط، بل حماية من ضربة لا تحتملها.` },
       { id: "no_land", sev: 1, icon: "🏜", term: "منحة الأرض",
         test: (s) => s.housing.stage === "renting" && s.year >= 1,
         text: (s) => `ما زلت تدفع ${fmt(s.rent)} ريالًا إيجارًا شهريًا. طلب منحة الأرض مجاني ويستغرق ٦ أشهر — كلما بكّرت بكّر توقّف الإيجار.` },
