@@ -665,9 +665,12 @@
       // الثروة المُدِرّة للدخل: تستثني منزل السكن وقرضه، لأن البيت الذي تسكنه
       // لا يموّل مصروفاتك. الاستقلال المالي يُقاس بها لا بصافي الثروة كاملًا.
       const investableNetWorth = state.cash + state.emergency + totalInv + goalsSaved - state.debt;
-      const coverage = effExpenses > 0 ? state.emergency / effExpenses : 0;
-      // هدف صندوق الطوارئ يتبع مصروفاتك الفعلية (6 أشهر) بدل رقم ثابت يتقادم
-      const emergencyTarget = Math.round(effExpenses * 6);
+      // الشهر بلا دخل لا يتوقف فيه قسط الإسكان ولا قسط التأمين، فقياس
+      // التغطية على المصروفات وحدها يبالغ في طمأنة اللاعب: صندوق بـ3,600
+      // كان يُعرض كتغطية ستة أشهر بينما الخروج الحقيقي 853 شهريًا — 4.2 أشهر.
+      const monthlyOutflow = effExpenses + commitments;
+      const coverage = monthlyOutflow > 0 ? state.emergency / monthlyOutflow : 0;
+      const emergencyTarget = Math.round(monthlyOutflow * 6);
       return { surplus, grossSurplus, commitments, netWorth, investableNetWorth, homeEquity,
                goalsSaved, totalInv, coverage, effIncome, effExpenses, emergencyTarget };
     }
@@ -1031,12 +1034,23 @@
       // التصنيف الائتماني، فيصير إهمال العجز أرخص من قرض صريح. الآن
       // يغطّيه البنك دينًا عليه فائدة، كما يفعل السحب على المكشوف.
       if (s.cash < 0) {
-        const covered = Math.round(-s.cash);
+        let short = Math.round(-s.cash);
         s.cash = 0;
-        s.debt += covered;
-        s.hadDebt = true;
-        rep.overdraft = covered;
-        s.eventLog = [...s.eventLog, `🏧 عجز ${fmt(covered)} — غطّاه البنك دَينًا عليك`];
+        // صندوق الطوارئ لهذا بالذات. كان العجز يُقترض بفائدة والصندوق ممتلئ
+        // إلى جانبه — أي أن اللعبة تعلّمك ادّخاره ثم لا تستعمله حين يلزم.
+        const fromEmergency = Math.min(Math.max(0, s.emergency), short);
+        if (fromEmergency > 0) {
+          s.emergency -= fromEmergency;
+          short -= fromEmergency;
+          rep.emergencyUsed = fromEmergency;
+          s.eventLog = [...s.eventLog, `🛡 عجز ${fmt(fromEmergency)} — غطّاه صندوق الطوارئ`];
+        }
+        if (short > 0) {
+          s.debt += short;
+          s.hadDebt = true;
+          rep.overdraft = short;
+          s.eventLog = [...s.eventLog, `🏧 عجز ${fmt(short)} — غطّاه البنك دَينًا عليك`];
+        }
       }
 
       s.tempEffects = s.tempEffects.map((e) => ({ ...e, monthsLeft: e.monthsLeft - 1 })).filter((e) => e.monthsLeft > 0);
@@ -2303,6 +2317,7 @@
       if (num(r.rent)) rows.push(["دخل إيجاري", `+${fmt(num(r.rent))}`, "#2ecc71"]);
       if (num(r.loanPaid)) rows.push(["قسط الإسكان", `−${fmt(num(r.loanPaid))}`, "#e67e22"]);
       if (num(r.debtInterest)) rows.push(["فائدة الدين", `−${fmt(num(r.debtInterest))}`, "#e74c3c"]);
+      if (num(r.emergencyUsed)) rows.push(["عجز غطّاه صندوق الطوارئ", `−${fmt(num(r.emergencyUsed))}`, "#e67e22"]);
       if (num(r.overdraft)) rows.push(["عجز غطّاه البنك دَينًا", `+${fmt(num(r.overdraft))} دَين`, "#e74c3c"]);
       if (num(r.premium)) rows.push(["قسط التأمين", `−${fmt(num(r.premium))}`, "#e67e22"]);
       const credit = num(r.creditTo) - num(r.creditFrom);
