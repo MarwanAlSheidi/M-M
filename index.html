@@ -68,6 +68,14 @@
     .celebrate-art { width: 100%; height: auto; display: block; background: #0a1e1a; border-radius: 10px; margin-bottom: 12px; }
     .event-btn { background: #1d3d35; border: 1px solid #2a5043; color: #e0e8e4; padding: 12px; border-radius: 8px; width: 100%; margin: 6px 0; cursor: pointer; font-family: inherit; font-size: 14px; text-align: right; transition: background 0.2s; }
     .event-btn:hover { background: #2a5043; }
+    .next-step { display: flex; align-items: center; gap: 8px; margin: 0 10px 6px;
+      padding: 7px 10px; border-radius: 8px; background: rgba(201,151,74,0.12);
+      border: 1px solid rgba(201,151,74,0.35); font-size: 12px; line-height: 1.6; }
+    .next-step.hidden { display: none; }
+    .next-step span { flex: 1; }
+    .next-step b { color: #c9974a; }
+    .next-step button { background: none; border: none; color: #8aa89b; font-size: 14px;
+      cursor: pointer; padding: 0 2px; line-height: 1; }
     .choice-hint { display: block; font-size: 11px; color: #e67e22; margin-top: 4px; }
     .inline-error { color: #e74c3c; font-size: 13px; margin: -8px 0 12px; min-height: 16px; }
     .muted { color: #8aa89b; }
@@ -111,6 +119,11 @@
         <span class="muted" id="rankNext"></span>
       </div>
       <div class="progress" style="height:6px;margin:0"><div class="progress-fill" id="rankFill" style="width:0%;background:#c9974a"></div></div>
+    </div>
+
+    <div class="next-step hidden" id="nextStep">
+      <span id="nextStepText"></span>
+      <button id="nextStepClose" title="إخفاء الإرشاد">✕</button>
     </div>
 
     <div class="stats-panel" id="statsPanel">
@@ -297,6 +310,7 @@
       morale: 70,
       hadDebt: false,
       scenario: "fresh",
+      tipsOff: false,
       // الربح/الخسارة المحقَّقة تراكميًا من عمليات البيع والانهيارات:
       // بدونها كان من يبيع مركزًا رابحًا يرى "أرباح الاستثمار: 0" وكأنه لم يربح.
       realizedPL: 0,
@@ -3783,7 +3797,55 @@
     });
 
     // ==================== واجهة المستخدم العلوية ====================
+    // ==================== الإرشاد المتدرّج ====================
+    // اللاعب الجديد يرى ثماني مبانٍ بلا ترتيب. هذه أول خطوة مفيدة في حالته
+    // الراهنة، وإلى أي مبنى يذهب لأجلها. تُخفى بزر، أو تختفي وحدها حين لا
+    // تبقى خطوة تأسيسية — فلا تلاحق لاعبًا يعرف ما يفعل.
+    const NEXT_STEPS = [
+      { id: "first_pay",
+        when: (s) => (s.year - 1) * 12 + s.month === 1,
+        text: () => `ابدأ من <b>💼 العمل</b>: استلم راتبك ووزّع فائضك على بنوده.` },
+      { id: "emergency",
+        when: (s, d) => d.coverage < 1,
+        text: (s, d) => `اذهب إلى <b>🏦 البنك</b> وابنِ ${term("صندوق الطوارئ")} — يغطي ${d.coverage.toFixed(1)} شهر فقط من أصل 6.` },
+      { id: "debt",
+        when: (s) => s.debt > 0,
+        text: (s) => `سدّد دَينك (${fmt(s.debt)}) — من شاشة الراتب أو <b>🏠 المنزل</b>؛ فائدته ${(debtMonthlyRate(s.creditScore) * 100).toFixed(2)}%/شهر.` },
+      { id: "invest",
+        when: (s, d) => d.totalInv === 0 && s.cash >= 300,
+        text: () => `نقدك عاطل. جرّب <b>📈 البورصة</b> — أربعة أصول بعوائد ومخاطر مختلفة.` },
+      { id: "land",
+        when: (s) => s.housing.stage === "renting",
+        text: () => `اطلب <b>${term("منحة الأرض")}</b> من <b>📰 دار البلدية</b> — التخصيص يستغرق ${LAND_WAIT_MONTHS} أشهر، فالطلب مبكرًا أفضل.` },
+      { id: "educate",
+        when: (s) => (s.education?.level ?? 0) === 0 && !s.education?.pending && s.cash >= 400,
+        text: () => `<b>🎓 المعهد</b>: دورة ترفع دخلك مدى الحياة — أسرع طريق إلى الاستقلال.` },
+      { id: "learn",
+        when: (s) => (s.year - 1) * 12 + s.month <= 6,
+        text: () => `لا تفهم مصطلحًا؟ <b>📖 المكتبة</b> فيها قاموس بـ24 مصطلحًا ماليًا.` },
+    ];
+    function currentStep() {
+      if (state.tipsOff) return null;
+      const d = derive(state);
+      for (const st of NEXT_STEPS) {
+        let ok = false;
+        try { ok = st.when(state, d); } catch { ok = false; }
+        if (ok) return { ...st, body: st.text(state, d) };
+      }
+      return null;
+    }
+    function refreshNextStep() {
+      const el = document.getElementById("nextStep");
+      if (!el) return;
+      const st = currentStep();
+      if (!st) { el.classList.add("hidden"); return; }
+      el.classList.remove("hidden");
+      document.getElementById("nextStepText").innerHTML = `🧭 ${st.body}`;
+      mountCommon(el);   // المصطلحات داخل الإرشاد قابلة للنقر كغيرها
+    }
+
     function refreshHud() {
+      refreshNextStep();
       const d = derive(state);
       const ml = moraleLabel(state.morale ?? 70);
       const mood = document.getElementById("moodEmoji");
@@ -3895,6 +3957,11 @@
         });
       }, { mandatory: true });
     }
+
+    document.getElementById("nextStepClose").addEventListener("click", () => {
+      setState({ ...state, tipsOff: true });
+      refreshNextStep();
+    });
 
     if (isFirstVisit) {
       // نحفظ فورًا وإلا اعتُبرت أي إعادة تحميل قبل أول إجراء زيارةً أولى جديدة
