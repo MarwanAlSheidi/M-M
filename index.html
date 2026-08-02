@@ -1303,8 +1303,9 @@
           <div class="row-actions" style="margin-top:8px">
             <input type="number" min="0" id="amt_${key}" placeholder="مبلغ" />
             <button class="btn btn-sm" data-buy="${key}">شراء</button>
-            <button class="btn btn-sm btn-outline" data-sell="${key}">بيع الكل</button>
+            <button class="btn btn-sm btn-outline" data-sell="${key}">بيع</button>
           </div>
+          ${inv.amount > 0 ? `<button class="btn btn-sm btn-outline" style="margin-top:6px;width:100%" data-sellall="${key}">بيع المركز كاملًا (${fmt(inv.amount)})</button>` : ""}
         </div>`;
       }).join("");
       pushModal(`
@@ -1329,16 +1330,36 @@
             popModal(); openMarket();
           }));
         });
+        // البيع الجزئي ضروري: المستشار ينبّه على التركّز في أصل واحد، وبيع
+        // المركز كاملًا كان الأداة الوحيدة لعلاجه — فلا يمكن إعادة التوازن
+        // ولا جني ربح جزئي. التكلفة تُخفَّض بنسبة المُباع (متوسط التكلفة)
+        // كي يبقى الربح/الخسارة المعروض صحيحًا بعد البيع.
+        const sell = (key, amt) => {
+          const inv = state.investments[key];
+          if (inv.amount <= 0) { err.textContent = "لا يوجد رصيد لبيعه."; return; }
+          const sold = Math.min(Math.max(0, Math.floor(amt)), inv.amount);
+          if (sold <= 0) { err.textContent = "مبلغ غير صالح."; return; }
+          const left = inv.amount - sold;
+          const share = left / inv.amount;
+          const next = left === 0
+            ? { ...inv, amount: 0, cost: 0, rentalIncome: 0 }
+            : { ...inv, amount: left, cost: Math.round(inv.cost * share),
+                rentalIncome: Math.round((inv.rentalIncome || 0) * share) };
+          SFX.coin();
+          setState({ ...state, cash: state.cash + sold, investments: { ...state.investments, [key]: next } });
+          popModal(); openMarket();
+        };
         root.querySelectorAll("[data-sell]").forEach((btn) => {
           btn.addEventListener("click", once(() => {
             const key = btn.dataset.sell;
-            const amount = state.investments[key].amount;
-            if (amount <= 0) { err.textContent = "لا يوجد رصيد لبيعه."; return; }
-            // نصفّر الدخل الإيجاري أيضًا: بيع العقار يُنهي دخله، وإبقاء الرقم
-            // كان يجعل إحصاءات البلدية تعرض إيجارًا شهريًا بلا عقار.
-            setState({ ...state, cash: state.cash + amount, investments: { ...state.investments, [key]: { ...state.investments[key], amount: 0, cost: 0, rentalIncome: 0 } } });
-            popModal(); openMarket();
+            const amt = Math.floor(Number(root.querySelector(`#amt_${key}`).value));
+            if (!amt || amt <= 0) { err.textContent = "أدخل مبلغًا لبيعه، أو استخدم بيع المركز كاملًا."; return; }
+            if (amt > state.investments[key].amount) { err.textContent = "المبلغ أكبر من رصيدك في هذا الأصل."; return; }
+            sell(key, amt);
           }));
+        });
+        root.querySelectorAll("[data-sellall]").forEach((btn) => {
+          btn.addEventListener("click", once(() => sell(btn.dataset.sellall, state.investments[btn.dataset.sellall].amount)));
         });
       });
     }
