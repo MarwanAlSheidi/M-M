@@ -2322,18 +2322,18 @@
     // قواعد تقرأ حالتك الحالية وتُظهر أهم ما يستحق انتباهك الآن.
     // الترتيب بالخطورة: خطر (3) ثم تنبيه (2) ثم فرصة (1).
     const ADVICE_RULES = [
-      { id: "no_emergency", sev: 3, icon: "🛡", term: "صندوق الطوارئ",
+      { id: "no_emergency", sev: 3, urgency: 50, icon: "🛡", term: "صندوق الطوارئ",
         test: (s, d) => d.coverage < 1,
         text: (s, d) => `صندوق طوارئك يغطي ${d.coverage.toFixed(1)} شهر فقط. أي طارئ سيدفعك للاقتراض — اجعله ٣ أشهر على الأقل.` },
-      { id: "burnout", sev: 3, icon: "😫", term: "الاستثمار في الذات",
+      { id: "burnout", sev: 3, urgency: 20, icon: "😫", term: "الاستثمار في الذات",
         test: (s) => (s.morale ?? 70) < MORALE_BURNOUT,
         text: () => `أنت في حالة إرهاق ودخلك منخفض 12%. خصّص جزءًا من فائضك للإنفاق الشخصي حتى يتعافى رضاك.` },
-      { id: "debt_heavy", sev: 3, icon: "💳", term: "الدين إلى الدخل السنوي",
+      { id: "debt_heavy", sev: 3, urgency: 30, icon: "💳", term: "الدين إلى الدخل السنوي",
         test: (s) => s.monthlyIncome > 0 && s.debt / (s.monthlyIncome * 12) > 0.4,
         text: (s) => `دينك يعادل ${Math.round(s.debt / (s.monthlyIncome * 12) * 100)}% من دخلك السنوي، وفائدته ${(debtMonthlyRate(s.creditScore) * 100).toFixed(2)}%/شهر. سداده أعلى عائد مضمون متاح لك.` },
       // العجز الشهري كان يمرّ بلا أي تنبيه ما دام صندوق الطوارئ ممتلئًا،
       // مع أنه اللحظة التي يحتاج فيها اللاعب الإرشاد أكثر من أي وقت.
-      { id: "deficit", sev: 3, icon: "📉", term: "صندوق الطوارئ",
+      { id: "deficit", sev: 3, urgency: 10, icon: "📉", term: "صندوق الطوارئ",
         test: (s, d) => d.surplus < 0,
         text: (s, d) => {
           const months = d.effExpenses > 0 ? (s.emergency / -d.surplus) : 0;
@@ -2343,45 +2343,45 @@
             ? `التزاماتك الثابتة (${fmt(d.commitments)}) تتجاوز ما يفيض عن مصروفاتك بـ${fmt(-d.surplus)} شهريًا. ${cover} سدّد جزءًا من قرض الإسكان ليقلّ القسط.`
             : `مصروفاتك تتجاوز دخلك بـ${fmt(-d.surplus)} شهريًا. ${cover} قلّل المصروف أو ارفع الدخل.`;
         } },
-      { id: "zakat_due", sev: 3, icon: "🤲", term: "الزكاة",
+      { id: "zakat_due", sev: 3, urgency: 40, icon: "🤲", term: "الزكاة",
         test: (s) => (s.zakat?.unpaid ?? 0) > 0,
         text: (s) => `عليك زكاة مؤجّلة قدرها ${fmt(s.zakat.unpaid)} ريالًا في ذمتك.` },
-      { id: "morale_falling", sev: 2, icon: "😟", term: null,
+      { id: "morale_falling", sev: 2, urgency: 40, icon: "😟", term: null,
         test: (s) => (s.morale ?? 70) >= MORALE_BURNOUT && (s.morale ?? 70) < 45,
         text: (s) => `رضاك ${Math.round(s.morale)} ويتآكل ٤ نقاط شهريًا. اقتربت من الإرهاق الذي يخفض دخلك.` },
-      { id: "concentrated", sev: 2, icon: "🧺", term: "التنويع",
+      { id: "concentrated", sev: 2, urgency: 20, icon: "🧺", term: "التنويع",
         test: (s, d) => { const held = Object.values(s.investments).filter(i => i.amount > 0); return d.totalInv > 800 && held.length === 1; },
         text: (s) => { const k = Object.entries(s.investments).find(([, i]) => i.amount > 0)?.[0]; return `كل استثمارك في ${ASSETS[k]?.label ?? "أصل واحد"}. توزيعه على أصول تتحرك مستقلة يقلّل تذبذب محفظتك دون خفض عائدك كثيرًا.`; } },
       // النقد المرصود للبناء ليس خاملاً: كانت النصيحة تطالب من يدّخر لإكمال
       // منزله باستثمار المبلغ، فتؤخّر بيته وتعرّض مال البناء لتقلّب السوق.
-      { id: "build_ready", sev: 2, icon: "🧱", term: "البناء التدريجي",
+      { id: "build_ready", sev: 2, urgency: 45, icon: "🧱", term: "البناء التدريجي",
         test: (s) => ["land", "building"].includes(s.housing.stage) && s.cash >= 500 && s.housing.built < HOME_COST,
         text: (s) => `لديك ${fmt(s.cash)} ريالًا ومتبقٍ ${fmt(HOME_COST - s.housing.built)} على إكمال منزلك. كل دفعة بناء تقرّب سقوط الإيجار عنك.` },
-      { id: "idle_cash", sev: 2, icon: "💤", term: "تكلفة الفرصة البديلة",
+      { id: "idle_cash", sev: 2, urgency: 50, icon: "💤", term: "تكلفة الفرصة البديلة",
         test: (s, d) => s.cash > d.effExpenses * 6 && d.totalInv < s.cash * 0.5
                         && !(["land", "building"].includes(s.housing.stage) && s.housing.built < HOME_COST),
         text: (s, d) => `لديك ${fmt(s.cash)} ريالًا نقدًا خاملاً — أكثر من ٦ أشهر مصروفات. النقد الزائد يتآكل بالتضخم بدل أن ينمو.` },
       // المعيار الصحيح ليس "هل التأمين رابح في المتوسط" — ليس كذلك، وهذا
       // طبيعي — بل: هل تستطيع دفع أسوأ فاتورة نقدًا دون أن تنهار ميزانيتك؟
-      { id: "no_insurance", sev: 2, icon: "☂", term: "التأمين",
+      { id: "no_insurance", sev: 2, urgency: 10, icon: "☂", term: "التأمين",
         test: (s) => !s.insurance?.health && (s.cash + s.emergency) < MEDICAL_TIERS[2].cost,
         text: (s) => `أسوأ فاتورة علاج تبلغ ${fmt(MEDICAL_TIERS[2].cost)} ريالًا، ولا تملك سوى ${fmt(s.cash + s.emergency)} سائلة. قسط ${fmt(INSURANCE_PREMIUM)} ريالًا يهبط بنصيبك منها إلى ${fmt(insuredShare(MEDICAL_TIERS[2].cost))} — ليس ربحًا في المتوسط، بل حماية من ضربة لا تحتملها.` },
-      { id: "no_land", sev: 1, icon: "🏜", term: "منحة الأرض",
+      { id: "no_land", sev: 1, urgency: 10, icon: "🏜", term: "منحة الأرض",
         test: (s) => s.housing.stage === "renting" && s.year >= 1,
         text: (s) => `ما زلت تدفع ${fmt(s.rent)} ريالًا إيجارًا شهريًا. طلب منحة الأرض مجاني ويستغرق ٦ أشهر — كلما بكّرت بكّر توقّف الإيجار.` },
-      { id: "no_education", sev: 1, icon: "🎓", term: "الاستثمار في الذات",
+      { id: "no_education", sev: 1, urgency: 20, icon: "🎓", term: "الاستثمار في الذات",
         test: (s) => (s.education?.level ?? 0) === 0 && !s.education?.pending && s.cash >= 400,
         text: () => `لم تلتحق بأي دورة بعد. أول دورة تكلف ٤٠٠ وترفع دخلك 8% مدى الحياة — عائدها يفوق أي أصل مالي.` },
-      { id: "lifestyle", sev: 1, icon: "📈", term: "تضخّم نمط الحياة",
+      { id: "lifestyle", sev: 1, urgency: 30, icon: "📈", term: "تضخّم نمط الحياة",
         test: (s) => s.monthlyExpenses > 780,
         text: (s) => `مصروفاتك ارتفعت إلى ${fmt(s.monthlyExpenses)}، وهدف استقلالك ارتفع معها إلى ${fmt(fiTarget(s))}.` },
       // من أكمل طوارئه ولم يستثمر شيئًا لم يكن ينبّهه أحد: النقد لا يتراكم
       // لديه (ينفقه) فلا تُفعَّل قاعدة النقد الخامل، ويبقى بلا نمو للأبد.
-      { id: "not_investing", sev: 2, icon: "🌱", term: "الفائدة المركبة",
+      { id: "not_investing", sev: 2, urgency: 30, icon: "🌱", term: "الفائدة المركبة",
         test: (s, d) => d.coverage >= 3 && d.totalInv < s.monthlyIncome && d.surplus > 0
                         && !(["land", "building"].includes(s.housing.stage) && s.housing.built < HOME_COST),
         text: (s, d) => `صندوق طوارئك يكفي ${d.coverage.toFixed(1)} شهرًا، لكن استثماراتك ${fmt(d.totalInv)} فقط. ما بعد الطوارئ يُستثمر لينمو، وإلا بقيت ثروتك واقفة.` },
-      { id: "no_goal", sev: 1, icon: "🎯", term: null,
+      { id: "no_goal", sev: 1, urgency: 40, icon: "🎯", term: null,
         test: (s) => s.goals.length === 0 && s.year >= 1,
         text: () => `لم تحدّد أي هدف ادخاري. الأهداف تجعل الادخار ملموسًا بدل أن يكون رقمًا مجردًا.` },
     ];
@@ -2394,7 +2394,11 @@
         try { ok = r.test(state, d); } catch { ok = false; }
         if (ok) hits.push({ ...r, body: r.text(state, d) });
       }
-      hits.sort((a, b) => b.sev - a.sev);
+      // الخطورة وحدها لا تكفي: خمس قواعد بخطورة 3 قد تتحقق معًا، وكان الترتيب
+      // يتحدّد بموضع القاعدة في المصفوفة فيفوز "لا صندوق طوارئ" دائمًا —
+      // فيُنصح لاعبٌ دخله لا يغطي مصروفه بأن يبني صندوق طوارئ من فائض معدوم.
+      // urgency يرتّب داخل الخطورة الواحدة: أوقف النزيف قبل أن تسدّ النقص.
+      hits.sort((a, b) => b.sev - a.sev || (a.urgency ?? 50) - (b.urgency ?? 50));
       return hits.slice(0, limit);
     }
 
