@@ -1698,6 +1698,14 @@
       { id: "debt_heavy", sev: 3, icon: "💳", term: "الدين إلى الدخل السنوي",
         test: (s) => s.monthlyIncome > 0 && s.debt / (s.monthlyIncome * 12) > 0.4,
         text: (s) => `دينك يعادل ${Math.round(s.debt / (s.monthlyIncome * 12) * 100)}% من دخلك السنوي، وفائدته ${(debtMonthlyRate(s.creditScore) * 100).toFixed(2)}%/شهر. سداده أعلى عائد مضمون متاح لك.` },
+      // العجز الشهري كان يمرّ بلا أي تنبيه ما دام صندوق الطوارئ ممتلئًا،
+      // مع أنه اللحظة التي يحتاج فيها اللاعب الإرشاد أكثر من أي وقت.
+      { id: "deficit", sev: 3, icon: "📉", term: "صندوق الطوارئ",
+        test: (s, d) => d.surplus < 0,
+        text: (s, d) => {
+          const months = d.effExpenses > 0 ? (s.emergency / -d.surplus) : 0;
+          return `مصروفاتك تتجاوز دخلك بـ${fmt(-d.surplus)} شهريًا. بهذا المعدّل يكفي صندوق طوارئك ${months.toFixed(1)} شهرًا — قلّل المصروف أو ارفع الدخل قبل أن ينفد.`;
+        } },
       { id: "zakat_due", sev: 3, icon: "🤲", term: "الزكاة",
         test: (s) => (s.zakat?.unpaid ?? 0) > 0,
         text: (s) => `عليك زكاة مؤجّلة قدرها ${fmt(s.zakat.unpaid)} ريالًا في ذمتك.` },
@@ -1728,6 +1736,12 @@
       { id: "lifestyle", sev: 1, icon: "📈", term: "تضخّم نمط الحياة",
         test: (s) => s.monthlyExpenses > 780,
         text: (s) => `مصروفاتك ارتفعت إلى ${fmt(s.monthlyExpenses)}، وهدف استقلالك ارتفع معها إلى ${fmt(fiTarget(s))}.` },
+      // من أكمل طوارئه ولم يستثمر شيئًا لم يكن ينبّهه أحد: النقد لا يتراكم
+      // لديه (ينفقه) فلا تُفعَّل قاعدة النقد الخامل، ويبقى بلا نمو للأبد.
+      { id: "not_investing", sev: 2, icon: "🌱", term: "الفائدة المركبة",
+        test: (s, d) => d.coverage >= 3 && d.totalInv < s.monthlyIncome && d.surplus > 0
+                        && !(["land", "building"].includes(s.housing.stage) && s.housing.built < HOME_COST),
+        text: (s, d) => `صندوق طوارئك يكفي ${d.coverage.toFixed(1)} شهرًا، لكن استثماراتك ${fmt(d.totalInv)} فقط. ما بعد الطوارئ يُستثمر لينمو، وإلا بقيت ثروتك واقفة.` },
       { id: "no_goal", sev: 1, icon: "🎯", term: null,
         test: (s) => s.goals.length === 0 && s.year >= 1,
         text: () => `لم تحدّد أي هدف ادخاري. الأهداف تجعل الادخار ملموسًا بدل أن يكون رقمًا مجردًا.` },
