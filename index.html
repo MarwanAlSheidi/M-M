@@ -3440,16 +3440,69 @@
 
     // الخلفية المُجهَّزة مسبقًا: أرض المعيّن وممراتها وساحتها ومبانيها.
     // كل ما فيها ثابت بين الإطارات، فيُرسم مرة واحدة مهما بلغ تفصيله.
+    // ==================== البحر حول الجزيرة ====================
+    // الأرض كانت صفيحة معلّقة في فراغ. الجزيرة تحتاج ماءً يحيط بها وموجًا
+    // يتكسّر على حافّتها — والموج وحده هو ما يُرسم كل إطار، أما البحر فتدرّج.
+    const SEA_RINGS = [];
+    for (let i = 0; i < 26; i++) {
+      SEA_RINGS.push({ t: i / 26, sp: 0.35 + (i % 5) * 0.06, len: 0.05 + (i % 4) * 0.03 });
+    }
+    function seaEdgePoint(t) {
+      // t من 0 إلى 1 يدور على محيط المعيّن (أربعة أضلاع)
+      const c4 = [[0,0],[WORLD_W,0],[WORLD_W,WORLD_H],[0,WORLD_H]];
+      const seg = Math.min(3, Math.floor(t * 4)), f = t * 4 - seg;
+      const [ax, ay] = c4[seg], [bx, by] = c4[(seg + 1) % 4];
+      const wx = ax + (bx - ax) * f, wy = ay + (by - ay) * f;
+      return [isoX(wx, wy), isoY(wx, wy)];
+    }
+    function drawSea(c, now) {
+      const g = c.createLinearGradient(0, 0, 0, canvas.height);
+      g.addColorStop(0, "#0a1c26");
+      g.addColorStop(0.45, "#123c4e");
+      g.addColorStop(1, "#1b5c66");
+      c.fillStyle = g; c.fillRect(0, 0, canvas.width, canvas.height);
+      // بريق متحرك على سطح الماء
+      c.save();
+      c.globalAlpha = 0.10;
+      c.strokeStyle = "#bfe6f2"; c.lineWidth = 1;
+      for (let i = 0; i < 14; i++) {
+        const y = 60 + i * 34 + Math.sin(now / 1400 + i) * 4;
+        c.beginPath();
+        for (let x = 0; x <= canvas.width; x += 14) {
+          const yy = y + Math.sin((x / 46) + now / 900 + i) * 2.5;
+          x === 0 ? c.moveTo(x, yy) : c.lineTo(x, yy);
+        }
+        c.stroke();
+      }
+      c.restore();
+      // موج يتكسّر على حافّة الجزيرة
+      c.save();
+      c.strokeStyle = "rgba(226,244,250,0.55)"; c.lineCap = "round";
+      for (const r of SEA_RINGS) {
+        const phase = ((now / 1000) * r.sp + r.t) % 1;
+        const a0 = r.t, a1 = r.t + r.len;
+        const [x0, y0] = seaEdgePoint(a0 % 1), [x1, y1] = seaEdgePoint(a1 % 1);
+        const push = 3 + phase * 9;
+        const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+        const cxr = mx - (isoX(WORLD_W / 2, WORLD_H / 2) - mx) * 0;
+        const nx = (mx - isoX(WORLD_W / 2, WORLD_H / 2)), ny = (my - isoY(WORLD_W / 2, WORLD_H / 2));
+        const nl = Math.hypot(nx, ny) || 1;
+        c.globalAlpha = 0.5 * (1 - phase);
+        c.lineWidth = 2 - phase;
+        c.beginPath();
+        c.moveTo(x0 + (nx / nl) * push, y0 + (ny / nl) * push * 0.6);
+        c.lineTo(x1 + (nx / nl) * push, y1 + (ny / nl) * push * 0.6);
+        c.stroke();
+      }
+      c.restore();
+    }
+
     function renderBackground() {
       const season = SEASONS[seasonForMonth(state.month)];
       const c = bgCtx;
       c.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
 
-      // سماء متدرّجة خلف المدينة
-      const sky = c.createLinearGradient(0, 0, 0, ISO_OY + ISO_H);
-      sky.addColorStop(0, "#0d1b1f"); sky.addColorStop(1, "#132a28");
-      c.fillStyle = sky; c.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
-
+      // لا سماء هنا: البحر يُرسم كل إطار خلف هذه الطبقة، فلو ملأناها لغطّيناه
       // سطح الأرض معيّنًا واحدًا بتدرّج، ثم بلاطاته
       const corners = [[0,0],[WORLD_W,0],[WORLD_W,WORLD_H],[0,WORLD_H]];
       c.beginPath();
@@ -3483,8 +3536,8 @@
       }
       c.restore();
 
-      // حافة الأرض: سُمك ترابي يوحي بارتفاع الأرض عن الفراغ
-      const edge = 14;
+      // حافة الجزيرة: رملٌ ثم صخر يهبط إلى الماء
+      const edge = 22;
       const bottom = [[WORLD_W,0],[WORLD_W,WORLD_H],[0,WORLD_H]];
       c.beginPath();
       c.moveTo(isoX(WORLD_W,0), isoY(WORLD_W,0));
@@ -3493,7 +3546,12 @@
       c.lineTo(isoX(WORLD_W,WORLD_H), isoY(WORLD_W,WORLD_H) + edge);
       c.lineTo(isoX(WORLD_W,0), isoY(WORLD_W,0) + edge);
       c.closePath();
-      c.fillStyle = "#241d14"; c.fill();
+      const eg = c.createLinearGradient(0, isoY(WORLD_W / 2, WORLD_H) - 4, 0, isoY(WORLD_W / 2, WORLD_H) + edge);
+      eg.addColorStop(0, "#d8c08a");      // شريط رملي عند الحافّة
+      eg.addColorStop(0.28, "#8a7048");
+      eg.addColorStop(1, "#3b3020");      // صخر مظلم عند الماء
+      c.fillStyle = eg; c.fill();
+      c.strokeStyle = "rgba(20,14,8,0.5)"; c.lineWidth = 1; c.stroke();
 
       // ممرات من الساحة إلى كل باب
       c.lineCap = "round";
@@ -3780,6 +3838,7 @@
       if (shake > 0.05) {
         ctx.translate((Math.random() - 0.5) * shake * 2, (Math.random() - 0.5) * shake * 2);
       }
+      drawSea(ctx, now);
       ctx.drawImage(bgCanvas, 0, 0);
 
       // رذاذ النافورة
