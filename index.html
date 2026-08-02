@@ -54,8 +54,20 @@
     .btn-sm { padding: 8px 16px; width: auto; font-size: 13px; }
     .btn-outline { background: transparent; border: 1px solid #c9974a; color: #c9974a; }
     .term { color: #c9974a; text-decoration: underline dotted; cursor: pointer; }
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
-    .modal { background: #122e27; border-radius: 18px; padding: 24px; max-width: 400px; width: 100%; border: 1px solid #c9974a; max-height: 80vh; overflow-y: auto; }
+    /* النوافذ تظهر وتختفي بتخفيف بدل أن تُقحَم دفعةً واحدة */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px;
+      animation: overlayIn 0.16s ease-out both; }
+    .modal { background: #122e27; border-radius: 18px; padding: 24px; max-width: 400px; width: 100%; border: 1px solid #c9974a; max-height: 80vh; overflow-y: auto;
+      animation: modalIn 0.24s cubic-bezier(0.16, 1.02, 0.4, 1) both; }
+    .modal-overlay.closing { animation: overlayOut 0.14s ease-in both; }
+    .modal-overlay.closing .modal { animation: modalOut 0.14s ease-in both; }
+    @keyframes overlayIn  { from { opacity: 0 } to { opacity: 1 } }
+    @keyframes overlayOut { from { opacity: 1 } to { opacity: 0 } }
+    @keyframes modalIn    { from { opacity: 0; transform: translateY(14px) scale(0.965) } to { opacity: 1; transform: none } }
+    @keyframes modalOut   { from { opacity: 1; transform: none } to { opacity: 0; transform: translateY(8px) scale(0.98) } }
+    @media (prefers-reduced-motion: reduce) {
+      .modal-overlay, .modal, .modal-overlay.closing, .modal-overlay.closing .modal { animation: none !important; }
+    }
     .modal h2 { color: #c9974a; margin-bottom: 16px; font-size: 20px; }
     input { width: 100%; padding: 10px; background: #0a1e1a; border: 1px solid #1d3d35; color: #e0e8e4; border-radius: 8px; font-family: inherit; margin: 6px 0 14px; font-size: 15px; }
     input[type=range] { accent-color: #c9974a; }
@@ -1692,14 +1704,34 @@
       return !!(top && top.dataset.mandatory);
     }
 
+    // الإزالة تنتظر حركة الخروج. الاختبارات تقرأ عدد النوافذ فور الإغلاق،
+    // فنُخرج العنصر من المكدّس ونزيل صفته فورًا ولا نؤخّر إلا حذفه من الصفحة.
+    // حركة الخروج تُبقي العنصر لحظةً في الصفحة. وفي محاكاة سريعة (مئات
+    // الأشهر في ثوانٍ) تراكمت 71 طبقة كاملة الشاشة معًا فهبطت الإطارات إلى
+    // 0.6/ث. فنحدّ المتزامنَ منها: ما زاد يُزال فورًا، والحركة تُرى في اللعب
+    // الطبيعي حيث لا تُغلق إلا نافذة أو اثنتان.
+    const MAX_CLOSING = 2;
+    function dismiss(overlay) {
+      if (!overlay || overlay.classList.contains("closing")) return;
+      overlay.dataset.mandatory = "";
+      overlay.style.pointerEvents = "none";
+      if (document.querySelectorAll(".modal-overlay.closing").length >= MAX_CLOSING) {
+        overlay.remove();
+        return;
+      }
+      overlay.classList.add("closing");
+      let done = false;
+      const kill = () => { if (done) return; done = true; overlay.remove(); };
+      overlay.addEventListener("animationend", kill, { once: true });
+      setTimeout(kill, 220);
+    }
     function popModal() {
-      const overlay = modalStack.pop();
-      if (overlay) overlay.remove();
+      dismiss(modalStack.pop());
       refreshHud();
     }
 
     function closeAllModals() {
-      modalStack.forEach((o) => o.remove());
+      modalStack.forEach(dismiss);
       modalStack = [];
       refreshHud();
     }
@@ -3695,7 +3727,11 @@
     function drawCharacter(c, wx, wy, facing, animT, moving, palette) {
       const walk = moving ? Math.sin(animT * 12) : 0;
       const legOffset = walk * 3.5, armOffset = -walk * 3;
-      const bob = moving ? Math.abs(Math.sin(animT * 12)) * 1.3 : 0;
+      // سكونٌ حيّ: تنفّس بطيء بدل تجمّد تام — الوقوف بلا حركة يقتل الإحساس
+      const breathe = moving ? 0 : Math.sin(animT * 2.1) * 0.55;
+      const bob = moving ? Math.abs(Math.sin(animT * 12)) * 1.3 : breathe;
+      // حركة ثانوية: طرف الثوب يتأخّر عن الجسم فيتمايل
+      const hem = moving ? Math.sin(animT * 12 - 0.9) * 1.9 : Math.sin(animT * 2.1 - 0.7) * 0.5;
       const cx = isoX(wx, wy), cy = isoY(wx, wy);
       const away = facing === "up";                 // مُدبِر عن الناظر
       const ink = "rgba(26,20,12,0.75)";
@@ -3717,8 +3753,8 @@
       }
       // الثوب: أوسع عند الأسفل
       c.beginPath();
-      c.moveTo(-7, -7); c.lineTo(7, -7); c.lineTo(9.5, 8);
-      c.quadraticCurveTo(0, 10.5, -9.5, 8); c.closePath();
+      c.moveTo(-7, -7); c.lineTo(7, -7); c.lineTo(9.5 + hem, 8);
+      c.quadraticCurveTo(hem * 0.6, 10.5, -9.5 + hem, 8); c.closePath();
       c.fillStyle = palette.shirt; c.fill(); c.stroke();
       // ظلّ خلوي على الجانب البعيد عن الضوء
       c.save(); c.clip();
@@ -4128,6 +4164,32 @@
       mountCommon(el);   // المصطلحات داخل الإرشاد قابلة للنقر كغيرها
     }
 
+    // الأرقام تعدّ بدل أن تقفز. القفزة تُخفي مقدار التغيّر؛ والعدّ يجعله
+    // محسوسًا — وهو أرخص ما يشتريه المرء من إحساس الحركة الاحترافية.
+    const TWEENS = new Map();
+    function tweenNumber(id, target, render) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const t = Math.round(target);
+      const prev = TWEENS.get(id);
+      if (prev && prev.to === t) return;
+      const from = prev ? prev.cur : t;
+      if (prev && prev.raf) cancelAnimationFrame(prev.raf);
+      if (from === t) { TWEENS.set(id, { to: t, cur: t }); el.innerHTML = render(t); return; }
+      const dur = Math.min(700, 220 + Math.abs(t - from) * 0.35);
+      const t0 = performance.now();
+      const rec = { to: t, cur: from, raf: 0 };
+      TWEENS.set(id, rec);
+      (function step(now) {
+        const k = Math.min(1, (now - t0) / dur);
+        const e = 1 - Math.pow(1 - k, 3);          // تباطؤ في النهاية
+        rec.cur = Math.round(from + (t - from) * e);
+        el.innerHTML = render(rec.cur);
+        if (k < 1) rec.raf = requestAnimationFrame(step);
+        else { rec.cur = t; rec.raf = 0; el.innerHTML = render(t); }
+      })(t0);
+    }
+
     function refreshHud() {
       refreshNextStep();
       const d = derive(state);
@@ -4136,11 +4198,11 @@
       mood.textContent = ml.emoji;
       mood.title = `الرضا: ${Math.round(state.morale ?? 70)} (${ml.text})`;
       document.getElementById("hudDate").textContent = `السنة ${state.year} · شهر ${state.month}`;
-      document.getElementById("hudNet").innerHTML = `${fmt(d.netWorth)} <small>ريال</small>`;
-      document.getElementById("statCash").textContent = fmt(state.cash);
-      document.getElementById("statEmergency").textContent = fmt(state.emergency);
-      document.getElementById("statInvest").textContent = fmt(d.totalInv);
-      document.getElementById("statDebt").textContent = fmt(state.debt);
+      tweenNumber("hudNet", d.netWorth, (v) => `${fmt(v)} <small>ريال</small>`);
+      tweenNumber("statCash", state.cash, fmt);
+      tweenNumber("statEmergency", state.emergency, fmt);
+      tweenNumber("statInvest", d.totalInv, fmt);
+      tweenNumber("statDebt", state.debt, fmt);
       const hEl = document.getElementById("statHome");
       const hs = state.housing || INITIAL_STATE.housing;
       hEl.textContent = fmt((hs.built || 0) - (hs.loan || 0));
