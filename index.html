@@ -299,9 +299,24 @@
         { label: "استخدم صندوق الطوارئ", effect: (s) => ({ ...s, emergency: s.emergency - 250, tempEffects: [...s.tempEffects, { type: "income", amount: -Math.round(s.monthlyIncome * 0.6), monthsLeft: 3 }], eventLog: [...s.eventLog, "فقدان وظيفة - استخدم الطوارئ"] }) },
         { label: "اقترض لتغطية المصروفات", effect: (s) => ({ ...s, debt: s.debt + 750, cash: s.cash + 750, tempEffects: [...s.tempEffects, { type: "income", amount: -Math.round(s.monthlyIncome * 0.6), monthsLeft: 3 }], eventLog: [...s.eventLog, "فقدان وظيفة - اقترض"] }) }
       ]},
-      { id: "market_crash", title: "انهيار سوق الأسهم", desc: "الأسهم تنخفض 25%! هل تبيع أم تشتري المزيد؟", choices: [
-        { label: "أبيع وأحمي رأس المال", effect: (s) => ({ ...s, cash: s.cash + s.investments.stocks.amount, investments: { ...s.investments, stocks: { amount: 0, cost: 0 } }, eventLog: [...s.eventLog, "انهيار أسهم - باع"] }) },
-        { label: "أشتري المزيد (انخفاض مؤقت)", effect: (s) => ({ ...s, cash: s.cash - 125, investments: { ...s.investments, stocks: { amount: s.investments.stocks.amount + 125, cost: s.investments.stocks.cost + 125 } }, eventLog: [...s.eventLog, "انهيار أسهم - اشترى"] }) }
+      // الانخفاض يُطبَّق فعلاً قبل تنفيذ الخيار: كان الحدث يعلن هبوط 25%
+      // ثم يبيع بالقيمة الكاملة ويشتري بلا خصم، فيصبح القرار بلا أثر.
+      { id: "market_crash", title: "انهيار سوق الأسهم",
+        desc: "الأسهم تنخفض 25%! تبيع فتُثبّت الخسارة، أم تشتري على الانخفاض؟",
+        when: (s) => s.investments.stocks.amount > 0, choices: [
+        { label: "أبيع وأحمي ما تبقّى", effect: (s) => {
+            const after = Math.round(s.investments.stocks.amount * 0.75);
+            return { ...s, cash: s.cash + after,
+              investments: { ...s.investments, stocks: { amount: 0, cost: 0 } },
+              eventLog: [...s.eventLog, `انهيار أسهم - باع بـ${fmt(after)}`] };
+          } },
+        { label: "أشتري على الانخفاض", effect: (s) => {
+            const after = Math.round(s.investments.stocks.amount * 0.75);
+            const add = Math.max(0, Math.min(125, s.cash));
+            return { ...s, cash: s.cash - add,
+              investments: { ...s.investments, stocks: { amount: after + add, cost: s.investments.stocks.cost + add } },
+              eventLog: [...s.eventLog, add > 0 ? `انهيار أسهم - اشترى بـ${fmt(add)}` : "انهيار أسهم - لا نقد للشراء"] };
+          } }
       ]},
       { id: "bonus", title: "مكافأة عمل", desc: "حصلت على 200 ريال مكافأة.", choices: [
         { label: "أضف للاستثمار", effect: (s) => ({ ...s, investments: { ...s.investments, stocks: { amount: s.investments.stocks.amount + 200, cost: s.investments.stocks.cost + 200 } }, eventLog: [...s.eventLog, "مكافأة - استثمر"] }) },
