@@ -463,7 +463,15 @@
       // (لا تدفع لصاحب العمل). كان تكرار فقدان الوظيفة يهبط بالدخل تحت الصفر.
       const effIncome = Math.max(0, Math.round((state.monthlyIncome + incomeAdj) * (1 + moraleMod)));
       const effExpenses = state.monthlyExpenses + expenseAdj;
-      const surplus = effIncome - effExpenses;
+      // التزامات شهرية مؤكدة تُخصم خارج بند المصروفات: قسط الإسكان وقسط
+      // التأمين. كانت شاشة الراتب تعرض الفائض قبلهما فتدعو اللاعب لتوزيع
+      // مالٍ ملتزَم به أصلاً — يوزّع 658 وهو لا يملك سوى 416، فيجفّ نقده.
+      const hh = state.housing || INITIAL_STATE.housing;
+      const loanDue = hh.loan > 0
+        ? Math.min(hh.loanPayment || 0, hh.loan + Math.round(hh.loan * HOUSING_LOAN_RATE)) : 0;
+      const commitments = loanDue + (state.insurance?.health ? (state.insurance.premium || 0) : 0);
+      const grossSurplus = effIncome - effExpenses;
+      const surplus = grossSurplus - commitments;
       const totalInv = Object.values(state.investments).reduce((sum, inv) => sum + inv.amount, 0);
       // ما بنيته من المنزل أصل تملكه، وقرض الإسكان التزام عليك — وإلا بدا البناء
       // وكأنه تبديد لثروتك بينما هو تحويلها من نقد إلى عقار.
@@ -476,7 +484,8 @@
       const coverage = effExpenses > 0 ? state.emergency / effExpenses : 0;
       // هدف صندوق الطوارئ يتبع مصروفاتك الفعلية (6 أشهر) بدل رقم ثابت يتقادم
       const emergencyTarget = Math.round(effExpenses * 6);
-      return { surplus, netWorth, investableNetWorth, homeEquity, totalInv, coverage, effIncome, effExpenses, emergencyTarget };
+      return { surplus, grossSurplus, commitments, netWorth, investableNetWorth, homeEquity,
+               totalInv, coverage, effIncome, effExpenses, emergencyTarget };
     }
 
     // ==================== نموذج الأصول ====================
@@ -821,8 +830,24 @@
         s.eventLog = [...s.eventLog, "😫 وصلت إلى الإرهاق — دخلك ينخفض حتى ترفع رضاك"];
       }
 
-      const { surplus } = derive(s);
-      s.cash += surplus;
+      // الراتب يدخل كاملاً؛ القسطان خُصما أعلاه صراحةً كي يظهرا في التقرير،
+      // فلا يُخصمان هنا مرة أخرى. والفائض المعروض للتوزيع هو الصافي بعدهما.
+      const { surplus, grossSurplus } = derive(s);
+      s.cash += grossSurplus;
+
+      // العجز لا يبقى نقدًا سالبًا: كان قسط الإسكان والتأمين وفائض الشهر
+      // السالب تهبط بالنقد تحت الصفر بصمت — حفرة بلا فائدة ولا أثر على
+      // التصنيف الائتماني، فيصير إهمال العجز أرخص من قرض صريح. الآن
+      // يغطّيه البنك دينًا عليه فائدة، كما يفعل السحب على المكشوف.
+      if (s.cash < 0) {
+        const covered = Math.round(-s.cash);
+        s.cash = 0;
+        s.debt += covered;
+        s.hadDebt = true;
+        rep.overdraft = covered;
+        s.eventLog = [...s.eventLog, `🏧 عجز ${fmt(covered)} — غطّاه البنك دَينًا عليك`];
+      }
+
       s.tempEffects = s.tempEffects.map((e) => ({ ...e, monthsLeft: e.monthsLeft - 1 })).filter((e) => e.monthsLeft > 0);
       s.month += 1;
       if (s.month > 12) { s.month = 1; s.year += 1; }
@@ -1303,6 +1328,14 @@
       pushModal(`
         <h2>💼 يوم الراتب — تخصيص الفائض</h2>
         <p class="muted" style="margin-bottom:6px">الفائض هذا الشهر: <b id="surplusLabel">${fmt(surplus)}</b> ريال · الموزّع: <span id="totalLabel">0</span></p>
+        ${(() => {
+          const d = derive(state);
+          return d.commitments > 0
+            ? `<p class="muted" style="margin-bottom:8px;font-size:11px">
+                 ${fmt(d.grossSurplus)} دخلاً صافيًا، خُصم منها <b style="color:#e67e22">${fmt(d.commitments)}</b>
+                 التزامات ثابتة (قسط الإسكان والتأمين) — والباقي وحده قابل للتوزيع.</p>`
+            : "";
+        })()}
         <p class="muted" style="margin-bottom:12px;font-size:11px">
           الرضا الآن <b id="moraleNow" style="color:${moraleLabel(state.morale ?? 70).color}">${Math.round(state.morale ?? 70)}</b>
           → بعد التوزيع <b id="moraleAfter">${Math.round(state.morale ?? 70)}</b>
@@ -1770,6 +1803,7 @@
       if (num(r.rent)) rows.push(["دخل إيجاري", `+${fmt(num(r.rent))}`, "#2ecc71"]);
       if (num(r.loanPaid)) rows.push(["قسط الإسكان", `−${fmt(num(r.loanPaid))}`, "#e67e22"]);
       if (num(r.debtInterest)) rows.push(["فائدة الدين", `−${fmt(num(r.debtInterest))}`, "#e74c3c"]);
+      if (num(r.overdraft)) rows.push(["عجز غطّاه البنك دَينًا", `+${fmt(num(r.overdraft))} دَين`, "#e74c3c"]);
       if (num(r.premium)) rows.push(["قسط التأمين", `−${fmt(num(r.premium))}`, "#e67e22"]);
       const credit = num(r.creditTo) - num(r.creditFrom);
       if (credit) rows.push(["التصنيف الائتماني", `${credit > 0 ? "+" : "−"}${Math.abs(credit)}`, credit > 0 ? "#2ecc71" : "#e74c3c"]);
@@ -1897,7 +1931,8 @@
       const rows = [
         ["المدة", `${months} شهرًا (${(months / 12).toFixed(1)} سنة)`],
         ["الدخل الشهري", `${fmt(state.monthlyIncome)} (بدأت بـ1,000)`],
-        ["الفائض الشهري", fmt(d.surplus)],
+        ["التزامات ثابتة شهريًا", `${fmt(d.commitments)} (قسط إسكان وتأمين)`],
+        ["الفائض القابل للتوزيع", fmt(d.surplus)],
         ["أعلى ثروة بلغتها", fmt(peak)],
         ["أدنى ثروة مررت بها", fmt(trough)],
         ["نمو الثروة منذ البداية", (growth >= 0 ? "+" : "−") + fmt(Math.abs(growth))],
