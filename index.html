@@ -352,6 +352,17 @@
                  housing: { granted: true, stage: "land", built: 0, loan: 0, loanPayment: 0, waitMonths: 0 } } },
     ];
     function scenarioById(id) { return SCENARIOS.find((x) => x.id === id) || SCENARIOS[0]; }
+    // تمييز العدد في العربية: 1 مفرد، 2 مثنى، 3-10 جمع، 11+ مفرد منصوب
+    function arCount(n, one, two, few, many, zero) {
+      const v = Math.abs(Math.round(Number(n) || 0));
+      if (v === 0) return zero;
+      if (v === 1) return one;
+      if (v === 2) return two;
+      if (v >= 3 && v <= 10) return `${v} ${few}`;
+      return `${v} ${many}`;
+    }
+    const runsText = (n) => arCount(n, "جولة واحدة", "جولتان", "جولات", "جولة", "بلا جولات");
+    const winsText = (n) => arCount(n, "فوز واحد", "فوزان", "مرات فوز", "فوزًا", "بلا فوز");
     function scenarioState(id) {
       const sc = scenarioById(id);
       const st = structuredClone(INITIAL_STATE);
@@ -823,6 +834,42 @@
     function lsSet(k, v) { try { localStorage.setItem(k, v); } catch { /* تجاهل */ } }
     function lsRemove(k) { try { localStorage.removeItem(k); } catch { /* تجاهل */ } }
 
+    // ==================== سجل الجولات ====================
+    // السيناريوهات بلا ذاكرة تبقى اختيارات بلا معنى. هذا السجل يعيش في مفتاح
+    // منفصل عن الحفظ، فلا تمحوه إعادة البدء — وإلا ضاع أثر كل جولة سابقة.
+    const RECORDS_KEY = "zeroRecordsV1";
+    function loadRecords() {
+      try {
+        const raw = JSON.parse(lsGet(RECORDS_KEY) || "{}");
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+        const out = {};
+        for (const sc of SCENARIOS) {
+          const r = raw[sc.id];
+          if (!r || typeof r !== "object") continue;
+          const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+          out[sc.id] = { runs: num(r.runs), wins: num(r.wins), losses: num(r.losses),
+                         bestMonths: num(r.bestMonths) || null, bestNetWorth: num(r.bestNetWorth) };
+        }
+        return out;
+      } catch { return {}; }
+    }
+    function recordOutcome(kind) {
+      const id = scenarioById(state.scenario).id;
+      const recs = loadRecords();
+      const r = recs[id] || { runs: 0, wins: 0, losses: 0, bestMonths: null, bestNetWorth: 0 };
+      const months = (state.year - 1) * 12 + state.month;
+      const nw = Math.round(derive(state).netWorth);
+      r.runs += 1;
+      if (kind === "win") {
+        r.wins += 1;
+        if (!r.bestMonths || months < r.bestMonths) r.bestMonths = months;
+        if (nw > r.bestNetWorth) r.bestNetWorth = nw;
+      } else r.losses += 1;
+      recs[id] = r;
+      lsSet(RECORDS_KEY, JSON.stringify(recs));
+      return r;
+    }
+
     function loadState() {
       try {
         const saved = lsGet(SAVE_KEY);
@@ -886,6 +933,7 @@
       if (!kind || state.finished === kind) return;
       state.finished = kind;
       saveState();
+      recordOutcome(kind);
       showEnding(kind);
     }
 
@@ -2593,6 +2641,26 @@
             الزكاة المؤجّلة دَينٌ في ذمتك يُدفع متى قدرت، لا مرة واحدة في السنة.
           </p>` : ""}
         </div>
+        ${(() => {
+          const recs = loadRecords();
+          const played = SCENARIOS.filter((sc) => recs[sc.id] && recs[sc.id].runs > 0);
+          if (!played.length) return "";
+          const totals = played.reduce((a, sc) => {
+            const r = recs[sc.id]; a.runs += r.runs; a.wins += r.wins; return a; }, { runs: 0, wins: 0 });
+          return `<div class="card" style="margin:10px 0;padding:12px">
+            <h3 style="font-size:14px;color:#c9974a;margin-bottom:8px">🧭 سجل جولاتك (${winsText(totals.wins)} من ${runsText(totals.runs)})</h3>
+            ${SCENARIOS.map((sc) => {
+              const r = recs[sc.id];
+              const done = r && r.runs > 0;
+              return `<div style="display:flex;justify-content:space-between;padding:3px 0;opacity:${done ? 1 : 0.45}">
+                <span class="muted" style="font-size:12px">${sc.icon} ${esc(sc.name)}</span>
+                <b style="font-size:12px;color:${done && r.wins ? "#2ecc71" : "#8aa89b"}">${
+                  !done ? "لم تُجرَّب" : r.wins ? `${r.bestMonths} شهرًا · ${fmt(r.bestNetWorth)}` : `${runsText(r.runs)} بلا فوز`}</b>
+              </div>`;
+            }).join("")}
+            <p class="muted" style="font-size:11px;margin-top:6px">السجل يبقى بعد إعادة البدء — جرّب بداية أخرى.</p>
+          </div>`;
+        })()}
         <div class="card" style="margin:10px 0;padding:12px">
           <h3 style="font-size:14px;color:#c9974a;margin-bottom:8px">🏅 الإنجازات (${(state.achievements || []).length}/${ACHIEVEMENTS.length})</h3>
           <div style="display:flex;flex-wrap:wrap;gap:6px">
@@ -3786,9 +3854,17 @@
     // اختيار البداية: يُعرض في أول زيارة وعند كل إعادة بدء، فتختلف الجولة
     // اختلافًا حقيقيًا لا تجميليًا — كل سيناريو يبدأ بدرس مختلف.
     function openScenarioPicker(onPicked) {
+      const recs = loadRecords();
       const cards = SCENARIOS.map((sc) => {
         const st = scenarioState(sc.id);
         const d = derive(st);
+        const r = recs[sc.id];
+        const record = !r || !r.runs
+          ? `<span style="display:block;font-size:11px;color:#8aa89b;margin-top:3px">لم تُجرَّب بعد</span>`
+          : `<span style="display:block;font-size:11px;color:${r.wins ? "#2ecc71" : "#e67e22"};margin-top:3px">
+               ${r.wins ? `أفضل نتيجة: ${r.bestMonths} شهرًا · ثروة ${fmt(r.bestNetWorth)}` : "جرّبتها ولم تفز بعد"}
+               <span class="muted">(${runsText(r.runs)} · ${winsText(r.wins)})</span>
+             </span>`;
         return `<button class="event-btn" data-scenario="${sc.id}" style="line-height:1.8">
           <b style="color:#c9974a">${sc.icon} ${esc(sc.name)}</b>
           <span style="display:block;font-size:12px;margin-top:4px">${esc(sc.desc)}</span>
@@ -3796,7 +3872,8 @@
             دخل ${fmt(d.effIncome)} · مصروفات ${fmt(d.effExpenses)} · فائض ${fmt(d.surplus)}${
               st.debt > 0 ? ` · دَين ${fmt(st.debt)}` : ""}
           </span>
-          <span style="display:block;font-size:11px;color:#2ecc71;margin-top:3px">الدرس: ${esc(sc.lesson)}</span>
+          <span style="display:block;font-size:11px;color:#c9974a;margin-top:3px">الدرس: ${esc(sc.lesson)}</span>
+          ${record}
         </button>`;
       }).join("");
       pushModal(`
