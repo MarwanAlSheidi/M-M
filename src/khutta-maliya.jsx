@@ -395,17 +395,20 @@ function Row({ k, v, col, bold, hint }) {
   // قيمة تبدأ برقم وتبقى قصيرة = رقم («16,400 ر.ع.»، «37.9%»)، وما عداها نصّ
   // يلتفّ بحرّية باتجاه rtl الموروث («53,760 ر.ع. — دون المتوقّع لعمرك ودخلك»).
   const s = String(v ?? "");
-  const numeric = /^[-+]?\d/.test(s.trim()) && s.length <= 20;
+  const hasNumber = /\d/.test(s);
   return (
     <div style={{ padding:"7px 0" }}>
       <div style={{ display:"flex", justifyContent:"space-between", gap:12, alignItems:"baseline" }}>
         <span style={{ color:T.ink2, fontWeight:bold ? 600 : 400, fontSize:13.5 }}>{k}</span>
         <span style={{
-          fontFamily:numeric ? T.mono : T.body,
+          fontFamily:hasNumber ? T.mono : T.body,
           color:col || T.ink, fontWeight:bold ? 600 : 400, fontSize:13.5, minWidth:0,
-          ...(numeric
-            ? { direction:"ltr", whiteSpace:"nowrap", flexShrink:0 }
-            : { textAlign:"start" }),
+          // اتجاه ltr إلزامي لأي قيمة فيها رقم. بدونه تُعيد خوارزمية bidi ترتيب
+          // المقاطع الرقمية المفصولة بمحايدات، فيُعرض «65.7% / 16.8% / 17.5%»
+          // مقلوباً — أي يقرأ الكوتش الاحتياجات 17.5٪ والادخار 65.7٪، عكس الواقع.
+          // أما whiteSpace:nowrap فلا يُعاد: هو سبب تمدّد القيم الطويلة خارج شاشة
+          // الجوال، والالتفاف لا يكسر رقماً أصلاً (لا فراغ داخل «53,760»).
+          ...(hasNumber ? { direction:"ltr" } : { textAlign:"start" }),
         }}>{v}</span>
       </div>
       {hint && <div style={{ fontSize:11.5, color:T.muted, marginTop:3, lineHeight:1.6 }}>{hint}</div>}
@@ -607,6 +610,10 @@ function computeCalc(d, horizon, idn) {
   const goalsAllReal = sum(d.goals.map((g) => g.cost));
   const goalsAllNominal = sum(d.goals.map((g) => nominalOf(g.cost, g.m)));
   const byTier = ["core","life","aspire"].map((t) => sum(inH.filter((g) => g.tier === t).map((g) => g.cost)));
+  // byTier مقيَّد بمرشّح الأفق في شاشة الأهداف (سنة/ثلاث/خمس) — وهو مرشّح عرض.
+  // التقرير لا يجوز أن يتغيّر بتغيّره، خصوصاً أن التصدير الجماعي يمرّر 60 دائماً،
+  // فيخرج للعميل الواحد تقريران مختلفان. لذا للتقرير نسخة غير مقيَّدة.
+  const byTierAll = ["core","life","aspire"].map((t) => sum(d.goals.filter((g) => g.tier === t).map((g) => g.cost)));
   const untyped = d.goals.filter((g) => !g.type).length;
   const manualFunded = d.goals.filter((g) => g.fund && g.fund !== "auto").length;
 
@@ -614,7 +621,7 @@ function computeCalc(d, horizon, idn) {
     savingsRate, r503020, dtiHousing, dtiTotal, efRec, efMonths, efTarget, efGap, efCover, behav,
     expectedNet, netClass, netRatio, fiTarget, fiYears, fiPlus, equity,
     capYear, costYear, efDone, efNever, firstShort, worstShort:-worst, endPot:pot,
-    goalsTotal, goalsTotalNominal, goalsAllReal, goalsAllNominal, byTier, untyped, manualFunded, annualExp, nominalOf,
+    goalsTotal, goalsTotalNominal, goalsAllReal, goalsAllNominal, byTier, byTierAll, untyped, manualFunded, annualExp, nominalOf,
     zakatableTotal, zakatMeetsNisab, zakatDue };
 }
 
@@ -637,7 +644,9 @@ function buildReport(d, c, idn, debtPlan, factsDone) {
   const add = (lvl, t, det) => F.push({ lvl, t, det });
 
   if (c.income > 0 && c.surplus < 0)
-    add("high","عجز شهري", `المصروفات تفوق الدخل بـ ${M(-c.surplus)}. بند الرغبات ${M(c.wants)} وهو أول ما يُراجع.`);
+    add("high","عجز شهري", `المصروفات تفوق الدخل بـ ${M(-c.surplus)}. ` + (c.wants > 0
+      ? `بند الرغبات ${M(c.wants)} وهو أول ما يُراجع.`
+      : "ولا يوجد بند رغبات يُقلَّص — العجز كلّه في الاحتياجات، فالمراجعة تبدأ من السكن والأقساط أو من رفع الدخل."));
   if (c.efNever) add("high","صندوق الطوارئ لا يكتمل أبداً","لا يوجد فائض شهري موجب، فالفجوة لا تُغلق مهما طال الأمد.");
   if (idn.incons)
     add("high","قرار يتغيّر بتغيّر الصياغة", [
@@ -679,13 +688,27 @@ function buildReport(d, c, idn, debtPlan, factsDone) {
   if (factsDone < 6) add("low","الوقائع غير مكتملة", `${factsDone} من 6.`);
 
   const A = [];
-  if (c.income > 0 && c.surplus < 0)
-    A.push(`إغلاق العجز أولاً: خفض الرغبات بمقدار ${M(Math.min(-c.surplus, c.wants))} شهرياً قبل أي التزام ادخاري.`);
+  if (c.income > 0 && c.surplus < 0) {
+    // ثلاث حالات مختلفة جوهرياً، وكانت تُصاغ جملةً واحدة: «خفض الرغبات بمقدار X».
+    // حين تكون الرغبات صفراً كانت تخرج «خفض الرغبات بمقدار 0»، وحين تكون أقل من
+    // العجز كانت توهم أن خفضها يُغلقه بينما يبقى فرق غير مغطّى.
+    const gap = -c.surplus;
+    A.push(
+      c.wants <= 0
+        ? `العجز ${M(gap)} شهرياً كلّه في الاحتياجات ولا رغبات تُقلَّص — المدخل الوحيد رفع الدخل أو إعادة هيكلة أكبر بندين: السكن والأقساط.`
+        : c.wants >= gap
+          ? `إغلاق العجز أولاً: خفض الرغبات بمقدار ${M(gap)} شهرياً قبل أي التزام ادخاري.`
+          : `خفض الرغبات كاملةً (${M(c.wants)}) لا يُغلق العجز — يبقى ${M(gap - c.wants)} شهرياً يتطلّب رفع الدخل أو مراجعة الاحتياجات.`);
+  }
   else if (c.efGap > 0 && c.surplus > 0)
     A.push(`توجيه كامل الفائض ${M(c.surplus)} لصندوق الطوارئ — يكتمل في ${c.efDone !== null ? when(c.efDone) : "أبعد من خمس سنوات"}.`);
   if (idn.prof) idn.prof.acts.slice(0, 2).forEach((a) => A.push(a));
   if (c.firstShort !== null)
-    A.push(`إعادة جدولة الأهداف حول ${when(c.firstShort)} أو خفضها بمقدار ${M(c.worstShort)}؛ تأجيل أهداف الطموح (${M(c.byTier[2])}) هو المدخل الأقل ضرراً.`);
+    A.push(
+      `إعادة جدولة الأهداف حول ${when(c.firstShort)} أو خفضها بمقدار ${M(c.worstShort)}؛ ` +
+      (c.byTierAll[2] > 0
+        ? `تأجيل أهداف الطموح (${M(c.byTierAll[2])}) هو المدخل الأقل ضرراً.`
+        : "ولا توجد أهداف طموح تُؤجَّل — كل الأهداف أساسية أو مهمة، فالمخرج تأخير موعد أقربها أو رفع الفائض لا حذفها."));
   const chosenPlan = debtPlan && debtPlan[d.debtMethod === "snowball" ? "snowball" : "avalanche"];
   if (chosenPlan && !chosenPlan.neverPaidOff)
     A.push(`سداد الديون بطريقة ${d.debtMethod === "snowball" ? "كرة الثلج" : "الانهيار الجليدي"} — تنتهي خلال ${chosenPlan.months < 12 ? `${chosenPlan.months} شهراً` : `${(chosenPlan.months / 12).toFixed(1)} سنة`} بفائدة إجمالية ${M(chosenPlan.totalInterest)}.`);
@@ -736,7 +759,12 @@ function buildReport(d, c, idn, debtPlan, factsDone) {
 
 function buildReportHtml(d, c, idn, rep, factsDone) {
   const esc = (s) => String(s).replace(/[&<>]/g, (x) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[x]));
-  const rows = (arr) => arr.map(([k, v]) => `<tr><td class="k">${esc(k)}</td><td class="v">${esc(v)}</td></tr>`).join("");
+  // نفس قاعدة Row في الواجهة: أي قيمة فيها رقم تُعرض ltr. المستند هنا dir="rtl"،
+  // فبدونها تقلب bidi ترتيب المقاطع الرقمية المفصولة بمحايدات — «توزيع 50/30/20»
+  // تُقرأ معكوسة، و«الدخل / المصروف» يتبادلان. وهذا الملف هو ما يصل العميل
+  // ويُطبع في الجلسة، فالخطأ فيه أخطر منه في الشاشة.
+  const rows = (arr) => arr.map(([k, v]) =>
+    `<tr><td class="k">${esc(k)}</td><td class="v${/\d/.test(String(v)) ? " n" : ""}">${esc(v)}</td></tr>`).join("");
   const lv = { high:"مرتفعة", med:"متوسطة", low:"منخفضة" };
   return `<!doctype html><html dir="rtl" lang="ar"><meta charset="utf-8">
 <title>تقرير الخطة المالية</title><style>
@@ -744,6 +772,7 @@ body{font-family:'IBM Plex Sans Arabic',system-ui,sans-serif;color:#191C1E;max-w
 h1{font-size:24px;margin:0 0 4px;color:#1A2B48}h2{font-size:20px;font-weight:600;margin:26px 0 8px;border-bottom:2px solid #1A2B48;padding-bottom:5px;color:#1A2B48}
 table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:7px 9px;border-bottom:1px solid #E5E7EB;text-align:right}
 .k{color:#75777E}.v{font-weight:600}
+.v.n{direction:ltr;font-family:'IBM Plex Sans',ui-monospace,monospace}
 .f{padding:10px 12px;border-radius:8px;margin-bottom:7px;font-size:13px}
 .high{background:#FEE2E2;border-right:3px solid #EF4444}.med{background:#FEF6DC;border-right:3px solid #FBBF24}
 .low{background:#F3F4F6;border-right:3px solid #75777E}
@@ -1608,7 +1637,9 @@ export default function App() {
                 v={c.firstShort !== null ? when(c.firstShort) : "لا عجز"}
                 col={c.firstShort !== null ? T.bad : T.good}
                 hint={c.firstShort !== null
-                  ? `أقصى عجز تراكمي ${money(c.worstShort, d.cur)}. تأجيل أهداف الطموح (${money(c.byTier[2], d.cur)}) هو المدخل الأقل ضرراً.`
+                  ? `أقصى عجز تراكمي ${money(c.worstShort, d.cur)}. ` + (c.byTierAll[2] > 0
+                      ? `تأجيل أهداف الطموح (${money(c.byTierAll[2], d.cur)}) هو المدخل الأقل ضرراً.`
+                      : "ولا توجد أهداف طموح تُؤجَّل — كل الأهداف أساسية أو مهمة، فالمخرج تأخير موعد أقربها أو رفع الفائض.")
                   : "الفائض يكفي لإغلاق الطوارئ ثم تمويل كل الأهداف في مواعيدها."} />
               <Row k="الرصيد المتبقي بعد خمس سنوات" v={money(c.endPot, d.cur)} col={c.endPot >= 0 ? T.good : T.bad} />
             </Card>

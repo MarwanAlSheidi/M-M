@@ -13,6 +13,7 @@
  */
 import { chromium } from "playwright";
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 
 const PORT = 4173;
 const URL = `http://localhost:${PORT}`;
@@ -227,6 +228,72 @@ console.log("\n══ جدول سداد الديون ══");
   expectContains("الانهيار الجليدي: فائدة 1,052.928", withDebts, "1,052.928 ر.ع.");
   expectContains("كرة الثلج: فائدة 1,514.602", withDebts, "1,514.602 ر.ع.");
   expectContains("الانهيار الجليدي أقل كلفة بـ 461.674", withDebts, "461.674 ر.ع.");
+}
+
+console.log("\n══ اتجاه الخانات الرقمية (bidi) ══");
+{
+  // خانة فيها عدّة مقاطع رقمية مفصولة بمحايدات («65.7% / 16.8% / 17.5%») تنقلب
+  // بصرياً إن لم يُفرَض عليها ltr، فيقرأ الكوتش الاحتياجات ادخاراً والعكس.
+  // لا يكشفه فحصٌ نصّي: textContent يعيد الترتيب المنطقي مهما كان العرض. لذا
+  // يُفحص الاتجاه المحسوب نفسه.
+  await loadPlan(baseCase(), "تقرير الكوتش");
+  const row = await page.evaluate(() => {
+    const key = "توزيع 50/30/20";
+    for (const el of document.querySelectorAll("main div")) {
+      if (el.children.length === 2 && el.children[0].textContent.trim() === key) {
+        const v = el.children[1];
+        return { dir: getComputedStyle(v).direction, text: v.textContent.trim() };
+      }
+    }
+    return null;
+  });
+  expect("صفّ «توزيع 50/30/20» موجود في التقرير", !!row, true);
+  expect("اتجاهه ltr (وإلا انقلب ترتيب النسب بصرياً)", row && row.dir, "ltr");
+  expect("ترتيبه المنطقي احتياجات/رغبات/ادخار", row && row.text, "65.7% / 16.8% / 17.5%");
+}
+
+console.log("\n══ التقرير المصدَّر (الملف الذي يصل العميل) ══");
+{
+  // الفحص السابق يغطّي الشاشة فقط. التقرير المصدَّر مستند مستقل بتنسيقه الخاص،
+  // وهو ما يُطبع ويُشارَك فعلاً — فانقلاب اتجاه فيه أخطر، ولا يكشفه فحص الشاشة.
+  await loadPlan(baseCase(), "تقرير الكوتش");
+  const [dl] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("button", { hasText: "تنزيل التقرير" }).click(),
+  ]);
+  // الامتداد .html ضروري: بدونه يعرض المتصفّح الملف نصّاً خاماً فلا يوجد DOM يُقاس.
+  const out = "/tmp/khutta-exported-report.html";
+  fs.copyFileSync(await dl.path(), out);
+
+  const p2 = await browser.newPage();
+  await p2.goto("file://" + out);
+  await p2.waitForSelector("table");
+  const measured = await p2.evaluate(() => {
+    const res = {};
+    for (const tr of document.querySelectorAll("tr")) {
+      const k = tr.children[0] && tr.children[0].textContent.trim();
+      if (k !== "توزيع 50/30/20" && k !== "الدخل / المصروف") continue;
+      const v = tr.children[1], node = v.firstChild, r = document.createRange(), parts = [];
+      for (const m of node.textContent.matchAll(/[\d.,]+%?/g)) {
+        if (!/\d/.test(m[0])) continue;
+        r.setStart(node, m.index); r.setEnd(node, m.index + m[0].length);
+        parts.push({ t:m[0], x:r.getBoundingClientRect().left });
+      }
+      parts.sort((a, b) => a.x - b.x);
+      res[k] = { dir:getComputedStyle(v).direction, visual:parts.map((z) => z.t).join(" | ") };
+    }
+    return res;
+  });
+  await p2.close();
+
+  const dist = measured["توزيع 50/30/20"];
+  const inc = measured["الدخل / المصروف"];
+  expect("صفّ 50/30/20 موجود في الملف المصدَّر", !!dist, true);
+  expect("اتجاهه ltr داخل مستند rtl", dist && dist.dir, "ltr");
+  // القياس بمواضع البكسل لا بالنصّ: textContent يعيد الترتيب المنطقي دائماً
+  // فينجح الفحص النصّي حتى لو ظهر مقلوباً على الورق.
+  expect("ترتيبه البصري احتياجات→رغبات→ادخار", dist && dist.visual, "65.7% | 16.8% | 17.5%");
+  expect("صفّ الدخل/المصروف: الدخل يسبق المصروف بصرياً", inc && inc.visual, "1,400 | 1,155");
 }
 
 console.log("\n══ التحميل الكسول لحزمة الرسم ══");
