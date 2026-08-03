@@ -2,13 +2,14 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { storage } from "./lib/storage.js";
 
+// الهوية البصرية "Horizon Financial" من مشروع Stitch — نظام تصميم مُعَدّ لهذا التطبيق تحديداً.
 const T = {
-  paper:"#F3F5F3", card:"#FFFFFF", ink:"#13312A", ink2:"#2C4A42",
-  muted:"#6B807A", line:"#DDE4E0", fill:"#FBF3DE", fillLine:"#E8B84B",
-  good:"#0F8A6A", bad:"#B23A48",
-  display:"'Noto Kufi Arabic', 'IBM Plex Sans Arabic', system-ui, sans-serif",
+  paper:"#F8F9FB", card:"#FFFFFF", ink:"#1A2B48", ink2:"#44474D",
+  muted:"#75777E", line:"#E5E7EB", fill:"#FEF6DC", fillLine:"#FBBF24",
+  good:"#10B981", bad:"#EF4444", accent:"#3F51B5",
+  display:"'IBM Plex Sans Arabic', system-ui, sans-serif",
   body:"'IBM Plex Sans Arabic', system-ui, sans-serif",
-  mono:"'IBM Plex Mono', ui-monospace, monospace",
+  mono:"'IBM Plex Sans', ui-monospace, monospace",
 };
 
 const MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
@@ -333,7 +334,7 @@ const DEBT_ORDER = {
 };
 
 const fieldStyle = {
-  width:"100%", background:T.fill, border:`1px solid ${T.fillLine}55`, borderRadius:8,
+  width:"100%", background:T.fill, border:`1px solid ${T.fillLine}55`, borderRadius:4,
   padding:"10px 11px", fontFamily:T.body, fontSize:13.5, color:T.ink, outline:"none",
 };
 
@@ -364,14 +365,19 @@ function TextField({ value, onChange, placeholder }) {
 }
 
 function Card({ children, style, className }) {
-  return <div className={className} style={{ background:T.card, border:`1px solid ${T.line}`, borderRadius:14, padding:18, ...style }}>{children}</div>;
+  return (
+    <div className={className} style={{
+      background:T.card, border:`1px solid ${T.line}`, borderRadius:8, padding:18,
+      boxShadow:"0px 2px 4px rgba(26, 43, 72, 0.05)", ...style,
+    }}>{children}</div>
+  );
 }
 
 function Head({ eyebrow, title, sub }) {
   return (
     <div style={{ marginBottom:20 }}>
       <div style={{ fontFamily:T.mono, fontSize:11, letterSpacing:1, color:T.fillLine, direction:"ltr", textAlign:"right" }}>{eyebrow}</div>
-      <h2 style={{ fontFamily:T.display, fontSize:23, color:T.ink, margin:"4px 0 6px", fontWeight:700, lineHeight:1.45 }}>{title}</h2>
+      <h2 style={{ fontFamily:T.display, fontSize:24, color:T.ink, margin:"4px 0 6px", fontWeight:700, lineHeight:1.5 }}>{title}</h2>
       {sub && <p style={{ fontSize:13.5, color:T.muted, margin:0, lineHeight:1.75 }}>{sub}</p>}
     </div>
   );
@@ -716,19 +722,19 @@ function buildReportHtml(d, c, idn, rep, factsDone) {
   const lv = { high:"مرتفعة", med:"متوسطة", low:"منخفضة" };
   return `<!doctype html><html dir="rtl" lang="ar"><meta charset="utf-8">
 <title>تقرير الخطة المالية</title><style>
-body{font-family:'IBM Plex Sans Arabic',system-ui,sans-serif;color:#13312A;max-width:800px;margin:32px auto;padding:0 20px;line-height:1.7}
-h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:26px 0 8px;border-bottom:2px solid #13312A;padding-bottom:5px}
-table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:7px 9px;border-bottom:1px solid #DDE4E0;text-align:right}
-.k{color:#6B807A}.v{font-weight:600}
+body{font-family:'IBM Plex Sans Arabic',system-ui,sans-serif;color:#191C1E;max-width:800px;margin:32px auto;padding:0 20px;line-height:1.7;background:#F8F9FB}
+h1{font-size:24px;margin:0 0 4px;color:#1A2B48}h2{font-size:20px;font-weight:600;margin:26px 0 8px;border-bottom:2px solid #1A2B48;padding-bottom:5px;color:#1A2B48}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:7px 9px;border-bottom:1px solid #E5E7EB;text-align:right}
+.k{color:#75777E}.v{font-weight:600}
 .f{padding:10px 12px;border-radius:8px;margin-bottom:7px;font-size:13px}
-.high{background:#FBECEE;border-right:3px solid #B23A48}.med{background:#FBF3DE;border-right:3px solid #E8B84B}
-.low{background:#F1F5F3;border-right:3px solid #9FB2AC}
-.d{color:#6B807A;font-size:12px;margin-top:3px}
+.high{background:#FEE2E2;border-right:3px solid #EF4444}.med{background:#FEF6DC;border-right:3px solid #FBBF24}
+.low{background:#F3F4F6;border-right:3px solid #75777E}
+.d{color:#75777E;font-size:12px;margin-top:3px}
 ol{padding-right:18px;font-size:13px}li{margin-bottom:7px}
-.meta{color:#6B807A;font-size:12px;margin-bottom:20px}
-.type{background:#13312A;color:#EAF2EE;padding:16px;border-radius:10px;margin-bottom:18px}
-.dis{color:#6B807A;font-size:11px;margin-top:26px;border-top:1px solid #DDE4E0;padding-top:10px}
-@media print{body{margin:0}}
+.meta{color:#75777E;font-size:12px;margin-bottom:20px}
+.type{background:#1A2B48;color:#FFFFFF;padding:16px;border-radius:8px;margin-bottom:18px}
+.dis{color:#75777E;font-size:11px;margin-top:26px;border-top:1px solid #E5E7EB;padding-top:10px}
+@media print{body{margin:0;background:#fff}}
 </style>
 <h1>تقرير الخطة المالية</h1>
 <div class="meta">تاريخ الإصدار ${new Date().toLocaleDateString("en-GB")} · العملة ${curOf(d.cur).label} · البطاقات ${idn.done}/${idn.total} · الوقائع ${factsDone}/6</div>
@@ -951,7 +957,7 @@ export default function App() {
   return (
     <div dir="rtl" style={{ background:T.paper, minHeight:"100vh", fontFamily:T.body, color:T.ink }}>
       <style>{`
-        input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid ${T.good}; outline-offset: 2px; }
+        input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid ${T.accent}; outline-offset: 2px; box-shadow: 0 0 0 4px rgba(63, 81, 181, 0.15); }
         input::placeholder { color: #A9B7B2; }
         @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
         @media print {
