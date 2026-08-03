@@ -2,6 +2,10 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
+  // مسارات نسبية: البناء يعمل في أي مجلّد فرعي لا في جذر النطاق وحده.
+  // بالمسار المطلق الافتراضي (/assets/…) يفشل تحميل الأصول فور رفعه إلى
+  // مسار مثل example.com/khutta/ — وهي أشيع طريقة ينكسر بها نشر أول مرة.
+  base: "./",
   plugins: [react()],
   build: {
     // لا manualChunks هنا عن قصد: تسمية recharts كجزء مستقل تُدخِله في رسم
