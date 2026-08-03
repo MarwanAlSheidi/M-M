@@ -320,6 +320,58 @@ console.log("\n══ التحميل الكسول لحزمة الرسم ══")
   page.off("request", onRequest);
 }
 
+console.log("\n══ الاستقلال المالي: من بلغه فعلاً ══");
+{
+  // حلقة الحساب تبدأ من y=1 فلا تختبر الرصيد الابتدائي، وكان شرط «الفائض موجب»
+  // يسبق فحص البلوغ — فمتقاعد بمحفظة تفوق هدفه وفائض سالب (وهي بالضبط حال
+  // مرحلة «الإنفاق» التي يعرضها التطبيق) يُقال له «لا فائض حالياً».
+  const retiree = {
+    ...baseCase(), age:62, stage:"spend", goals:[], debts:[],
+    assets:[0, 0, 200000, 200000, 0, 0, 0], liabs:[0, 0, 0, 0, 0],
+    exp:[{ key:"housing", label:"سكن", type:"احتياج", cost:500 },
+         { key:"food", label:"تموين", type:"احتياج", cost:500 }],
+    inc:[{ label:"معاش", amount:600 }], efNow:9000,
+  };
+  const t = await loadPlan(retiree, "القراءة"); // الهدف 300,000 والمحفظة 400,000
+  expect("محفظة تغطي الهدف وفائض سالب ⇒ «تحقّق بالفعل»", /تحقّق بالفعل/.test(t), true);
+  expect("ولا تظهر «لا فائض حالياً»", /لا فائض حالياً/.test(t), false);
+}
+
+console.log("\n══ استيراد نسخة (الاستعادة بعد فقد البيانات) ══");
+{
+  // التخزين كلّه في localStorage، فالتصدير بلا استيراد نسخةٌ لا تُستعاد.
+  await loadPlan(baseCase(), "الوقائع");
+  const [dl] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("button", { hasText: "تصدير نسخة" }).click(),
+  ]);
+  const backup = "/tmp/khutta-verify-backup.json";
+  fs.copyFileSync(await dl.path(), backup);
+
+  await page.evaluate(() => localStorage.clear()); // المتصفّح مسح التخزين
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector("text=العميل");
+
+  await page.locator("input[type=file]").setInputFiles(backup);
+  await page.waitForTimeout(1500);
+  const restored = await page.evaluate(() => {
+    const id = JSON.parse(localStorage.getItem("khutta-maliya:active-v1"));
+    return JSON.parse(localStorage.getItem("khutta-maliya:plan:" + id));
+  });
+  expect("الأصول تُستعاد كما هي", JSON.stringify(restored && restored.assets), JSON.stringify(baseCase().assets));
+  expect("رصيد الطوارئ يُستعاد", restored && restored.efNow, 1500);
+  expect("الأهداف الثمانية تُستعاد", restored && restored.goals.length, 8);
+
+  // JSON صالح لكنه ليس خطة: migrate تملأ الفراغات فيصير خطة فارغة تبدو سليمة
+  const junk = "/tmp/khutta-verify-junk.json";
+  fs.writeFileSync(junk, JSON.stringify({ hello: "world" }));
+  const before = await page.locator("select").first().locator("option").count();
+  await page.locator("input[type=file]").setInputFiles(junk);
+  await page.waitForTimeout(800);
+  const after = await page.locator("select").first().locator("option").count();
+  expect("ملف ليس خطة يُرفض بلا إنشاء عميل", after, before);
+}
+
 console.log("\n══ أخطاء المتصفّح ══");
 expect("لا أخطاء في الطرفية", consoleErrors.length ? consoleErrors.join(" | ") : "لا شيء", "لا شيء");
 

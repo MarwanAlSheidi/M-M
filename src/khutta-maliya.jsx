@@ -571,7 +571,13 @@ function computeCalc(d, horizon, idn) {
   const annualExp = totalExp * 12;
   const fiTarget = annualExp * 25;
   const fiFor = (s) => {
-    if (annualExp <= 0 || s <= 0) return null;
+    if (annualExp <= 0) return null;
+    // البلوغ يُفحص قبل الحلقة لا داخلها. الحلقة تبدأ من y=1 فلا تختبر الرصيد
+    // الابتدائي أصلاً، فمن بلغ هدفه يُقال له «سنة واحدة». والأسوأ أن شرط
+    // s <= 0 كان يسبقه: صاحب محفظة كافية وفائض سالب — وهي حال مرحلة «الإنفاق»
+    // التي يعرضها التطبيق نفسه — كان يُقال له «لا فائض» عن استقلال بلغه فعلاً.
+    if (invested >= fiTarget) return 0;
+    if (s <= 0) return null;
     let b = invested;
     for (let y = 1; y <= 60; y++) { b = b * 1.04 + s * 12; if (b >= fiTarget) return y; }
     return null;
@@ -733,7 +739,11 @@ function buildReport(d, c, idn, debtPlan, factsDone) {
     ["اكتمال صندوق الطوارئ", c.efGap === 0 ? "مكتمل" : c.efDone !== null ? when(c.efDone) : "لا يكتمل خلال الخطة"],
     ["أول شهر يعجز", c.firstShort !== null ? `${when(c.firstShort)} — عجز ${M(c.worstShort)}` : "لا عجز خلال الخطة"],
     ["نطاق الأصول النامية", c.equity || "—"],
-    ["سنوات الاستقلال المالي", c.fiYears ? `${c.fiYears} سنة (هدف ${M(c.fiTarget)})` : c.surplus > 0 ? "أكثر من 60 سنة" : "لا فائض"],
+    // fiYears === 0 تعني «بلغه فعلاً»، والصفر زائف في JS فلا يصحّ اختباره بالصدق
+    ["سنوات الاستقلال المالي",
+      c.fiYears === 0 ? `تحقّق بالفعل (هدف ${M(c.fiTarget)})`
+        : c.fiYears !== null ? `${c.fiYears} سنة (هدف ${M(c.fiTarget)})`
+          : c.surplus > 0 ? "أكثر من 60 سنة" : "لا فائض"],
     ...(debtPlan ? [["جدول سداد الديون", (() => {
       const chosen = debtPlan[d.debtMethod === "snowball" ? "snowball" : "avalanche"];
       return chosen.neverPaidOff ? "لن تُسدَّد بالدفعات الحالية" : `${chosen.months} شهراً — فائدة إجمالية ${M(chosen.totalInterest)}`;
@@ -989,6 +999,42 @@ export default function App() {
     try { downloadFile("الخطة-المالية.json", JSON.stringify(d, null, 2), "application/json"); }
     catch { setStatus("تعذّر التصدير في هذه البيئة"); }
   };
+
+  // الاستيراد يكمّل التصدير: بدونه تكون «تصدير نسخة» باباً باتجاه واحد — ملفٌ
+  // لا يُستعاد، والتخزين كلّه في localStorage الذي يمسحه المتصفّح بسهولة.
+  // يستورد إلى عميل *جديد* لا فوق الحالي، فلا يمحو الاستيرادُ الخاطئ خطةً قائمة.
+  const importJson = useCallback((file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onerror = () => setStatus("تعذّرت قراءة الملف");
+    reader.onload = () => {
+      let parsed;
+      try { parsed = JSON.parse(String(reader.result)); }
+      catch { setStatus("الملف ليس JSON صالحاً"); return; }
+      // migrate() تملأ الفراغات بالقيم الافتراضية، فأي JSON عشوائي يصير خطة
+      // فارغة تبدو سليمة. لذا يُشترط وجود مفتاح واحد على الأقل من بنية الخطة.
+      const looksLikePlan = parsed && typeof parsed === "object" && !Array.isArray(parsed) &&
+        ["exp", "inc", "assets", "liabs", "goals", "ans"].some((k) => k in parsed);
+      if (!looksLikePlan) { setStatus("الملف ليس خطة مالية مصدَّرة من هذا التطبيق"); return; }
+
+      (async () => {
+        const newId = `cl-${Date.now()}`;
+        const base = String(file.name || "").replace(/\.json$/i, "").trim();
+        const name = (base && base !== "الخطة-المالية" ? base : `نسخة مستوردة ${clients.length + 1}`).slice(0, 40);
+        const plan = migrate(parsed);
+        const next = [...clients, { id:newId, name, updatedAt:Date.now() }];
+        setClients(next);
+        await storage.set(CLIENTS_KEY, JSON.stringify(next)).catch(() => {});
+        await storage.set(planKey(newId), JSON.stringify(plan)).catch(() => {});
+        setD(plan);
+        setClientId(newId);
+        setView("facts");
+        storage.set(ACTIVE_CLIENT_KEY, JSON.stringify(newId)).catch(() => {});
+        setStatus(`اسْتُوردت الخطة إلى عميل جديد: ${name}`);
+      })();
+    };
+    reader.readAsText(file);
+  }, [clients]);
 
   const exportHtml = () => {
     try {
@@ -1670,9 +1716,12 @@ export default function App() {
                 <div style={{ fontFamily:T.display, fontWeight:700, marginBottom:10 }}>الاستقلال المالي</div>
                 <Row k="المبلغ المطلوب" v={c.annualExp ? money(c.fiTarget, d.cur) : "—"}
                   hint="خمسة وعشرون ضعف مصروفك السنوي، وفق قاعدة السحب 4٪ من دراسة ترينيتي." />
-                <Row k="سنوات الوصول" v={c.fiYears ? `${c.fiYears} سنة` : c.surplus > 0 ? "أكثر من 60 سنة" : "لا فائض حالياً"}
-                  col={c.fiYears && c.fiYears <= 25 ? T.good : T.ink} />
-                {c.fiYears && c.fiPlus && c.fiPlus < c.fiYears && (
+                <Row k="سنوات الوصول"
+                  v={c.fiYears === 0 ? "تحقّق بالفعل — المحفظة تغطي الهدف"
+                    : c.fiYears !== null ? `${c.fiYears} سنة`
+                      : c.surplus > 0 ? "أكثر من 60 سنة" : "لا فائض حالياً"}
+                  col={c.fiYears !== null && c.fiYears <= 25 ? T.good : T.ink} />
+                {c.fiYears !== null && c.fiYears > 0 && c.fiPlus !== null && c.fiPlus < c.fiYears && (
                   <Row k="لو ادّخرت 5٪ إضافية" v={`${c.fiPlus} سنة`} col={T.good}
                     hint={`أي ${money(c.income * 0.05, d.cur)} شهرياً تقصّر المدة ${c.fiYears - c.fiPlus} سنة.`} />
                 )}
@@ -1795,6 +1844,15 @@ export default function App() {
         <div className="no-print" style={{ marginTop:24, paddingTop:16, borderTop:`1px solid ${T.line}`, display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
           <span style={{ fontSize:12, color:T.muted }}>الحالة: {status}</span>
           <button onClick={exportJson} style={btn}>تصدير نسخة</button>
+          <label style={{ ...btn, display:"inline-block" }}>
+            استيراد نسخة
+            <input
+              type="file"
+              accept="application/json,.json"
+              style={{ display:"none" }}
+              onChange={(e) => { importJson(e.target.files && e.target.files[0]); e.target.value = ""; }}
+            />
+          </label>
           {confirming ? (
             <>
               <button onClick={reset} style={{ ...btn, color:"#fff", background:T.bad, borderColor:T.bad }}>نعم، امسح كل شيء</button>
