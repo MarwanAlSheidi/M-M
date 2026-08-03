@@ -386,11 +386,27 @@ function Head({ eyebrow, title, sub }) {
 }
 
 function Row({ k, v, col, bold, hint }) {
+  // القاعدة الثابتة: كل خانة رقمية بخط الأرقام واتجاه ltr وبلا التفاف، وإلا
+  // انقلب ترتيب الأرقام أو انكسر الرقم عبر سطرين.
+  //
+  // لكن Row يحمل أيضاً قيماً نصّية طويلة (وصف مرحلة دورة الحياة، تصنيف ستانلي).
+  // تطبيق nowrap عليها كان يمدّها خارج الشاشة على الجوال (390px) — وهو المقاس
+  // الذي يُملأ به التطبيق فعلاً. لذا تُعامَل الأرقام وحدها بتلك القاعدة:
+  // قيمة تبدأ برقم وتبقى قصيرة = رقم («16,400 ر.ع.»، «37.9%»)، وما عداها نصّ
+  // يلتفّ بحرّية باتجاه rtl الموروث («53,760 ر.ع. — دون المتوقّع لعمرك ودخلك»).
+  const s = String(v ?? "");
+  const numeric = /^[-+]?\d/.test(s.trim()) && s.length <= 20;
   return (
     <div style={{ padding:"7px 0" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", gap:12 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", gap:12, alignItems:"baseline" }}>
         <span style={{ color:T.ink2, fontWeight:bold ? 600 : 400, fontSize:13.5 }}>{k}</span>
-        <span style={{ fontFamily:T.mono, color:col || T.ink, fontWeight:bold ? 600 : 400, direction:"ltr", fontSize:13.5, whiteSpace:"nowrap" }}>{v}</span>
+        <span style={{
+          fontFamily:numeric ? T.mono : T.body,
+          color:col || T.ink, fontWeight:bold ? 600 : 400, fontSize:13.5, minWidth:0,
+          ...(numeric
+            ? { direction:"ltr", whiteSpace:"nowrap", flexShrink:0 }
+            : { textAlign:"start" }),
+        }}>{v}</span>
       </div>
       {hint && <div style={{ fontSize:11.5, color:T.muted, marginTop:3, lineHeight:1.6 }}>{hint}</div>}
     </div>
@@ -962,6 +978,19 @@ export default function App() {
         input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid ${T.accent}; outline-offset: 2px; box-shadow: 0 0 0 4px rgba(63, 81, 181, 0.15); }
         input::placeholder { color: #A9B7B2; }
         @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+        /* الجوال (390px) هو المقاس الفعلي للاستخدام: العميل يملأ خطته على هاتفه.
+           الشبكات ذات الأعمدة الثابتة تخنق الحقول عنده — اسم البند يُبتر، وخانة
+           الرصيد تعرض «50» بدل «5000». الحل: التسمية على سطر مستقل بعرض كامل،
+           والأرقام تُصفّ تحتها. رأس جدول الديون يختفي لأن كل حقل يشرح نفسه
+           بعنصره النائب. */
+        @media (max-width: 520px) {
+          .exp-row  { grid-template-columns: 1fr 92px !important; }
+          .exp-row  > :first-child { grid-column: 1 / -1; }
+          .debt-head { display: none !important; }
+          .debt-row { grid-template-columns: 1fr 1fr !important; }
+          .debt-row > :first-child { grid-column: 1 / -1; }
+        }
         @media print {
           .no-print { display: none !important; }
           body, main { background: #fff !important; }
@@ -1337,14 +1366,14 @@ export default function App() {
                 <p style={{ color:T.muted, fontSize:13.5, marginBottom:14 }}>لا ديون مسجّلة بالتفصيل بعد.</p>
               ) : (
                 <div style={{ marginBottom:12 }}>
-                  <div style={{ display:"grid", gridTemplateColumns:"1.4fr 1fr 90px 1fr 60px", gap:8, marginBottom:6, fontSize:11, color:T.muted }}>
+                  <div className="debt-head" style={{ display:"grid", gridTemplateColumns:"1.4fr 1fr 90px 1fr 60px", gap:8, marginBottom:6, fontSize:11, color:T.muted }}>
                     <span>الدين</span><span>الرصيد</span><span>فائدة٪</span><span>الحد الأدنى</span><span></span>
                   </div>
                   {d.debts.map((x) => (
-                    <div key={x.id} style={{ display:"grid", gridTemplateColumns:"1.4fr 1fr 90px 1fr 60px", gap:8, alignItems:"center", marginBottom:8 }}>
+                    <div key={x.id} className="debt-row" style={{ display:"grid", gridTemplateColumns:"1.4fr 1fr 90px 1fr 60px", gap:8, alignItems:"center", marginBottom:8 }}>
                       <TextField value={x.label} placeholder="اسم الدين" onChange={(v) => upDebt(x.id, { label:v })} />
                       <NumberField value={x.balance} placeholder="الرصيد" onChange={(v) => upDebt(x.id, { balance:v })} />
-                      <NumberField value={x.apr} placeholder="0" onChange={(v) => upDebt(x.id, { apr:v })} />
+                      <NumberField value={x.apr} placeholder="فائدة ٪" onChange={(v) => upDebt(x.id, { apr:v })} />
                       <NumberField value={x.min} placeholder="الحد الأدنى" onChange={(v) => upDebt(x.id, { min:v })} />
                       <button onClick={() => delDebt(x.id)} style={{ ...btn, padding:"6px 8px", fontSize:11.5, color:T.bad, borderColor:"#E9C8CE" }}>حذف</button>
                     </div>
@@ -1450,7 +1479,7 @@ export default function App() {
               <Card>
                 <div style={{ fontFamily:T.display, fontWeight:700, marginBottom:14 }}>المصروفات الشهرية</div>
                 {d.exp.map((e, i) => ({ e, i })).filter(({ i }) => !EXPENSES[i][3] || moreExp || d.exp[i].cost > 0).map(({ e, i }) => (
-                  <div key={i} style={{ display:"grid", gridTemplateColumns:"1fr 110px 92px", gap:8, alignItems:"center", marginBottom:8 }}>
+                  <div key={i} className="exp-row" style={{ display:"grid", gridTemplateColumns:"1fr 110px 92px", gap:8, alignItems:"center", marginBottom:8 }}>
                     <TextField value={e.label} onChange={(v) => { const a = d.exp.slice(); a[i] = { ...a[i], label:v }; up({ exp:a }); }} />
                     <NumberField value={e.cost} onChange={(v) => { const a = d.exp.slice(); a[i] = { ...a[i], cost:v }; up({ exp:a }); }} />
                     <button onClick={() => { const a = d.exp.slice(); a[i] = { ...a[i], type:a[i].type === "احتياج" ? "رغبة" : "احتياج" }; up({ exp:a }); }}
