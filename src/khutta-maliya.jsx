@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from "react";
 import { storage } from "./lib/storage.js";
+
+// recharts تُحمَّل عند الوصول لشاشة «القراءة» فقط — انظر التعليق في CashflowChart.jsx
+const CashflowChart = lazy(() => import("./CashflowChart.jsx"));
 
 // الهوية البصرية "Horizon Financial" من مشروع Stitch — نظام تصميم مُعَدّ لهذا التطبيق تحديداً.
 const T = {
@@ -1582,19 +1584,21 @@ export default function App() {
               <Row k="الرصيد المتبقي بعد خمس سنوات" v={money(c.endPot, d.cur)} col={c.endPot >= 0 ? T.good : T.bad} />
             </Card>
             <Card style={{ marginBottom:16 }}>
-              <div dir="ltr" style={{ width:"100%", height:260 }}>
-                <ResponsiveContainer>
-                  <BarChart data={[0,1,2,3,4].map((y) => ({ name:`Year ${y + 1}`, "تكلفة الأهداف (اسمية)":c.costYear[y], "المتاح فعلياً":Math.max(c.capYear[y], 0) }))}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={T.line} />
-                    <XAxis dataKey="name" tick={{ fontSize:11, fill:T.muted }} />
-                    <YAxis tick={{ fontSize:11, fill:T.muted }} />
-                    <Tooltip formatter={(v) => money(v, d.cur)} />
-                    <Legend wrapperStyle={{ fontSize:12, fontFamily:T.body }} />
-                    <Bar dataKey="تكلفة الأهداف (اسمية)" fill={T.ink} radius={[4,4,0,0]} />
-                    <Bar dataKey="المتاح فعلياً" fill={T.fillLine} radius={[4,4,0,0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <Suspense fallback={
+                <div style={{ height:260, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>
+                  جارٍ تحميل الرسم…
+                </div>
+              }>
+                <CashflowChart
+                  theme={T}
+                  formatter={(v) => money(v, d.cur)}
+                  data={[0,1,2,3,4].map((y) => ({
+                    name:`Year ${y + 1}`,
+                    "تكلفة الأهداف (اسمية)":c.costYear[y],
+                    "المتاح فعلياً":Math.max(c.capYear[y], 0),
+                  }))}
+                />
+              </Suspense>
               <p style={{ fontSize:11.5, color:T.muted, margin:"8px 0 0", lineHeight:1.7 }}>
                 «المتاح فعلياً» هو الفائض السنوي بعد خصم ما ذهب لصندوق الطوارئ في تلك السنة، لا الفائض الخام.
                 «تكلفة الأهداف» هنا اسمية — مضخّمة بمعدّل التضخّم ({d.inflation || 0}٪ سنوياً) حسب موعد كل هدف،
