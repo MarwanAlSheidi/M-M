@@ -116,7 +116,11 @@ const browser = await chromium.launch({
   ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
   args: ["--no-sandbox"],
 });
-const page = await browser.newPage();
+// عامل الخدمة يُخزّن كل الأصول مسبقاً — بما فيها حزمة الرسم — فيُفسد فحص
+// التحميل الكسول الذي يقيس ما يطلبه *التطبيق نفسه*. يُعطَّل هنا، ويُفحص سلوك
+// PWA كاملاً في scripts/check-pwa.mjs بسياق منفصل.
+const context = await browser.newContext({ serviceWorkers: "block" });
+const page = await context.newPage();
 const consoleErrors = [];
 page.on("pageerror", (e) => consoleErrors.push(String(e)));
 
@@ -265,7 +269,7 @@ console.log("\n══ التقرير المصدَّر (الملف الذي يص�
   const out = "/tmp/khutta-exported-report.html";
   fs.copyFileSync(await dl.path(), out);
 
-  const p2 = await browser.newPage();
+  const p2 = await context.newPage();
   await p2.goto("file://" + out);
   await p2.waitForSelector("table");
   const measured = await p2.evaluate(() => {
