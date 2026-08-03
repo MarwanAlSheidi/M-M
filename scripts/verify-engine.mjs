@@ -372,6 +372,33 @@ console.log("\n══ استيراد نسخة (الاستعادة بعد فقد 
   expect("ملف ليس خطة يُرفض بلا إنشاء عميل", after, before);
 }
 
+console.log("\n══ ملفات مشوّهة لا تعطب التطبيق ══");
+{
+  // ملف يحمل مفتاح خطة لكن بأنواع خاطئة يجتاز فحص الشكل ويصل migrate. وانهيار
+  // هنا دائم لا عابر: الخطة تُحفَظ فتُقرأ عند كل إقلاع وتنهار من جديد، فلا مخرج
+  // إلا مسح تخزين المتصفّح يدوياً. لذا يُفحص البقاء بعد إعادة التحميل أيضاً.
+  const malformed = [
+    ["exp = null", { exp:null, assets:[0,0,0,0,0,0,0] }],
+    ["assets نصّ لا مصفوفة", { exp:[], assets:"hello" }],
+    ["goals كائن لا مصفوفة", { exp:[], goals:{} }],
+    ["ans بفهرس خارج مدى الخيارات", { exp:[], ans:{ c1:99 } }],
+    ["inc رقم لا مصفوفة", { exp:[], inc:5 }],
+    ["أرقام نصّية وسالبة", { exp:[], assets:["-5","x",null], efNow:"-900", age:"abc" }],
+    ["debts فيها null", { exp:[], debts:[null, { balance:"abc", apr:"-3" }] }],
+  ];
+  const f = "/tmp/khutta-verify-malformed.json";
+  for (const [label, payload] of malformed) {
+    fs.writeFileSync(f, JSON.stringify(payload));
+    await page.locator("input[type=file]").setInputFiles(f);
+    await page.waitForTimeout(600);
+    await page.reload({ waitUntil: "domcontentloaded" }).catch(() => {});
+    const alive = await page.locator("text=العميل").count().catch(() => 0);
+    expect(`يبقى التطبيق حيّاً بعد إعادة التحميل — ${label}`, alive > 0, true);
+  }
+  // تنظيف: الخطط المشوّهة تراكمت كعملاء
+  await page.evaluate(() => localStorage.clear());
+}
+
 console.log("\n══ أخطاء المتصفّح ══");
 expect("لا أخطاء في الطرفية", consoleErrors.length ? consoleErrors.join(" | ") : "لا شيء", "لا شيء");
 

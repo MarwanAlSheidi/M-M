@@ -109,18 +109,91 @@ const blank = () => ({
   zakat: { flags: ZAKAT_DEFAULT_FLAGS(), nisab:0, hawl:true },
 });
 
+const num = (v, dflt = 0) => { const n = Number(v); return Number.isFinite(n) ? n : dflt; };
+const clamp = (v, lo, hi, dflt = 0) => Math.min(hi, Math.max(lo, num(v, dflt)));
+const str = (v, dflt = "") => (typeof v === "string" ? v : dflt);
+const oneOf = (v, allowed, dflt = "") => (allowed.includes(v) ? v : dflt);
+
+/*
+ * migrate هي المعبر الوحيد لكل بيانات الخطة: التحميل من التخزين، والاستيراد من
+ * ملف، وترحيل النسخة القديمة. لذلك التطهير هنا لا في مواضع الاستخدام.
+ *
+ * الانهيار في هذه الطبقة لا يُصلَح بإعادة التحميل: الخطة تُحفَظ في localStorage،
+ * فتُقرأ عند كل إقلاع وتنهار من جديد — يبقى التطبيق معطوباً بلا مخرج إلا مسح
+ * تخزين المتصفّح يدوياً. ملفٌ واحد بـ exp:null أو ans:{c1:99} كان يكفي لذلك.
+ */
 const migrate = (raw) => {
-  const o = { ...blank(), ...raw, ans: raw.ans || {} };
-  if (Array.isArray(raw.months) && !Array.isArray(raw.goals)) {
-    o.goals = raw.months.map((m, i) => ({ ...m, m:i })).filter((g) => g.type || g.cost > 0)
-      .map((g, k) => ({ id:`m${k}`, m:g.m, type:g.type || "", tier:g.tier || "", cost:g.cost || 0, fund:g.fund || "" }));
+  const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const o = { ...blank(), ...src };
+
+  // ترحيل النسخة القديمة ذات months[60] — قبل التطهير كي يمرّ ناتجها به
+  if (Array.isArray(src.months) && !Array.isArray(src.goals)) {
+    o.goals = src.months.map((m, i) => ({ ...(m && typeof m === "object" ? m : {}), m:i }))
+      .filter((g) => g.type || num(g.cost) > 0)
+      .map((g, k) => ({ id:`m${k}`, m:g.m, type:g.type, tier:g.tier, cost:g.cost, fund:g.fund }));
   }
-  if (!Array.isArray(o.debts)) o.debts = [];
+
+  o.cur = oneOf(o.cur, CURRENCIES.map((c) => c.code), "OMR");
+  o.age = clamp(o.age, 0, 120);
+  o.inflation = clamp(o.inflation, 0, 100, 2.5);
+  o.efNow = Math.max(0, num(o.efNow));
+  o.efOverride = clamp(o.efOverride, 0, 12);
+  o.debtExtra = Math.max(0, num(o.debtExtra));
+  for (const k of QKEYS) o[k] = oneOf(o[k], Q[k].o.map((x) => x[0]), "");
+
+  // الطول ملزم: assets[2] الاستثمارات و assets[3] التقاعد يدخلان حساب الاستقلال
+  o.assets = ASSETS.map((_, i) => Math.max(0, num(Array.isArray(src.assets) ? src.assets[i] : 0)));
+  o.liabs = LIABS.map((_, i) => Math.max(0, num(Array.isArray(src.liabs) ? src.liabs[i] : 0)));
+
+  // exp تُقرأ بالمفتاح لا بالفهرس، فتُعاد بناءً على الجدول المرجعي
+  o.exp = EXPENSES.map(([key, label, type]) => {
+    const f = Array.isArray(src.exp) ? src.exp.find((e) => e && e.key === key) : null;
+    return {
+      key,
+      label: str(f && f.label).trim() || label,
+      type: oneOf(f && f.type, ["احتياج", "رغبة"], type),
+      cost: Math.max(0, num(f && f.cost)),
+    };
+  });
+  o.inc = INCOMES.map(([label], i) => {
+    const f = Array.isArray(src.inc) ? src.inc[i] : null;
+    return { label: str(f && f.label).trim() || label, amount: Math.max(0, num(f && f.amount)) };
+  });
+
+  o.goals = (Array.isArray(o.goals) ? o.goals : []).filter((g) => g && typeof g === "object")
+    .map((g, i) => ({
+      id: str(g.id).trim() || `g${i}`,
+      m: clamp(Math.round(num(g.m)), 0, 59), // خارج 0..59 لا تدخل المحاكاة أصلاً
+      type: oneOf(g.type, GOAL_TYPES.map((t) => t[0]), ""),
+      tier: oneOf(g.tier, TIERS.map((t) => t[0]), ""),
+      cost: Math.max(0, num(g.cost)),
+      fund: oneOf(g.fund, FUNDING.map((f) => f[0]), ""),
+    }));
+
+  o.debts = (Array.isArray(src.debts) ? src.debts : []).filter((x) => x && typeof x === "object")
+    .map((x, i) => ({
+      id: str(x.id).trim() || `b${i}`,
+      label: str(x.label),
+      balance: Math.max(0, num(x.balance)),
+      apr: clamp(x.apr, 0, 200),
+      min: Math.max(0, num(x.min)),
+    }));
+
+  // فهرس إجابة خارج مدى خيارات البطاقة يجعل card.o[i].c ينهار في computeIdentity
+  const srcAns = src.ans && typeof src.ans === "object" ? src.ans : {};
+  o.ans = {};
+  for (const card of CARDS) {
+    const i = srcAns[card.id];
+    if (Number.isInteger(i) && i >= 0 && i < card.o.length) o.ans[card.id] = i;
+  }
+
+  const zf = src.zakat && typeof src.zakat.flags === "object" && src.zakat.flags ? src.zakat.flags : {};
   o.zakat = {
-    flags: { ...ZAKAT_DEFAULT_FLAGS(), ...((raw.zakat && raw.zakat.flags) || {}) },
-    nisab: (raw.zakat && raw.zakat.nisab) || 0,
-    hawl: raw.zakat ? raw.zakat.hawl !== false : true,
+    flags: Object.fromEntries(ASSETS.map(([k]) => [k, k in zf ? !!zf[k] : ZAKAT_DEFAULT_FLAGS()[k]])),
+    nisab: Math.max(0, num(src.zakat && src.zakat.nisab)),
+    hawl: src.zakat ? src.zakat.hawl !== false : true,
   };
+
   delete o.months; delete o.lik; delete o.ch; delete o.risk;
   return o;
 };
@@ -1251,7 +1324,9 @@ export default function App() {
                   </ol>
                 </Card>
 
-                {id.second && !id.incons && (
+                {/* نسبة الثاني قد تكون صفراً (كل الإجابات في فئة واحدة)، فيُعرض
+                    «نمطك الثاني … بنسبة 0٪» لنمط لم يظهر منه شيء */}
+                {id.second && !id.incons && id.P[id.second] > 0 && (
                   <Card style={{ marginBottom:12 }}>
                     <div style={{ fontSize:12, color:T.muted, marginBottom:4 }}>نمطك الثاني</div>
                     <div style={{ fontSize:13.5, lineHeight:1.85 }}>
