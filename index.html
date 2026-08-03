@@ -3272,6 +3272,18 @@
       c.strokeStyle = "rgba(38,28,18,0.55)"; c.lineWidth = 1; c.stroke();
     }
 
+    // الليل الحالي وقائمة النوافذ المضاءة: تُملأ أثناء رسم المباني وتُرسم
+    // ثانيةً فوق ستارة الليل، وإلا أطفأتها الستارة كما تطفئ الجدار.
+    let nightNow = 0;
+    const LIT_WINDOWS = [];
+    // بذرة ثابتة لكل نافذة: البيت نفسه يُضيء نوافذه نفسها كل ليلة.
+    function winSeed(id, r, i, side) {
+      let h = 2166136261;
+      const s = id + ":" + r + ":" + i + ":" + side;
+      for (let k = 0; k < s.length; k++) { h ^= s.charCodeAt(k); h = Math.imul(h, 16777619); }
+      return ((h >>> 0) % 1000) / 1000;
+    }
+
     function drawIsoBuilding(c, b) {
       const st = BUILDING_STYLE[b.id] || BUILDING_STYLE.home;
       let H = st.h;
@@ -3328,13 +3340,24 @@
         const perRow = 3;
         for (let i = 0; i < perRow; i++) {
           const f0 = (i + 0.22) / perRow, f1 = (i + 0.78) / perRow;
+          // نافذة تُضيء حين يعمق الليل بما يكفي لعتبتها، فتُشعل المدينة
+          // نافذةً بعد نافذة عند الغروب بدل أن تُضاء دفعة واحدة. وخُمسها
+          // لا يُضيء أبدًا: بيتٌ نائم، أو غرفة لا أحد فيها.
+          const front = winSeed(b.id, r, i, "f"), right = winSeed(b.id, r, i, "r");
+          const litF = front > 0.20 && nightNow > 0.10 + front * 0.34;
+          const litR = right > 0.20 && nightNow > 0.10 + right * 0.34;
           // الواجهة السفلى
           faceQuad(c, x0 + ff * f0, y1, x0 + ff * f1, y1, u0, u1,
-                   "rgba(30,42,52,0.85)", "rgba(232,217,168,0.35)");
+                   litF ? "rgba(120,86,40,0.9)" : "rgba(30,42,52,0.85)",
+                   litF ? "rgba(255,214,150,0.5)" : "rgba(232,217,168,0.35)");
           // الجانب الأيمن
           const g0 = y1 + (y0 - y1) * f0, g1 = y1 + (y0 - y1) * f1;
           faceQuad(c, x1, g0, x1, g1, u0, u1,
-                   "rgba(22,32,40,0.9)", "rgba(232,217,168,0.22)");
+                   litR ? "rgba(96,68,30,0.92)" : "rgba(22,32,40,0.9)",
+                   litR ? "rgba(255,206,140,0.32)" : "rgba(232,217,168,0.22)");
+          // الوجه المواجه للشمس أسطع من الجانبي، كما في النهار
+          if (litF) LIT_WINDOWS.push([x0 + ff * f0, y1, x0 + ff * f1, y1, u0, u1, 0.62]);
+          if (litR) LIT_WINDOWS.push([x1, g0, x1, g1, u0, u1, 0.4]);
         }
       }
 
@@ -3906,6 +3929,8 @@
       }
 
       // العمق في الإيزومتري هو (x+y): ما زاد مجموعه كان أقرب فرُسم فوق غيره
+      nightNow = night;
+      LIT_WINDOWS.length = 0;
       const entities = [];
       for (const t of TREES) entities.push({ d: isoDepth(t.x, t.y), kind: "tree", ref: t });
       for (const n of NPCS) entities.push({ d: isoDepth(n.x, n.y + 14), kind: "npc", ref: n });
@@ -3948,6 +3973,11 @@
 
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
+        // النوافذ المضاءة تُعاد فوق الستارة، وإلا صبغتها بالأزرق كالجدار.
+        for (const w of LIT_WINDOWS) {
+          faceQuad(ctx, w[0], w[1], w[2], w[3], w[4], w[5],
+                   `rgba(255,196,110,${w[6] * night})`, null);
+        }
         for (const l of LAMPS) {
           const lx = isoX(l.x, l.y), ly = isoY(l.x, l.y) - 16;
           const g = ctx.createRadialGradient(lx, ly, 2, lx, ly, 46);
