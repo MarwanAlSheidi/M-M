@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:single": "vite build --config vite.config.single.js && node scripts/make-single.mjs",
     "preview": "vite preview",
     "verify": "vite build && node scripts/verify-engine.mjs && node scripts/check-mobile.mjs && node scripts/check-pwa.mjs",
     "verify:mobile": "vite build && node scripts/check-mobile.mjs",
     "verify:pwa": "vite build && node scripts/check-pwa.mjs",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "verify:single": "vite build --config vite.config.single.js && node scripts/make-single.mjs && node scripts/check-single.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
