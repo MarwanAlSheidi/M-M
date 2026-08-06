@@ -12,7 +12,8 @@
     "verify:mobile": "vite build && node scripts/check-mobile.mjs",
     "verify:pwa": "vite build && node scripts/check-pwa.mjs",
     "icons": "node scripts/make-icons.mjs",
-    "verify:single": "vite build --config vite.config.single.js && node scripts/make-single.mjs && node scripts/check-single.mjs"
+    "verify:single": "vite build --config vite.config.single.js && node scripts/make-single.mjs && node scripts/check-single.mjs",
+    "export": "npm run build && npm run build:single && node scripts/make-export.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
