@@ -125,7 +125,9 @@ const consoleErrors = [];
 page.on("pageerror", (e) => consoleErrors.push(String(e)));
 
 // الخطوط تُحمَّل من شبكة خارجية؛ فشلها لا يعني خطأً في المحرّك.
-const isFontNoise = (t) => /fonts\.(googleapis|gstatic)|ERR_CONNECTION|404/.test(t);
+// ERR_CERT_* لا يمكن أن يصدر إلا عن مورد خارجي (الخادم المحلي http بلا شهادة أصلاً)،
+// وغالباً يظهر بلا اسم النطاق حين تعترض بيئة الاختبار الشبكة بوسيط TLS خاص بها.
+const isFontNoise = (t) => /fonts\.(googleapis|gstatic)|ERR_CONNECTION|ERR_CERT_|404/.test(t);
 page.on("console", (m) => { if (m.type() === "error" && !isFontNoise(m.text())) consoleErrors.push(m.text()); });
 
 await page.goto(URL);
