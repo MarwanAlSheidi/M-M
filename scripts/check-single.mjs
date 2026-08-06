@@ -38,6 +38,8 @@ await page.goto(`file://${wrapped}`);
 console.log("\n══ النسخة أحادية الملف ══");
 await page.waitForSelector("text=العميل", { timeout: 15000 });
 expect("التطبيق يُقلع بلا خادم (ملف واحد)", true, true);
+// بقاؤها يعني أن React لم يرسم — وهي بديل الصفحة البيضاء الصامتة
+expect("رسالة الإقلاع اختفت بعد أول رسم", await page.locator("#boot").count(), 0);
 expect("لا طلبات لموارد خارجية", external.length ? external.join(" | ") : "لا شيء", "لا شيء");
 expect("الاتجاه من اليمين لليسار",
   await page.locator("div[dir=rtl]").first().count() > 0, true);
@@ -57,6 +59,42 @@ expect("الرسم البياني يظهر", chart, true);
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 expect("لا تجاوز أفقي على 390px", overflow <= 1, true);
 expect("لا أخطاء في الطرفية", errors.length ? errors.join(" | ") : "لا شيء", "لا شيء");
+
+// منصّات المشاركة تعرض الصفحة داخل إطار يبدأ بارتفاع صفر ويكبر بحجم محتواه.
+// أي قاعدة height:100% هنا تجعل المحتوى ينتظر الإطار والإطار ينتظر المحتوى:
+// النتيجة صفحة بيضاء لا خطأ فيها — لذا يُقاس الارتفاع لا وجود العناصر.
+console.log("\n══ داخل إطار يقيس ارتفاعه من المحتوى ══");
+{
+  const framed = await ctx.newPage();
+  // srcdoc لا src: إطار من file:// يصير مصدراً مختلفاً فيُحجب contentDocument،
+  // فيفشل القياس لا الصفحة.
+  await framed.setContent(`<iframe id="f" style="width:390px;height:0;border:0"></iframe>`);
+  await framed.evaluate((html) => { document.getElementById("f").srcdoc = html; }, content);
+  const h = await framed.waitForFunction(() => {
+    const doc = document.getElementById("f").contentDocument;
+    const grown = doc && doc.documentElement.scrollHeight;
+    return grown > 400 ? grown : false;
+  }, null, { timeout: 15000 }).then((r) => r.jsonValue()).catch(() => 0);
+  expect("المحتوى يمدّ الإطار (لا صفحة بيضاء)", h > 400, true);
+  await framed.close();
+}
+
+// سفاري يمنع التخزين عن الصفحات المضمَّنة، فيرمي مجرّد قراءة localStorage.
+// لو لم يُلتقط الاعتراض ماتت الواجهة قبل أول رسم وظهرت صفحة بيضاء.
+console.log("\n══ والتخزين ممنوع (سفاري داخل إطار) ══");
+{
+  const blocked = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await blocked.addInitScript(() => {
+    const boom = () => { throw new DOMException("blocked", "SecurityError"); };
+    Object.defineProperty(window, "localStorage", { get: boom, configurable: true });
+  });
+  const p = await blocked.newPage();
+  await p.goto(`file://${wrapped}`);
+  const alive = await p.locator("text=العميل").first()
+    .waitFor({ state: "visible", timeout: 15000 }).then(() => true).catch(() => false);
+  expect("التطبيق يظهر رغم منع التخزين", alive, true);
+  await blocked.close();
+}
 
 await browser.close();
 
