@@ -1,17 +1,17 @@
 /*
- * يفحص النسخة أحادية الملف كما تُعرض بعد النشر: تُغلَّف بمستند بسيط بلا أي
- * مورد خارجي (الخطوط تسقط إلى خطّ النظام)، ثم تُفتح فعلياً ويُتنقَّل بين الشاشات.
+ * يفحص المستند المستقل كما يفتحه المستخدم فعلاً: الملف نفسه بالنقر عليه، بلا أي
+ * تغليف يضيف ما ينقصه — فالتغليف في الفحص هو ما أخفى سابقاً أن الملف المُرسَل كان
+ * مقطعاً ناقصاً لا مستنداً. ويُفحص مقطع النشر منفصلاً في اختبار الإطار.
  *
  * التشغيل: npm run verify:single
  */
 import { chromium } from "playwright";
-import { readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-const content = readFileSync("dist-single/khutta-maliya.html", "utf8");
-const wrapped = join(tmpdir(), "khutta-single-check.html");
-writeFileSync(wrapped, `<!doctype html><html><head><meta charset="utf-8"></head><body>${content}</body></html>`);
+const FILE = resolve("dist-single/khutta-maliya.html");
+const standalone = readFileSync(FILE, "utf8");
+const content = readFileSync("dist-single/embed.html", "utf8");
 
 let passed = 0; const failures = [];
 const expect = (label, actual, expected) => {
@@ -33,7 +33,17 @@ page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 const external = [];
 page.on("request", (r) => { if (!r.url().startsWith("file:")) external.push(r.url()); });
 
-await page.goto(`file://${wrapped}`);
+await page.goto(`file://${FILE}`);
+
+// ما ينقص المقطع ويلزم المستند: بلا doctype يدخل وضع quirks، وبلا charset قد
+// يُقرأ العربي بترميز خاطئ، وبلا viewport يُعرض بعرض حاسوب على الجوال.
+console.log("\n══ مستند كامل لا مقطع ══");
+expect("يبدأ بـdoctype", /^<!doctype html>/i.test(standalone.trim()), true);
+expect("ترميز الحروف utf-8", await page.evaluate(() => document.characterSet.toLowerCase()), "utf-8");
+expect("إعداد عرض الجوال موجود", await page.locator('meta[name=viewport]').count() > 0, true);
+expect("لغة المستند عربية", await page.evaluate(() => document.documentElement.lang), "ar");
+expect("اتجاه المستند rtl", await page.evaluate(() => document.documentElement.dir), "rtl");
+expect("ليس في وضع quirks", await page.evaluate(() => document.compatMode), "CSS1Compat");
 
 console.log("\n══ النسخة أحادية الملف ══");
 await page.waitForSelector("text=العميل", { timeout: 15000 });
@@ -79,6 +89,19 @@ console.log("\n══ داخل إطار يقيس ارتفاعه من المحت�
   await framed.close();
 }
 
+// نوافذ معاينة الملفات على الجوال تعطّل الجافاسكربت أحياناً. الواجب أن تُشرح
+// الحالة للمستخدم لا أن تُترك الشاشة بيضاء بلا سبب ظاهر.
+console.log("\n══ والجافاسكربت معطَّل (نافذة المعاينة) ══");
+{
+  const noJs = await browser.newContext({ viewport: { width: 390, height: 844 }, javaScriptEnabled: false });
+  const p = await noJs.newPage();
+  await p.goto(`file://${FILE}`);
+  const shown = (await p.locator("#boot").first().innerText().catch(() => "")).trim();
+  expect("تظهر رسالة مفهومة لا صفحة بيضاء", shown.length > 20, true);
+  expect("الرسالة ترشد لفتح الملف في متصفّح", /متصفّح/.test(shown), true);
+  await noJs.close();
+}
+
 // سفاري يمنع التخزين عن الصفحات المضمَّنة، فيرمي مجرّد قراءة localStorage.
 // لو لم يُلتقط الاعتراض ماتت الواجهة قبل أول رسم وظهرت صفحة بيضاء.
 console.log("\n══ والتخزين ممنوع (سفاري داخل إطار) ══");
@@ -89,7 +112,7 @@ console.log("\n══ والتخزين ممنوع (سفاري داخل إطار)
     Object.defineProperty(window, "localStorage", { get: boom, configurable: true });
   });
   const p = await blocked.newPage();
-  await p.goto(`file://${wrapped}`);
+  await p.goto(`file://${FILE}`);
   const alive = await p.locator("text=العميل").first()
     .waitFor({ state: "visible", timeout: 15000 }).then(() => true).catch(() => false);
   expect("التطبيق يظهر رغم منع التخزين", alive, true);
