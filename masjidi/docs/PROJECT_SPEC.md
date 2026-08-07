@@ -85,6 +85,7 @@
 | `confirmDonation` | نظام | تأكيد من البوابة وقيد المبلغ |
 | `payoutContractor` | admin | تسجيل صرف المستحقات |
 | `getMosqueLedger` | الجميع | السجل المالي الشفاف |
+| `getMosqueAuditTrail` | الجميع | سجل القرارات — الدور لا هوية الفاعل |
 | `health` | الجميع | فحص حالة الخادم |
 
 ## 7. قواعد الأمن
@@ -96,6 +97,7 @@
 | `ServiceRequests` | مصادَق | Master Key فقط (عبر دوال السحابة) |
 | `Transactions` | مصادَق، مع إخفاء بيانات المتبرع | Master Key فقط |
 | `MosqueClaims` | Master Key فقط | Master Key فقط |
+| `AuditLog` | Master Key فقط — يُقرأ عبر `getMosqueAuditTrail` | Master Key فقط |
 
 **تنبيه:** Master Key في متغيرات بيئة الخادم فقط. لا يظهر إطلاقاً في كود التطبيق.
 

@@ -49,6 +49,13 @@ test('المخطط', async (t) => {
     }
   });
 
+  await t.test('AuditLog مقفل تماماً — يُقرأ عبر دالة السحابة وحدها', () => {
+    const clp = classOf('AuditLog').classLevelPermissions;
+    for (const action of ['find', 'get', 'create', 'update', 'delete']) {
+      assert.deepEqual(clp[action], {}, `AuditLog.${action} مفتوح — يكشف هوية الفاعل`);
+    }
+  });
+
   await t.test('walletBalance غير مقروء من العميل', () => {
     assert.ok(classOf('Mosques').classLevelPermissions.protectedFields['*']
       .includes('walletBalance'));
@@ -60,7 +67,8 @@ test('نقاط الدخول', async (t) => {
     'getNearbyMosques', 'searchMosques', 'claimMosque', 'getMyClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'assignWorker', 'startWork', 'markWorkDone',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
-    'confirmDonation', 'payoutContractor', 'getMosqueLedger', 'health',
+    'confirmDonation', 'payoutContractor', 'getMosqueLedger',
+    'getMosqueAuditTrail', 'health',
   ];
 
   const EXPECTED_TRIGGERS = [
@@ -76,6 +84,13 @@ test('نقاط الدخول', async (t) => {
         `دوال النسخة ${entry} لا تطابق المتوقَّع`);
       assert.deepEqual(Object.keys(api.triggers).sort(), [...EXPECTED_TRIGGERS].sort(),
         `مُشغّلات النسخة ${entry} لا تطابق المتوقَّع`);
+    }
+  });
+
+  await t.test('المهمة الدورية مسجَّلة في النسختين', () => {
+    for (const entry of ['modular', 'bundle']) {
+      const api = loadCloud(entry);
+      assert.deepEqual(Object.keys(api.jobs), ['reviewPendingDonations'], `النسخة ${entry}`);
     }
   });
 

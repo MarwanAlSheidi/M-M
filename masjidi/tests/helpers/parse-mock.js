@@ -35,6 +35,7 @@ Object.assign(ParseError, {
 
 function createMock() {
   const functions = {}; // اسم الدالة → معالجها
+  const jobs = {}; // اسم المهمة الدورية → معالجها
   const triggers = {}; // "beforeSave:Mosques" → معالجه
   const store = {}; // اسم الفئة → كائنات
   const pushes = []; // { users, payload } لكل إشعار أُرسل
@@ -123,11 +124,13 @@ function createMock() {
       this.className = classNameOf(target);
       this._equal = [];
       this._greater = [];
+      this._less = [];
       this._contained = [];
     }
 
     equalTo(key, value) { this._equal.push([key, value]); return this; }
     greaterThan(key, value) { this._greater.push([key, value]); return this; }
+    lessThan(key, value) { this._less.push([key, value]); return this; }
     containedIn(key, values) { this._contained.push([key, values]); return this; }
     limit() { return this; }
     select() { return this; }
@@ -140,6 +143,7 @@ function createMock() {
       return (store[this.className] || []).filter((object) =>
         this._equal.every(([k, v]) => matches(object, k, v)) &&
         this._greater.every(([k, v]) => object.get(k) > v) &&
+        this._less.every(([k, v]) => object.get(k) < v) &&
         this._contained.every(([k, values]) => values.includes(object.get(k))));
     }
 
@@ -172,6 +176,7 @@ function createMock() {
     Error: ParseError,
     Cloud: {
       define: (name, handler) => { functions[name] = handler; },
+      job: (name, handler) => { jobs[name] = handler; },
       beforeSave: (target, handler) => { triggers[triggerKey(target, 'beforeSave')] = handler; },
       afterSave: (target, handler) => { triggers[triggerKey(target, 'afterSave')] = handler; },
       httpRequest: async ({ method }) => (method === 'POST'
@@ -210,6 +215,7 @@ function createMock() {
 
   return {
     functions,
+    jobs,
     triggers,
     store,
     pushes,
@@ -242,6 +248,14 @@ function createMock() {
       }
     },
 
+    /** تشغيل مهمة دورية؛ يُلتقط ما تبثّه عبر `message`. */
+    async runJob(name, params = {}) {
+      if (!this.jobs[name]) throw new Error(`مهمة غير مسجّلة: ${name}`);
+      const messages = [];
+      const result = await this.jobs[name]({ params, message: (m) => messages.push(m) });
+      return { result, messages };
+    },
+
     /** استدعاء مُشغّل مباشرةً — `save` في هذا البديل لا تُشغّلها تلقائياً. */
     async trigger(key, request) {
       if (!this.triggers[key]) throw new Error(`مُشغّل غير مسجّل: ${key}`);
@@ -254,9 +268,15 @@ function createMock() {
  * يثبّت البديل ثم يحمّل كود السحابة من الصفر.
  * التحميل بعد التثبيت لازم: الوحدات تقرأ `Parse` وتسجّل معالجاتها عند التحميل.
  */
-function loadCloud(entry = 'modular') {
-  process.env.THAWANI_SECRET_KEY = 'sk_test';
-  process.env.THAWANI_PUBLISHABLE_KEY = 'pk_test';
+function loadCloud(entry = 'modular', { payments = true } = {}) {
+  // `payments: false` يُحاكي المرحلة الأولى: منصّة بلا مفاتيح بوابة أصلاً
+  if (payments) {
+    process.env.THAWANI_SECRET_KEY = 'sk_test';
+    process.env.THAWANI_PUBLISHABLE_KEY = 'pk_test';
+  } else {
+    delete process.env.THAWANI_SECRET_KEY;
+    delete process.env.THAWANI_PUBLISHABLE_KEY;
+  }
 
   const file = ENTRIES[entry];
   if (!file) throw new Error(`نقطة دخول غير معروفة: ${entry}`);

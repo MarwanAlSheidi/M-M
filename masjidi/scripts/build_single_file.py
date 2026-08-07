@@ -10,6 +10,7 @@ ORDER = [
     ("lib/auth.js", "الصلاحيات والأدوار"),
     ("lib/push.js", "الإشعارات"),
     ("lib/payments.js", "بوابة الدفع"),
+    ("lib/audit.js", "سجل التدقيق"),
     ("triggers.js", "المُشغّلات (beforeSave / afterSave)"),
     ("functions/mosques.js", "دوال المساجد"),
     ("functions/requests.js", "دوال طلبات الصيانة"),
@@ -19,6 +20,7 @@ ORDER = [
 REPLACEMENTS = {
     "lib/errors.js": [(r"module\.exports = \{", "const E = {")],
     "lib/payments.js": [(r"module\.exports = \{[^}]*\};", "const payments = { isConfigured, createCheckoutSession, verifySession };")],
+    "lib/audit.js": [(r"module\.exports = \{[^}]*\};", "const audit = { record, ACTIONS };")],
 }
 
 DROP = re.compile(r"^\s*(const .*= require\(|module\.exports\s*=\s*\{\s*(ROLES|pushToUsers|STATUS)).*$")

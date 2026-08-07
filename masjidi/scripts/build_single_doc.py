@@ -17,6 +17,7 @@ CLOUD_FILES = [
     "cloud/lib/auth.js",
     "cloud/lib/push.js",
     "cloud/lib/payments.js",
+    "cloud/lib/audit.js",
     "cloud/functions/mosques.js",
     "cloud/functions/requests.js",
     "cloud/functions/donations.js",
@@ -26,6 +27,8 @@ TEST_FILES = [
     ("tests/helpers/parse-mock.js", "بديل Parse — مخزن في الذاكرة بلا خادم"),
     ("tests/donations.test.js", "المسار المالي: التأكيد والحجز"),
     ("tests/triggers.test.js", "حماية الأدوار وإقفال الحساب على صاحبه"),
+    ("tests/requests.test.js", "دورة حياة الطلب والإلغاء والصرف"),
+    ("tests/audit.test.js", "سجل التدقيق والمهمة الدورية"),
     ("tests/schema.test.js", "الصلاحيات وتطابق النسختين"),
 ]
 

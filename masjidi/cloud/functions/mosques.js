@@ -1,5 +1,6 @@
 const E = require('../lib/errors');
 const { requireUser, requireRole } = require('../lib/auth');
+const audit = require('../lib/audit');
 
 const PUBLIC_FIELDS = [
   'name', 'mosqueNumber', 'type', 'typeSlug', 'governorate', 'wilayat',
@@ -133,6 +134,14 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
     mosque.set('isClaimed', true);
     await mosque.save(null, { useMasterKey: true });
   }
+
+  await audit.record({
+    action: audit.ACTIONS.CLAIM_REVIEWED,
+    target: claim,
+    mosque: claim.get('mosqueId'),
+    actor: admin,
+    toStatus: claim.get('status'),
+  });
 
   return { status: claim.get('status') };
 });

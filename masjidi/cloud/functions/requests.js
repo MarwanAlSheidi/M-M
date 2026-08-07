@@ -1,6 +1,7 @@
 const E = require('../lib/errors');
 const { requireUser, requireRole, mosqueForImam, fetchPointer } = require('../lib/auth');
 const { pushToUsers, pushToNearbyVolunteers } = require('../lib/push');
+const audit = require('../lib/audit');
 
 /**
  * دورة حياة الطلب:
@@ -56,6 +57,14 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
 
   await serviceRequest.save(null, { useMasterKey: true });
 
+  await audit.record({
+    action: audit.ACTIONS.REQUEST_CREATED,
+    target: serviceRequest,
+    mosque,
+    actor: imam,
+    toStatus: serviceRequest.get('status'),
+  });
+
   if (cost === 0) {
     await pushToNearbyVolunteers(mosque, {
       alert: `فرصة تطوّع: ${serviceRequest.get('title')} — مسجد ${mosque.get('name')}`,
@@ -98,9 +107,19 @@ Parse.Cloud.define('assignWorker', async (request) => {
     E.invalid('المستخدم ليس متطوعاً ولا شركة خدمات.');
   }
 
+  const previousStatus = serviceRequest.get('status');
   serviceRequest.set('status', STATUS.ASSIGNED);
   serviceRequest.set('assignedAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.WORKER_ASSIGNED,
+    target: serviceRequest,
+    mosque,
+    actor: imam,
+    fromStatus: previousStatus,
+    toStatus: STATUS.ASSIGNED,
+  });
 
   await pushToUsers(worker, {
     alert: `تم تكليفك بـ "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
@@ -119,6 +138,16 @@ Parse.Cloud.define('startWork', async (request) => {
   serviceRequest.set('status', STATUS.IN_PROGRESS);
   serviceRequest.set('startedAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.WORK_STARTED,
+    target: serviceRequest,
+    mosque: serviceRequest.get('mosqueId'),
+    actor: user,
+    fromStatus: STATUS.ASSIGNED,
+    toStatus: STATUS.IN_PROGRESS,
+  });
+
   return serviceRequest.toJSON();
 });
 
@@ -137,6 +166,16 @@ Parse.Cloud.define('markWorkDone', async (request) => {
   await serviceRequest.save(null, { useMasterKey: true });
 
   const mosque = await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
+
+  await audit.record({
+    action: audit.ACTIONS.WORK_DONE,
+    target: serviceRequest,
+    mosque,
+    actor: user,
+    fromStatus: STATUS.IN_PROGRESS,
+    toStatus: STATUS.PENDING_APPROVAL,
+  });
+
   const imam = mosque.get('imamId');
   if (imam) {
     await pushToUsers(imam, {
@@ -172,6 +211,15 @@ Parse.Cloud.define('completeService', async (request) => {
 
   await recordWorkerRating(serviceRequest, score);
 
+  await audit.record({
+    action: audit.ACTIONS.REQUEST_COMPLETED,
+    target: serviceRequest,
+    mosque: serviceRequest.get('mosqueId'),
+    actor: imam,
+    fromStatus: STATUS.PENDING_APPROVAL,
+    toStatus: STATUS.COMPLETED,
+  });
+
   // TODO: صرف المستحقات للشركة يتم عبر دالة payout منفصلة بعد الاعتماد (functions/donations.js)
   // TODO: تسجيل ساعات التطوّع في منصة "أيادي" — يحتاج اتفاقية وAPI key رسمي.
 
@@ -202,6 +250,15 @@ Parse.Cloud.define('cancelServiceRequest', async (request) => {
   serviceRequest.set('status', STATUS.CANCELLED);
   serviceRequest.set('cancelledAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.REQUEST_CANCELLED,
+    target: serviceRequest,
+    mosque,
+    actor: imam,
+    fromStatus: status,
+    toStatus: STATUS.CANCELLED,
+  });
 
   // المنفّذ المكلَّف قد يكون في طريقه إلى المسجد — يجب أن يعلم
   const worker = serviceRequest.get('assignedVolunteerId')

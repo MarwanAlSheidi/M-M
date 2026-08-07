@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ مكتوب، ❌ لم يُشغّل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ❌ لم يبدأ |
-| الاختبارات | ⚠️ 39 حالة على بديل Parse (`npm test`) — لا اختبار تكامل على خادم حقيقي |
+| الاختبارات | ⚠️ 64 حالة على بديل Parse (`npm test`) — لا اختبار تكامل على خادم حقيقي |
 
 ---
 
@@ -110,10 +110,11 @@ cloud/
     auth.js            التحقق من الأدوار وملكية المسجد
     push.js            الإشعارات (استعلام على _Installation لا _User)
     payments.js        محوّل بوابة ثواني
+    audit.js           سجل التدقيق — لا يرمي أبداً
   functions/
     mosques.js         البحث، القرب الجغرافي، طلب ملكية المسجد
     requests.js        دورة حياة طلب الصيانة
-    donations.js       التبرع، التأكيد، الصرف، السجل المالي
+    donations.js       التبرع، التأكيد، الصرف، السجل المالي، المهمة الدورية
 scripts/
   clean_mosques.py     Excel → JSON نظيف
   seed_mosques.js      استيراد إلى Parse (idempotent)
@@ -124,6 +125,8 @@ tests/
   helpers/parse-mock.js بديل Parse مصغَّر — مخزن في الذاكرة، بلا خادم
   donations.test.js    المسار المالي: التأكيد والحجز
   triggers.test.js     حماية الأدوار وإقفال الحساب على صاحبه
+  requests.test.js     دورة حياة الطلب، الإلغاء، التقييم، الصرف
+  audit.test.js        سجل التدقيق والمهمة الدورية
   schema.test.js       الصلاحيات، وتطابق النسختين المجزّأة والمدمجة
 data/
   mosques.json         18,214 سجلاً جاهزاً
@@ -229,8 +232,6 @@ Parse.Cloud.define("completeService", async (request) => {
 
 ---
 
----
-
 ### 🔴 جولة ثانية — ثغرات في الكود المُصلَح نفسه
 
 الإصلاحات أعلاه صحيحة في جوهرها، لكن ثلاثاً منها بقيت مفتوحة عند حوافّها.
@@ -289,10 +290,10 @@ const remaining = serviceRequest.get('estimatedCost') - (serviceRequest.get('fun
   Parse في الذاكرة (`tests/helpers/parse-mock.js`)، وهو يرصد أخطاء المنطق لا
   أخطاء المنصّة: الفهارس، والصلاحيات كما يطبّقها الخادم فعلاً، وذرّية
   `increment` تحت التزامن — كلها خارج تغطيته. يلزم `parse-server` محلي.
-- **لا يوجد webhook للبوابة.** `confirmDonation` صارت تقبل الاستدعاء بـ Master
-  Key فأصبح ربط webhook ممكناً، لكن لا نقطة نهاية مُنفَّذة بعد. وإذا أغلق
-  المستخدم التطبيق تبقى المعاملة `pending` حتى تنتهي مهلة الحجز. يلزم
-  `Parse.Cloud.job` دورية تُراجع المعاملات المعلّقة وتُقفلها لدى البوابة.
+- **لا يوجد webhook للبوابة.** `confirmDonation` تقبل الاستدعاء بـ Master Key
+  فربطه ممكن، لكن لا نقطة نهاية مُنفَّذة بعد. المهمة الدورية
+  `reviewPendingDonations` تسدّ الفجوة بفحص دوري بدل الدفع الفوري، فيتأخر قيد
+  المبلغ إلى موعد التشغيل التالي.
 - **لا يوجد استرداد (refund)** لحالات إلغاء الطلب بعد التمويل، ولا للتمويل
   الزائد إن أفلت من الحجز.
 - **حقول معرّفة ولا تُكتب بعد:** `skills` و`favoriteMosqueId` و`crNumber` و
@@ -302,7 +303,8 @@ const remaining = serviceRequest.get('estimatedCost') - (serviceRequest.get('fun
 - **`externalId_unique` اسم يَعِد بما لا يُنفّذه** — التعريف `{externalId: 1}`
   فهرس عادي، وواجهة مخطط Parse لا تعبّر عن التفرّد. تفادي التكرار عند الاستيراد
   يقوم على استعلام‑ثم‑كتابة وحده.
-- **لا يوجد سجل تدقيق** لتغييرات الحالة — مفيد للشفافية أمام المتبرعين.
+- **سجل التدقيق لا يُنظَّف.** `AuditLog` ينمو بلا حد، وباقة Back4app المجانية
+  250 ميغابايت. يلزم تقليم أو أرشفة قبل الحجم الحرج.
 
 ---
 
@@ -316,6 +318,8 @@ const remaining = serviceRequest.get('estimatedCost') - (serviceRequest.get('fun
 | الإمام لا يعرف مصير طلب ملكيته | `getMyClaims` — الفئة تبقى مقفلة والدالة تُعيد طلباته وحدها |
 | `completedJobs` و`avgRating` معرّفان ولا يُكتبان | `completeService` يُحدّث العدد والمتوسط التراكمي للمنفّذ |
 | `Number(estimatedCost) \|\| 0` يبتلع NaN فيصير مدخل فاسد طلباً تطوّعياً | تحقق صريح بـ`Number.isFinite` ورفض غير الرقمي |
+| لا سجل لتغييرات الحالة، فلا جواب عن "من ألغى هذا الطلب ومتى؟" | فئة `AuditLog` و`lib/audit.js`، والقيد من الدوال لا من `afterSave` — المُشغّل لا يرى الفاعل لأن الحفظ بـ Master Key. القيد لا يُسقط العملية التي يوثّقها، ويُعرَض عبر `getMosqueAuditTrail` بالدور لا بالهوية |
+| متبرّع يدفع ثم يُغلق التطبيق فيبقى مالُه غير مقيَّد | مهمة `reviewPendingDonations` تسأل البوابة عن كل معاملة معلّقة تجاوزت مهلة الحجز، وتُقيّد المدفوع عبر `captureDonation` نفسها التي تستعملها الدالة |
 
 ---
 
@@ -439,6 +443,27 @@ const remaining = serviceRequest.get('estimatedCost') - (serviceRequest.get('fun
         "get": { "requiresAuthentication": true },
         "create": {}, "update": {}, "delete": {}, "addField": {},
         "protectedFields": { "*": ["donorId", "paymentSessionId", "paymentGatewayRef"] }
+      }
+    },
+    {
+      "className": "AuditLog",
+      "_comment": "سجل التدقيق. مقفل على Master Key ويُقرأ عبر getMosqueAuditTrail وحدها، فلا تُكشف هوية الفاعل.",
+      "fields": {
+        "action": { "type": "String", "required": true },
+        "targetClass": { "type": "String" },
+        "targetId": { "type": "String" },
+        "mosqueId": { "type": "Pointer", "targetClass": "Mosques" },
+        "fromStatus": { "type": "String" },
+        "toStatus": { "type": "String" },
+        "actorId": { "type": "Pointer", "targetClass": "_User" },
+        "actorRole": { "type": "String" },
+        "amount": { "type": "Number" }
+      },
+      "indexes": {
+        "trail": { "mosqueId": 1, "createdAt": -1 }
+      },
+      "classLevelPermissions": {
+        "find": {}, "get": {}, "create": {}, "update": {}, "delete": {}, "addField": {}
       }
     },
     {
@@ -862,11 +887,87 @@ async function verifySession(sessionId) {
 module.exports = { isConfigured, createCheckoutSession, verifySession, BAISA_PER_OMR };
 ```
 
+#### `cloud/lib/audit.js`
+
+```javascript
+/**
+ * سجل التدقيق.
+ *
+ * وعد المنصّة للمتبرّع هو الشفافية، و`getMosqueLedger` يُظهر المال وحده: من
+ * تبرّع بكم ومتى صُرف. لا يُظهر من غيّر حالة الطلب ولا متى، فلا سبيل للإجابة
+ * عن "من ألغى هذا الطلب؟" أو "متى اعتُمد العمل ومن اعتمده؟".
+ *
+ * قيدان في التصميم:
+ *
+ * 1) **القيد لا يُسقط العملية أبداً.** فشل الكتابة هنا يُسجَّل في السجلّ ويُبتلع
+ *    — لا يجوز أن يفشل اعتماد عملٍ منجَز لأن سطر تدقيق لم يُكتب.
+ * 2) **يُستدعى صراحةً من الدوال لا من `afterSave`.** المُشغّل يرى تغيّر الحالة
+ *    لكنه لا يرى الفاعل: الحفظ يجري بـ Master Key فيصل `request.user` فارغاً.
+ *
+ * تنبيه على التكلفة: كل قيد كتابةٌ إضافية. باقة Back4app المجانية 25 ألف طلب
+ * شهرياً، فالقيد مقصور على تحوّلات الحالة وحركات المال لا على كل حفظ.
+ */
+
+const ACTIONS = {
+  REQUEST_CREATED: 'request_created',
+  WORKER_ASSIGNED: 'worker_assigned',
+  WORK_STARTED: 'work_started',
+  WORK_DONE: 'work_done',
+  REQUEST_COMPLETED: 'request_completed',
+  REQUEST_CANCELLED: 'request_cancelled',
+  DONATION_CAPTURED: 'donation_captured',
+  DONATION_EXPIRED: 'donation_expired',
+  PAYOUT_RECORDED: 'payout_recorded',
+  CLAIM_REVIEWED: 'claim_reviewed',
+};
+
+/**
+ * قيد سطر تدقيق واحد.
+ *
+ * @param {object}  entry
+ * @param {string}  entry.action      من `ACTIONS`
+ * @param {object=} entry.target      الكائن المتأثّر (طلب، معاملة، …)
+ * @param {object=} entry.mosque      المسجد — مفتاح عرض السجل
+ * @param {object=} entry.actor       المستخدم الفاعل، أو لا شيء للنظام
+ * @param {string=} entry.fromStatus
+ * @param {string=} entry.toStatus
+ * @param {number=} entry.amount
+ */
+async function record({ action, target, mosque, actor, fromStatus, toStatus, amount }) {
+  try {
+    const Entry = Parse.Object.extend('AuditLog');
+    const entry = new Entry();
+
+    entry.set('action', action);
+    if (target) {
+      entry.set('targetClass', target.className);
+      entry.set('targetId', target.id);
+    }
+    if (mosque) entry.set('mosqueId', mosque);
+    if (actor) {
+      entry.set('actorId', actor);
+      entry.set('actorRole', actor.get('role') || null);
+    }
+    if (fromStatus) entry.set('fromStatus', fromStatus);
+    if (toStatus) entry.set('toStatus', toStatus);
+    if (typeof amount === 'number') entry.set('amount', amount);
+
+    await entry.save(null, { useMasterKey: true });
+  } catch (error) {
+    // مقصود: التدقيق لا يُسقط العملية التي يوثّقها
+    console.error('[audit] تعذّر قيد السطر:', action, error && error.message);
+  }
+}
+
+module.exports = { record, ACTIONS };
+```
+
 #### `cloud/functions/mosques.js`
 
 ```javascript
 const E = require('../lib/errors');
 const { requireUser, requireRole } = require('../lib/auth');
+const audit = require('../lib/audit');
 
 const PUBLIC_FIELDS = [
   'name', 'mosqueNumber', 'type', 'typeSlug', 'governorate', 'wilayat',
@@ -1001,6 +1102,14 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
     await mosque.save(null, { useMasterKey: true });
   }
 
+  await audit.record({
+    action: audit.ACTIONS.CLAIM_REVIEWED,
+    target: claim,
+    mosque: claim.get('mosqueId'),
+    actor: admin,
+    toStatus: claim.get('status'),
+  });
+
   return { status: claim.get('status') };
 });
 ```
@@ -1011,6 +1120,7 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
 const E = require('../lib/errors');
 const { requireUser, requireRole, mosqueForImam, fetchPointer } = require('../lib/auth');
 const { pushToUsers, pushToNearbyVolunteers } = require('../lib/push');
+const audit = require('../lib/audit');
 
 /**
  * دورة حياة الطلب:
@@ -1066,6 +1176,14 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
 
   await serviceRequest.save(null, { useMasterKey: true });
 
+  await audit.record({
+    action: audit.ACTIONS.REQUEST_CREATED,
+    target: serviceRequest,
+    mosque,
+    actor: imam,
+    toStatus: serviceRequest.get('status'),
+  });
+
   if (cost === 0) {
     await pushToNearbyVolunteers(mosque, {
       alert: `فرصة تطوّع: ${serviceRequest.get('title')} — مسجد ${mosque.get('name')}`,
@@ -1108,9 +1226,19 @@ Parse.Cloud.define('assignWorker', async (request) => {
     E.invalid('المستخدم ليس متطوعاً ولا شركة خدمات.');
   }
 
+  const previousStatus = serviceRequest.get('status');
   serviceRequest.set('status', STATUS.ASSIGNED);
   serviceRequest.set('assignedAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.WORKER_ASSIGNED,
+    target: serviceRequest,
+    mosque,
+    actor: imam,
+    fromStatus: previousStatus,
+    toStatus: STATUS.ASSIGNED,
+  });
 
   await pushToUsers(worker, {
     alert: `تم تكليفك بـ "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
@@ -1129,6 +1257,16 @@ Parse.Cloud.define('startWork', async (request) => {
   serviceRequest.set('status', STATUS.IN_PROGRESS);
   serviceRequest.set('startedAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.WORK_STARTED,
+    target: serviceRequest,
+    mosque: serviceRequest.get('mosqueId'),
+    actor: user,
+    fromStatus: STATUS.ASSIGNED,
+    toStatus: STATUS.IN_PROGRESS,
+  });
+
   return serviceRequest.toJSON();
 });
 
@@ -1147,6 +1285,16 @@ Parse.Cloud.define('markWorkDone', async (request) => {
   await serviceRequest.save(null, { useMasterKey: true });
 
   const mosque = await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
+
+  await audit.record({
+    action: audit.ACTIONS.WORK_DONE,
+    target: serviceRequest,
+    mosque,
+    actor: user,
+    fromStatus: STATUS.IN_PROGRESS,
+    toStatus: STATUS.PENDING_APPROVAL,
+  });
+
   const imam = mosque.get('imamId');
   if (imam) {
     await pushToUsers(imam, {
@@ -1182,6 +1330,15 @@ Parse.Cloud.define('completeService', async (request) => {
 
   await recordWorkerRating(serviceRequest, score);
 
+  await audit.record({
+    action: audit.ACTIONS.REQUEST_COMPLETED,
+    target: serviceRequest,
+    mosque: serviceRequest.get('mosqueId'),
+    actor: imam,
+    fromStatus: STATUS.PENDING_APPROVAL,
+    toStatus: STATUS.COMPLETED,
+  });
+
   // TODO: صرف المستحقات للشركة يتم عبر دالة payout منفصلة بعد الاعتماد (functions/donations.js)
   // TODO: تسجيل ساعات التطوّع في منصة "أيادي" — يحتاج اتفاقية وAPI key رسمي.
 
@@ -1212,6 +1369,15 @@ Parse.Cloud.define('cancelServiceRequest', async (request) => {
   serviceRequest.set('status', STATUS.CANCELLED);
   serviceRequest.set('cancelledAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.REQUEST_CANCELLED,
+    target: serviceRequest,
+    mosque,
+    actor: imam,
+    fromStatus: status,
+    toStatus: STATUS.CANCELLED,
+  });
 
   // المنفّذ المكلَّف قد يكون في طريقه إلى المسجد — يجب أن يعلم
   const worker = serviceRequest.get('assignedVolunteerId')
@@ -1272,6 +1438,7 @@ const { requireUser, requireRole, fetchPointer } = require('../lib/auth');
 const { pushToUsers } = require('../lib/push');
 const payments = require('../lib/payments');
 const { STATUS } = require('./requests');
+const audit = require('../lib/audit');
 
 /**
  * ⚠️ ثلاثة أخطاء جوهرية في النسخة الأصلية من fundRequest تم إصلاحها هنا:
@@ -1410,6 +1577,14 @@ Parse.Cloud.define('confirmDonation', async (request) => {
     E.invalid('المبلغ المدفوع لا يطابق المبلغ المسجّل — راجع الإدارة.');
   }
 
+  return captureDonation(transaction, verification);
+});
+
+/**
+ * قيد تبرّع مؤكَّد الدفع. مشتركة بين `confirmDonation` والمهمة الدورية، فلا
+ * يوجد مساران يُقيّدان المال بمنطقين مختلفين.
+ */
+async function captureDonation(transaction, verification) {
   transaction.set('status', 'captured');
   transaction.set('paymentGatewayRef', verification.reference);
   transaction.set('capturedAt', new Date());
@@ -1427,6 +1602,14 @@ Parse.Cloud.define('confirmDonation', async (request) => {
   await serviceRequest.save(null, { useMasterKey: true });
   await serviceRequest.fetch({ useMasterKey: true });
 
+  await audit.record({
+    action: audit.ACTIONS.DONATION_CAPTURED,
+    target: transaction,
+    mosque,
+    actor: transaction.get('donorId'),
+    amount,
+  });
+
   if (serviceRequest.get('fundedAmount') >= serviceRequest.get('estimatedCost')) {
     serviceRequest.set('status', STATUS.FUNDED);
     serviceRequest.set('isFundedByDonors', true);
@@ -1443,7 +1626,7 @@ Parse.Cloud.define('confirmDonation', async (request) => {
   }
 
   return { status: 'captured', fundedAmount: serviceRequest.get('fundedAmount') };
-});
+}
 
 /**
  * صرف المستحقات للشركة بعد اعتماد الإمام. مشرف فقط.
@@ -1494,6 +1677,14 @@ Parse.Cloud.define('payoutContractor', async (request) => {
   payout.set('approvedBy', admin);
   await payout.save(null, { useMasterKey: true });
 
+  await audit.record({
+    action: audit.ACTIONS.PAYOUT_RECORDED,
+    target: payout,
+    mosque,
+    actor: admin,
+    amount: value,
+  });
+
   return { message: 'تم تسجيل الصرف.', transactionId: payout.id };
 });
 
@@ -1519,6 +1710,113 @@ Parse.Cloud.define('getMosqueLedger', async (request) => {
     type: t.get('type'),
     createdAt: t.get('createdAt'),
     requestId: t.get('requestId') ? t.get('requestId').id : null,
+  }));
+});
+
+/**
+ * مراجعة المعاملات المعلّقة.
+ *
+ * `confirmDonation` تُستدعى عند عودة المستخدم من صفحة الدفع، فإن أغلق التطبيق
+ * بعد الدفع مباشرة بقيت معاملته `pending` ومالُه غير مقيَّد. تُجدوَل هذه المهمة
+ * من لوحة Back4app (Server Settings → Background Jobs) كل ساعة.
+ *
+ * تسأل البوابة عن كل معاملة معلّقة تجاوزت مهلة الحجز:
+ *   دُفعت    → تُقيَّد عبر `captureDonation` نفسها التي تستعملها الدالة
+ *   انتهت    → `failed`
+ *   مفتوحة   → تُترك، إلا إذا تجاوزت المهلة القصوى فتصير `expired`
+ */
+const PENDING_MAX_AGE_HOURS = 24;
+
+Parse.Cloud.job('reviewPendingDonations', async (request) => {
+  const { message } = request;
+
+  if (!payments.isConfigured()) {
+    message('بوابة الدفع غير مهيأة — لا شيء لمراجعته.');
+    return 'skipped';
+  }
+
+  const cutoff = new Date(Date.now() - PENDING_TTL_MINUTES * 60 * 1000);
+  const stale = await new Parse.Query('Transactions')
+    .equalTo('type', 'donation')
+    .equalTo('status', 'pending')
+    .lessThan('createdAt', cutoff)
+    .limit(100)
+    .find({ useMasterKey: true });
+
+  const counts = { captured: 0, failed: 0, expired: 0, open: 0, errors: 0 };
+  const expiryLimit = new Date(Date.now() - PENDING_MAX_AGE_HOURS * 3600 * 1000);
+
+  for (const transaction of stale) {
+    try {
+      const verification = await payments.verifySession(transaction.get('paymentSessionId'));
+
+      if (verification.paid) {
+        // نفس فحص المطابقة الذي في confirmDonation — لا يُقيَّد مبلغ مخالف
+        if (Math.abs(verification.amountOmr - transaction.get('amount')) > 0.001) {
+          transaction.set('status', 'mismatch');
+          await transaction.save(null, { useMasterKey: true });
+          counts.errors += 1;
+          continue;
+        }
+        await captureDonation(transaction, verification);
+        counts.captured += 1;
+      } else if (verification.terminal) {
+        transaction.set('status', 'failed');
+        await transaction.save(null, { useMasterKey: true });
+        counts.failed += 1;
+      } else if (transaction.get('createdAt') < expiryLimit) {
+        transaction.set('status', 'expired');
+        await transaction.save(null, { useMasterKey: true });
+        await audit.record({
+          action: audit.ACTIONS.DONATION_EXPIRED,
+          target: transaction,
+          mosque: transaction.get('mosqueId'),
+          amount: transaction.get('amount'),
+        });
+        counts.expired += 1;
+      } else {
+        counts.open += 1;
+      }
+    } catch (error) {
+      counts.errors += 1;
+      console.error('[reviewPendingDonations]', transaction.id, error && error.message);
+    }
+  }
+
+  const summary = `فُحصت ${stale.length}: قُيّدت ${counts.captured}، فشلت ${counts.failed}، `
+    + `انتهت ${counts.expired}، ما تزال مفتوحة ${counts.open}، أخطاء ${counts.errors}`;
+  message(summary);
+  return summary;
+});
+
+/**
+ * سجل التدقيق لمسجد — من فعل ماذا ومتى.
+ * `getMosqueLedger` يُظهر المال، وهذا يُظهر القرارات. هوية الفاعل لا تُعاد،
+ * دوره فقط: الغرض تتبّع المسار لا كشف الأشخاص.
+ */
+Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
+  requireUser(request);
+  const { mosqueId, limit = 50 } = request.params;
+  if (!mosqueId) E.invalid('معرّف المسجد مطلوب.');
+
+  const mosque = new Parse.Object('Mosques');
+  mosque.id = mosqueId;
+
+  const entries = await new Parse.Query('AuditLog')
+    .equalTo('mosqueId', mosque)
+    .descending('createdAt')
+    .limit(Math.min(Number(limit) || 50, 100))
+    .find({ useMasterKey: true });
+
+  return entries.map((entry) => ({
+    action: entry.get('action'),
+    targetClass: entry.get('targetClass'),
+    targetId: entry.get('targetId'),
+    fromStatus: entry.get('fromStatus'),
+    toStatus: entry.get('toStatus'),
+    actorRole: entry.get('actorRole'),
+    amount: entry.get('amount'),
+    createdAt: entry.get('createdAt'),
   }));
 });
 ```
@@ -1788,6 +2086,82 @@ const payments = { isConfigured, createCheckoutSession, verifySession };
 
 
 // ======================================================================
+// سجل التدقيق   [lib/audit.js]
+// ======================================================================
+
+/**
+ * سجل التدقيق.
+ *
+ * وعد المنصّة للمتبرّع هو الشفافية، و`getMosqueLedger` يُظهر المال وحده: من
+ * تبرّع بكم ومتى صُرف. لا يُظهر من غيّر حالة الطلب ولا متى، فلا سبيل للإجابة
+ * عن "من ألغى هذا الطلب؟" أو "متى اعتُمد العمل ومن اعتمده؟".
+ *
+ * قيدان في التصميم:
+ *
+ * 1) **القيد لا يُسقط العملية أبداً.** فشل الكتابة هنا يُسجَّل في السجلّ ويُبتلع
+ *    — لا يجوز أن يفشل اعتماد عملٍ منجَز لأن سطر تدقيق لم يُكتب.
+ * 2) **يُستدعى صراحةً من الدوال لا من `afterSave`.** المُشغّل يرى تغيّر الحالة
+ *    لكنه لا يرى الفاعل: الحفظ يجري بـ Master Key فيصل `request.user` فارغاً.
+ *
+ * تنبيه على التكلفة: كل قيد كتابةٌ إضافية. باقة Back4app المجانية 25 ألف طلب
+ * شهرياً، فالقيد مقصور على تحوّلات الحالة وحركات المال لا على كل حفظ.
+ */
+
+const ACTIONS = {
+  REQUEST_CREATED: 'request_created',
+  WORKER_ASSIGNED: 'worker_assigned',
+  WORK_STARTED: 'work_started',
+  WORK_DONE: 'work_done',
+  REQUEST_COMPLETED: 'request_completed',
+  REQUEST_CANCELLED: 'request_cancelled',
+  DONATION_CAPTURED: 'donation_captured',
+  DONATION_EXPIRED: 'donation_expired',
+  PAYOUT_RECORDED: 'payout_recorded',
+  CLAIM_REVIEWED: 'claim_reviewed',
+};
+
+/**
+ * قيد سطر تدقيق واحد.
+ *
+ * @param {object}  entry
+ * @param {string}  entry.action      من `ACTIONS`
+ * @param {object=} entry.target      الكائن المتأثّر (طلب، معاملة، …)
+ * @param {object=} entry.mosque      المسجد — مفتاح عرض السجل
+ * @param {object=} entry.actor       المستخدم الفاعل، أو لا شيء للنظام
+ * @param {string=} entry.fromStatus
+ * @param {string=} entry.toStatus
+ * @param {number=} entry.amount
+ */
+async function record({ action, target, mosque, actor, fromStatus, toStatus, amount }) {
+  try {
+    const Entry = Parse.Object.extend('AuditLog');
+    const entry = new Entry();
+
+    entry.set('action', action);
+    if (target) {
+      entry.set('targetClass', target.className);
+      entry.set('targetId', target.id);
+    }
+    if (mosque) entry.set('mosqueId', mosque);
+    if (actor) {
+      entry.set('actorId', actor);
+      entry.set('actorRole', actor.get('role') || null);
+    }
+    if (fromStatus) entry.set('fromStatus', fromStatus);
+    if (toStatus) entry.set('toStatus', toStatus);
+    if (typeof amount === 'number') entry.set('amount', amount);
+
+    await entry.save(null, { useMasterKey: true });
+  } catch (error) {
+    // مقصود: التدقيق لا يُسقط العملية التي يوثّقها
+    console.error('[audit] تعذّر قيد السطر:', action, error && error.message);
+  }
+}
+
+const audit = { record, ACTIONS };
+
+
+// ======================================================================
 // المُشغّلات (beforeSave / afterSave)   [triggers.js]
 // ======================================================================
 
@@ -2027,6 +2401,14 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
     await mosque.save(null, { useMasterKey: true });
   }
 
+  await audit.record({
+    action: audit.ACTIONS.CLAIM_REVIEWED,
+    target: claim,
+    mosque: claim.get('mosqueId'),
+    actor: admin,
+    toStatus: claim.get('status'),
+  });
+
   return { status: claim.get('status') };
 });
 
@@ -2089,6 +2471,14 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
 
   await serviceRequest.save(null, { useMasterKey: true });
 
+  await audit.record({
+    action: audit.ACTIONS.REQUEST_CREATED,
+    target: serviceRequest,
+    mosque,
+    actor: imam,
+    toStatus: serviceRequest.get('status'),
+  });
+
   if (cost === 0) {
     await pushToNearbyVolunteers(mosque, {
       alert: `فرصة تطوّع: ${serviceRequest.get('title')} — مسجد ${mosque.get('name')}`,
@@ -2131,9 +2521,19 @@ Parse.Cloud.define('assignWorker', async (request) => {
     E.invalid('المستخدم ليس متطوعاً ولا شركة خدمات.');
   }
 
+  const previousStatus = serviceRequest.get('status');
   serviceRequest.set('status', STATUS.ASSIGNED);
   serviceRequest.set('assignedAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.WORKER_ASSIGNED,
+    target: serviceRequest,
+    mosque,
+    actor: imam,
+    fromStatus: previousStatus,
+    toStatus: STATUS.ASSIGNED,
+  });
 
   await pushToUsers(worker, {
     alert: `تم تكليفك بـ "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
@@ -2152,6 +2552,16 @@ Parse.Cloud.define('startWork', async (request) => {
   serviceRequest.set('status', STATUS.IN_PROGRESS);
   serviceRequest.set('startedAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.WORK_STARTED,
+    target: serviceRequest,
+    mosque: serviceRequest.get('mosqueId'),
+    actor: user,
+    fromStatus: STATUS.ASSIGNED,
+    toStatus: STATUS.IN_PROGRESS,
+  });
+
   return serviceRequest.toJSON();
 });
 
@@ -2170,6 +2580,16 @@ Parse.Cloud.define('markWorkDone', async (request) => {
   await serviceRequest.save(null, { useMasterKey: true });
 
   const mosque = await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
+
+  await audit.record({
+    action: audit.ACTIONS.WORK_DONE,
+    target: serviceRequest,
+    mosque,
+    actor: user,
+    fromStatus: STATUS.IN_PROGRESS,
+    toStatus: STATUS.PENDING_APPROVAL,
+  });
+
   const imam = mosque.get('imamId');
   if (imam) {
     await pushToUsers(imam, {
@@ -2205,6 +2625,15 @@ Parse.Cloud.define('completeService', async (request) => {
 
   await recordWorkerRating(serviceRequest, score);
 
+  await audit.record({
+    action: audit.ACTIONS.REQUEST_COMPLETED,
+    target: serviceRequest,
+    mosque: serviceRequest.get('mosqueId'),
+    actor: imam,
+    fromStatus: STATUS.PENDING_APPROVAL,
+    toStatus: STATUS.COMPLETED,
+  });
+
   // TODO: صرف المستحقات للشركة يتم عبر دالة payout منفصلة بعد الاعتماد (functions/donations.js)
   // TODO: تسجيل ساعات التطوّع في منصة "أيادي" — يحتاج اتفاقية وAPI key رسمي.
 
@@ -2235,6 +2664,15 @@ Parse.Cloud.define('cancelServiceRequest', async (request) => {
   serviceRequest.set('status', STATUS.CANCELLED);
   serviceRequest.set('cancelledAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.REQUEST_CANCELLED,
+    target: serviceRequest,
+    mosque,
+    actor: imam,
+    fromStatus: status,
+    toStatus: STATUS.CANCELLED,
+  });
 
   // المنفّذ المكلَّف قد يكون في طريقه إلى المسجد — يجب أن يعلم
   const worker = serviceRequest.get('assignedVolunteerId')
@@ -2426,6 +2864,14 @@ Parse.Cloud.define('confirmDonation', async (request) => {
     E.invalid('المبلغ المدفوع لا يطابق المبلغ المسجّل — راجع الإدارة.');
   }
 
+  return captureDonation(transaction, verification);
+});
+
+/**
+ * قيد تبرّع مؤكَّد الدفع. مشتركة بين `confirmDonation` والمهمة الدورية، فلا
+ * يوجد مساران يُقيّدان المال بمنطقين مختلفين.
+ */
+async function captureDonation(transaction, verification) {
   transaction.set('status', 'captured');
   transaction.set('paymentGatewayRef', verification.reference);
   transaction.set('capturedAt', new Date());
@@ -2443,6 +2889,14 @@ Parse.Cloud.define('confirmDonation', async (request) => {
   await serviceRequest.save(null, { useMasterKey: true });
   await serviceRequest.fetch({ useMasterKey: true });
 
+  await audit.record({
+    action: audit.ACTIONS.DONATION_CAPTURED,
+    target: transaction,
+    mosque,
+    actor: transaction.get('donorId'),
+    amount,
+  });
+
   if (serviceRequest.get('fundedAmount') >= serviceRequest.get('estimatedCost')) {
     serviceRequest.set('status', STATUS.FUNDED);
     serviceRequest.set('isFundedByDonors', true);
@@ -2459,7 +2913,7 @@ Parse.Cloud.define('confirmDonation', async (request) => {
   }
 
   return { status: 'captured', fundedAmount: serviceRequest.get('fundedAmount') };
-});
+}
 
 /**
  * صرف المستحقات للشركة بعد اعتماد الإمام. مشرف فقط.
@@ -2510,6 +2964,14 @@ Parse.Cloud.define('payoutContractor', async (request) => {
   payout.set('approvedBy', admin);
   await payout.save(null, { useMasterKey: true });
 
+  await audit.record({
+    action: audit.ACTIONS.PAYOUT_RECORDED,
+    target: payout,
+    mosque,
+    actor: admin,
+    amount: value,
+  });
+
   return { message: 'تم تسجيل الصرف.', transactionId: payout.id };
 });
 
@@ -2535,6 +2997,113 @@ Parse.Cloud.define('getMosqueLedger', async (request) => {
     type: t.get('type'),
     createdAt: t.get('createdAt'),
     requestId: t.get('requestId') ? t.get('requestId').id : null,
+  }));
+});
+
+/**
+ * مراجعة المعاملات المعلّقة.
+ *
+ * `confirmDonation` تُستدعى عند عودة المستخدم من صفحة الدفع، فإن أغلق التطبيق
+ * بعد الدفع مباشرة بقيت معاملته `pending` ومالُه غير مقيَّد. تُجدوَل هذه المهمة
+ * من لوحة Back4app (Server Settings → Background Jobs) كل ساعة.
+ *
+ * تسأل البوابة عن كل معاملة معلّقة تجاوزت مهلة الحجز:
+ *   دُفعت    → تُقيَّد عبر `captureDonation` نفسها التي تستعملها الدالة
+ *   انتهت    → `failed`
+ *   مفتوحة   → تُترك، إلا إذا تجاوزت المهلة القصوى فتصير `expired`
+ */
+const PENDING_MAX_AGE_HOURS = 24;
+
+Parse.Cloud.job('reviewPendingDonations', async (request) => {
+  const { message } = request;
+
+  if (!payments.isConfigured()) {
+    message('بوابة الدفع غير مهيأة — لا شيء لمراجعته.');
+    return 'skipped';
+  }
+
+  const cutoff = new Date(Date.now() - PENDING_TTL_MINUTES * 60 * 1000);
+  const stale = await new Parse.Query('Transactions')
+    .equalTo('type', 'donation')
+    .equalTo('status', 'pending')
+    .lessThan('createdAt', cutoff)
+    .limit(100)
+    .find({ useMasterKey: true });
+
+  const counts = { captured: 0, failed: 0, expired: 0, open: 0, errors: 0 };
+  const expiryLimit = new Date(Date.now() - PENDING_MAX_AGE_HOURS * 3600 * 1000);
+
+  for (const transaction of stale) {
+    try {
+      const verification = await payments.verifySession(transaction.get('paymentSessionId'));
+
+      if (verification.paid) {
+        // نفس فحص المطابقة الذي في confirmDonation — لا يُقيَّد مبلغ مخالف
+        if (Math.abs(verification.amountOmr - transaction.get('amount')) > 0.001) {
+          transaction.set('status', 'mismatch');
+          await transaction.save(null, { useMasterKey: true });
+          counts.errors += 1;
+          continue;
+        }
+        await captureDonation(transaction, verification);
+        counts.captured += 1;
+      } else if (verification.terminal) {
+        transaction.set('status', 'failed');
+        await transaction.save(null, { useMasterKey: true });
+        counts.failed += 1;
+      } else if (transaction.get('createdAt') < expiryLimit) {
+        transaction.set('status', 'expired');
+        await transaction.save(null, { useMasterKey: true });
+        await audit.record({
+          action: audit.ACTIONS.DONATION_EXPIRED,
+          target: transaction,
+          mosque: transaction.get('mosqueId'),
+          amount: transaction.get('amount'),
+        });
+        counts.expired += 1;
+      } else {
+        counts.open += 1;
+      }
+    } catch (error) {
+      counts.errors += 1;
+      console.error('[reviewPendingDonations]', transaction.id, error && error.message);
+    }
+  }
+
+  const summary = `فُحصت ${stale.length}: قُيّدت ${counts.captured}، فشلت ${counts.failed}، `
+    + `انتهت ${counts.expired}، ما تزال مفتوحة ${counts.open}، أخطاء ${counts.errors}`;
+  message(summary);
+  return summary;
+});
+
+/**
+ * سجل التدقيق لمسجد — من فعل ماذا ومتى.
+ * `getMosqueLedger` يُظهر المال، وهذا يُظهر القرارات. هوية الفاعل لا تُعاد،
+ * دوره فقط: الغرض تتبّع المسار لا كشف الأشخاص.
+ */
+Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
+  requireUser(request);
+  const { mosqueId, limit = 50 } = request.params;
+  if (!mosqueId) E.invalid('معرّف المسجد مطلوب.');
+
+  const mosque = new Parse.Object('Mosques');
+  mosque.id = mosqueId;
+
+  const entries = await new Parse.Query('AuditLog')
+    .equalTo('mosqueId', mosque)
+    .descending('createdAt')
+    .limit(Math.min(Number(limit) || 50, 100))
+    .find({ useMasterKey: true });
+
+  return entries.map((entry) => ({
+    action: entry.get('action'),
+    targetClass: entry.get('targetClass'),
+    targetId: entry.get('targetId'),
+    fromStatus: entry.get('fromStatus'),
+    toStatus: entry.get('toStatus'),
+    actorRole: entry.get('actorRole'),
+    amount: entry.get('amount'),
+    createdAt: entry.get('createdAt'),
   }));
 });
 
@@ -2601,6 +3170,7 @@ Parse.Cloud.define('health', async () => ({
 | `confirmDonation` | نظام | تأكيد من البوابة وقيد المبلغ |
 | `payoutContractor` | admin | تسجيل صرف المستحقات |
 | `getMosqueLedger` | الجميع | السجل المالي الشفاف |
+| `getMosqueAuditTrail` | الجميع | سجل القرارات — الدور لا هوية الفاعل |
 | `health` | الجميع | فحص حالة الخادم |
 
 ### قواعد الأمن
@@ -2612,6 +3182,7 @@ Parse.Cloud.define('health', async () => ({
 | `ServiceRequests` | مصادَق | Master Key فقط (عبر دوال السحابة) |
 | `Transactions` | مصادَق، مع إخفاء بيانات المتبرع | Master Key فقط |
 | `MosqueClaims` | Master Key فقط | Master Key فقط |
+| `AuditLog` | Master Key فقط — يُقرأ عبر `getMosqueAuditTrail` | Master Key فقط |
 
 **تنبيه:** Master Key في متغيرات بيئة الخادم فقط. لا يظهر إطلاقاً في كود التطبيق.
 
@@ -3113,6 +3684,7 @@ ORDER = [
     ("lib/auth.js", "الصلاحيات والأدوار"),
     ("lib/push.js", "الإشعارات"),
     ("lib/payments.js", "بوابة الدفع"),
+    ("lib/audit.js", "سجل التدقيق"),
     ("triggers.js", "المُشغّلات (beforeSave / afterSave)"),
     ("functions/mosques.js", "دوال المساجد"),
     ("functions/requests.js", "دوال طلبات الصيانة"),
@@ -3122,6 +3694,7 @@ ORDER = [
 REPLACEMENTS = {
     "lib/errors.js": [(r"module\.exports = \{", "const E = {")],
     "lib/payments.js": [(r"module\.exports = \{[^}]*\};", "const payments = { isConfigured, createCheckoutSession, verifySession };")],
+    "lib/audit.js": [(r"module\.exports = \{[^}]*\};", "const audit = { record, ACTIONS };")],
 }
 
 DROP = re.compile(r"^\s*(const .*= require\(|module\.exports\s*=\s*\{\s*(ROLES|pushToUsers|STATUS)).*$")
@@ -3209,6 +3782,7 @@ CLOUD_FILES = [
     "cloud/lib/auth.js",
     "cloud/lib/push.js",
     "cloud/lib/payments.js",
+    "cloud/lib/audit.js",
     "cloud/functions/mosques.js",
     "cloud/functions/requests.js",
     "cloud/functions/donations.js",
@@ -3218,6 +3792,8 @@ TEST_FILES = [
     ("tests/helpers/parse-mock.js", "بديل Parse — مخزن في الذاكرة بلا خادم"),
     ("tests/donations.test.js", "المسار المالي: التأكيد والحجز"),
     ("tests/triggers.test.js", "حماية الأدوار وإقفال الحساب على صاحبه"),
+    ("tests/requests.test.js", "دورة حياة الطلب والإلغاء والصرف"),
+    ("tests/audit.test.js", "سجل التدقيق والمهمة الدورية"),
     ("tests/schema.test.js", "الصلاحيات وتطابق النسختين"),
 ]
 
@@ -3498,6 +4074,7 @@ Object.assign(ParseError, {
 
 function createMock() {
   const functions = {}; // اسم الدالة → معالجها
+  const jobs = {}; // اسم المهمة الدورية → معالجها
   const triggers = {}; // "beforeSave:Mosques" → معالجه
   const store = {}; // اسم الفئة → كائنات
   const pushes = []; // { users, payload } لكل إشعار أُرسل
@@ -3586,11 +4163,13 @@ function createMock() {
       this.className = classNameOf(target);
       this._equal = [];
       this._greater = [];
+      this._less = [];
       this._contained = [];
     }
 
     equalTo(key, value) { this._equal.push([key, value]); return this; }
     greaterThan(key, value) { this._greater.push([key, value]); return this; }
+    lessThan(key, value) { this._less.push([key, value]); return this; }
     containedIn(key, values) { this._contained.push([key, values]); return this; }
     limit() { return this; }
     select() { return this; }
@@ -3603,6 +4182,7 @@ function createMock() {
       return (store[this.className] || []).filter((object) =>
         this._equal.every(([k, v]) => matches(object, k, v)) &&
         this._greater.every(([k, v]) => object.get(k) > v) &&
+        this._less.every(([k, v]) => object.get(k) < v) &&
         this._contained.every(([k, values]) => values.includes(object.get(k))));
     }
 
@@ -3635,6 +4215,7 @@ function createMock() {
     Error: ParseError,
     Cloud: {
       define: (name, handler) => { functions[name] = handler; },
+      job: (name, handler) => { jobs[name] = handler; },
       beforeSave: (target, handler) => { triggers[triggerKey(target, 'beforeSave')] = handler; },
       afterSave: (target, handler) => { triggers[triggerKey(target, 'afterSave')] = handler; },
       httpRequest: async ({ method }) => (method === 'POST'
@@ -3673,6 +4254,7 @@ function createMock() {
 
   return {
     functions,
+    jobs,
     triggers,
     store,
     pushes,
@@ -3705,6 +4287,14 @@ function createMock() {
       }
     },
 
+    /** تشغيل مهمة دورية؛ يُلتقط ما تبثّه عبر `message`. */
+    async runJob(name, params = {}) {
+      if (!this.jobs[name]) throw new Error(`مهمة غير مسجّلة: ${name}`);
+      const messages = [];
+      const result = await this.jobs[name]({ params, message: (m) => messages.push(m) });
+      return { result, messages };
+    },
+
     /** استدعاء مُشغّل مباشرةً — `save` في هذا البديل لا تُشغّلها تلقائياً. */
     async trigger(key, request) {
       if (!this.triggers[key]) throw new Error(`مُشغّل غير مسجّل: ${key}`);
@@ -3717,9 +4307,15 @@ function createMock() {
  * يثبّت البديل ثم يحمّل كود السحابة من الصفر.
  * التحميل بعد التثبيت لازم: الوحدات تقرأ `Parse` وتسجّل معالجاتها عند التحميل.
  */
-function loadCloud(entry = 'modular') {
-  process.env.THAWANI_SECRET_KEY = 'sk_test';
-  process.env.THAWANI_PUBLISHABLE_KEY = 'pk_test';
+function loadCloud(entry = 'modular', { payments = true } = {}) {
+  // `payments: false` يُحاكي المرحلة الأولى: منصّة بلا مفاتيح بوابة أصلاً
+  if (payments) {
+    process.env.THAWANI_SECRET_KEY = 'sk_test';
+    process.env.THAWANI_PUBLISHABLE_KEY = 'pk_test';
+  } else {
+    delete process.env.THAWANI_SECRET_KEY;
+    delete process.env.THAWANI_PUBLISHABLE_KEY;
+  }
 
   const file = ENTRIES[entry];
   if (!file) throw new Error(`نقطة دخول غير معروفة: ${entry}`);
@@ -4026,6 +4622,331 @@ test('المُشغّلات', async (t) => {
 });
 ```
 
+#### `tests/requests.test.js` — دورة حياة الطلب والإلغاء والصرف
+
+```javascript
+/**
+ * دورة حياة طلب الصيانة: الإنشاء، الإلغاء، الاعتماد، والصرف.
+ *
+ * كل حالة هنا تُقابل بنداً كان في «ما لم يُعالَج» بـ`docs/REVIEW.md`.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { loadCloud } = require('./helpers/parse-mock');
+
+test('طلبات الصيانة', async (t) => {
+  let api;
+  let imam;
+  let volunteer;
+  let mosque;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    imam = api.asUser('user_imam', 'imam');
+    volunteer = api.asUser('user_volunteer', 'volunteer');
+    mosque = api.make('Mosques', { name: 'مسجد الاختبار', walletBalance: 0, isClaimed: true, imamId: imam });
+  });
+
+  const requestAt = (status, extra = {}) => api.make('ServiceRequests', {
+    mosqueId: mosque,
+    title: 'إصلاح المكيّف',
+    estimatedCost: 0,
+    fundedAmount: 0,
+    status,
+    ...extra,
+  });
+
+  await t.test('التكلفة غير الرقمية تُرفض بدل أن تصير طلباً تطوّعياً', async () => {
+    const { error } = await api.call('createServiceRequest',
+      { title: 'إصلاح', description: 'وصف كافٍ للطلب', estimatedCost: 'كثير' },
+      { user: imam });
+
+    assert.equal(error.code, api.ParseError.VALIDATION_ERROR,
+      '`Number(x) || 0` كان يبتلع NaN فيُنشئ طلباً بتكلفة صفر');
+  });
+
+  await t.test('غياب التكلفة يعني طلباً تطوّعياً', async () => {
+    const { ok } = await api.call('createServiceRequest',
+      { title: 'تنظيف', description: 'تنظيف السجاد قبل الجمعة' }, { user: imam });
+
+    assert.equal(ok.estimatedCost, 0);
+    assert.equal(ok.status, 'open_for_volunteers');
+  });
+
+  await t.test('لا يُلغى الطلب بعد بدء التنفيذ', async () => {
+    for (const status of ['in_progress', 'pending_imam_approval']) {
+      const serviceRequest = requestAt(status, { assignedVolunteerId: volunteer });
+      const { error } = await api.call('cancelServiceRequest',
+        { requestId: serviceRequest.id }, { user: imam });
+
+      assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN, `أُلغي وهو ${status}`);
+      assert.equal(serviceRequest.get('status'), status);
+    }
+  });
+
+  await t.test('الإلغاء قبل التنفيذ يمرّ ويُشعر المكلَّف', async () => {
+    const serviceRequest = requestAt('assigned', { assignedVolunteerId: volunteer });
+    const { ok } = await api.call('cancelServiceRequest',
+      { requestId: serviceRequest.id }, { user: imam });
+
+    assert.equal(ok.status, 'cancelled');
+    assert.equal(api.pushes.length, 1, 'المتطوّع قد يكون في طريقه إلى المسجد');
+    assert.equal(api.pushes[0].users[0].id, volunteer.id);
+  });
+
+  await t.test('الاعتماد يُحدّث تقييم المنفّذ وعدد أعماله', async () => {
+    const worker = api.make('_User', { role: 'volunteer', completedJobs: 0 });
+    const serviceRequest = requestAt('pending_imam_approval', { assignedVolunteerId: worker });
+
+    await api.call('completeService', { requestId: serviceRequest.id, rating: 4 }, { user: imam });
+
+    assert.equal(worker.get('completedJobs'), 1);
+    assert.equal(worker.get('avgRating'), 4);
+
+    const second = requestAt('pending_imam_approval', { assignedVolunteerId: worker });
+    await api.call('completeService', { requestId: second.id, rating: 2 }, { user: imam });
+
+    assert.equal(worker.get('completedJobs'), 2);
+    assert.equal(worker.get('avgRating'), 3, 'المتوسط التراكمي (4+2)/2');
+  });
+
+  await t.test('الصرف لا يتجاوز الرصيد ولو تزامن', async () => {
+    const admin = api.asUser('user_admin', 'admin');
+    mosque.set('walletBalance', 500);
+
+    const first = requestAt('completed', { estimatedCost: 500 });
+    const second = requestAt('completed', { estimatedCost: 500 });
+
+    // صرفان متزامنان على مسجد رصيده يكفي واحداً منهما فقط
+    const [a, b] = await Promise.all([
+      api.call('payoutContractor', { requestId: first.id, amount: 500 }, { user: admin }),
+      api.call('payoutContractor', { requestId: second.id, amount: 500 }, { user: admin }),
+    ]);
+
+    const succeeded = [a, b].filter((r) => r.ok).length;
+    assert.equal(succeeded, 1, 'نجح الصرفان معاً — الرصيد صار سالباً');
+    assert.equal(mosque.get('walletBalance'), 0, 'التعويض لم يُعِد المبلغ المرفوض');
+  });
+
+  await t.test('الصرف المكرَّر لنفس الطلب مرفوض', async () => {
+    const admin = api.asUser('user_admin', 'admin');
+    mosque.set('walletBalance', 1000);
+    const serviceRequest = requestAt('completed', { estimatedCost: 500 });
+
+    await api.call('payoutContractor', { requestId: serviceRequest.id, amount: 500 }, { user: admin });
+    const again = await api.call('payoutContractor',
+      { requestId: serviceRequest.id, amount: 500 }, { user: admin });
+
+    assert.equal(again.error.code, api.ParseError.DUPLICATE_VALUE);
+    assert.equal(mosque.get('walletBalance'), 500);
+  });
+});
+
+test('طلبات ملكية المسجد', async (t) => {
+  let api;
+  let imam;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    imam = api.asUser('user_imam', 'imam');
+  });
+
+  await t.test('الإمام يرى حالة طلبه', async () => {
+    const mosque = api.make('Mosques', { name: 'جامع السلطان', wilayat: 'العامرات' });
+    api.make('MosqueClaims', { imamId: imam, mosqueId: mosque, status: 'pending', evidenceNote: 'إفادة' });
+
+    const { ok } = await api.call('getMyClaims', {}, { user: imam });
+
+    assert.equal(ok.length, 1);
+    assert.equal(ok[0].status, 'pending');
+    assert.equal(ok[0].mosqueName, 'جامع السلطان',
+      'MosqueClaims مقفلة على Master Key فلا سبيل آخر للإمام لمعرفة الحالة');
+  });
+
+  await t.test('لا يرى طلبات غيره', async () => {
+    const other = api.asUser('user_other_imam', 'imam');
+    const mosque = api.make('Mosques', { name: 'مسجد آخر' });
+    api.make('MosqueClaims', { imamId: other, mosqueId: mosque, status: 'approved' });
+
+    const { ok } = await api.call('getMyClaims', {}, { user: imam });
+    assert.equal(ok.length, 0);
+  });
+});
+```
+
+#### `tests/audit.test.js` — سجل التدقيق والمهمة الدورية
+
+```javascript
+/**
+ * سجل التدقيق والمهمة الدورية لمراجعة المعاملات المعلّقة.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { loadCloud } = require('./helpers/parse-mock');
+
+const OMR = (baisa) => baisa * 1000;
+
+test('سجل التدقيق', async (t) => {
+  let api;
+  let imam;
+  let mosque;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    imam = api.asUser('user_imam', 'imam');
+    mosque = api.make('Mosques', { name: 'مسجد الاختبار', walletBalance: 0, isClaimed: true, imamId: imam });
+  });
+
+  const trail = () => api.store.AuditLog || [];
+
+  await t.test('إنشاء الطلب يُقيَّد', async () => {
+    await api.call('createServiceRequest',
+      { title: 'تنظيف', description: 'تنظيف السجاد قبل الجمعة' }, { user: imam });
+
+    assert.equal(trail().length, 1);
+    assert.equal(trail()[0].get('action'), 'request_created');
+    assert.equal(trail()[0].get('actorRole'), 'imam');
+    assert.equal(trail()[0].get('toStatus'), 'open_for_volunteers');
+  });
+
+  await t.test('الإلغاء يُقيَّد بحالته السابقة', async () => {
+    const serviceRequest = api.make('ServiceRequests',
+      { mosqueId: mosque, title: 'إصلاح', status: 'assigned', fundedAmount: 0 });
+
+    await api.call('cancelServiceRequest', { requestId: serviceRequest.id }, { user: imam });
+
+    const entry = trail().find((e) => e.get('action') === 'request_cancelled');
+    assert.ok(entry, 'لم يُقيَّد الإلغاء');
+    assert.equal(entry.get('fromStatus'), 'assigned');
+    assert.equal(entry.get('toStatus'), 'cancelled');
+  });
+
+  await t.test('السجل المعروض يُظهر الدور لا هوية الفاعل', async () => {
+    await api.call('createServiceRequest',
+      { title: 'تنظيف', description: 'تنظيف السجاد قبل الجمعة' }, { user: imam });
+
+    const { ok } = await api.call('getMosqueAuditTrail',
+      { mosqueId: mosque.id }, { user: api.asUser('any_donor') });
+
+    assert.equal(ok.length, 1);
+    assert.equal(ok[0].actorRole, 'imam');
+    assert.equal(ok[0].actorId, undefined, 'هوية الفاعل يجب ألا تُعاد');
+  });
+
+  await t.test('فشل القيد لا يُسقط العملية التي يوثّقها', async () => {
+    // اعتماد عمل منجَز يجب ألا يفشل لأن سطر تدقيق لم يُكتب
+    const original = Parse.Object.extend;
+    Parse.Object.extend = (className) => {
+      if (className === 'AuditLog') {
+        return class { set() { return this; } async save() { throw new Error('تعذّرت الكتابة'); } };
+      }
+      return original(className);
+    };
+
+    try {
+      const serviceRequest = api.make('ServiceRequests',
+        { mosqueId: mosque, title: 'إصلاح', status: 'pending_imam_approval' });
+      const { ok } = await api.call('completeService',
+        { requestId: serviceRequest.id, rating: 5 }, { user: imam });
+
+      assert.equal(ok.status, 'completed');
+      assert.equal(serviceRequest.get('status'), 'completed');
+    } finally {
+      Parse.Object.extend = original;
+    }
+  });
+});
+
+test('مراجعة المعاملات المعلّقة', async (t) => {
+  let api;
+  let mosque;
+  let serviceRequest;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    mosque = api.make('Mosques', { name: 'مسجد الاختبار', walletBalance: 0 });
+    serviceRequest = api.make('ServiceRequests',
+      { mosqueId: mosque, title: 'إصلاح', estimatedCost: 500, fundedAmount: 0, status: 'pending_funding' });
+  });
+
+  const stalePending = (ageMinutes) => api.make('Transactions', {
+    donorId: api.asUser('user_donor'),
+    mosqueId: mosque,
+    requestId: serviceRequest,
+    amount: 500,
+    type: 'donation',
+    status: 'pending',
+    paymentSessionId: 'sess_stale',
+  }, new Date(Date.now() - ageMinutes * 60 * 1000));
+
+  await t.test('الدفع الذي لم يعد صاحبه لتأكيده يُقيَّد', async () => {
+    const transaction = stalePending(45);
+    api.gateway.status = 'paid';
+    api.gateway.amountBaisa = OMR(500);
+
+    const { result } = await api.runJob('reviewPendingDonations');
+
+    assert.match(result, /قُيّدت 1/);
+    assert.equal(transaction.get('status'), 'captured');
+    assert.equal(mosque.get('walletBalance'), 500, 'أُغلق المسار الذي يُبقي المال معلّقاً');
+    assert.equal(serviceRequest.get('status'), 'funded');
+  });
+
+  await t.test('الجلسة الملغاة تُعلَّم failed', async () => {
+    const transaction = stalePending(45);
+    api.gateway.status = 'cancelled';
+
+    await api.runJob('reviewPendingDonations');
+    assert.equal(transaction.get('status'), 'failed');
+  });
+
+  await t.test('الجلسة المفتوحة تُترك حتى المهلة القصوى', async () => {
+    const recent = stalePending(45);
+    api.gateway.status = 'unpaid';
+
+    await api.runJob('reviewPendingDonations');
+    assert.equal(recent.get('status'), 'pending', 'لم تتجاوز 24 ساعة بعد');
+
+    const ancient = stalePending(25 * 60);
+    await api.runJob('reviewPendingDonations');
+    assert.equal(ancient.get('status'), 'expired');
+  });
+
+  await t.test('المبلغ المخالف لا يُقيَّد', async () => {
+    const transaction = stalePending(45);
+    api.gateway.status = 'paid';
+    api.gateway.amountBaisa = OMR(5); // دُفع 5 بدل 500
+
+    await api.runJob('reviewPendingDonations');
+
+    assert.equal(transaction.get('status'), 'mismatch');
+    assert.equal(mosque.get('walletBalance'), 0);
+  });
+
+  await t.test('المعاملات الحديثة لا تُمسّ', async () => {
+    const fresh = stalePending(5); // ما تزال ضمن مهلة الحجز
+    api.gateway.status = 'paid';
+    api.gateway.amountBaisa = OMR(500);
+
+    const { result } = await api.runJob('reviewPendingDonations');
+
+    assert.match(result, /فُحصت 0/);
+    assert.equal(fresh.get('status'), 'pending');
+  });
+
+  // المرحلة الأولى تُطلق بلا بوابة دفع، والمهمة مجدوَلة على أي حال
+  await t.test('بلا مفاتيح بوابة تتخطّى المهمة بلا خطأ', async () => {
+    const unconfigured = loadCloud('modular', { payments: false });
+    const { result, messages } = await unconfigured.runJob('reviewPendingDonations');
+
+    assert.equal(result, 'skipped');
+    assert.match(messages[0], /غير مهيأة/);
+  });
+});
+```
+
 #### `tests/schema.test.js` — الصلاحيات وتطابق النسختين
 
 ```javascript
@@ -4080,6 +5001,13 @@ test('المخطط', async (t) => {
     }
   });
 
+  await t.test('AuditLog مقفل تماماً — يُقرأ عبر دالة السحابة وحدها', () => {
+    const clp = classOf('AuditLog').classLevelPermissions;
+    for (const action of ['find', 'get', 'create', 'update', 'delete']) {
+      assert.deepEqual(clp[action], {}, `AuditLog.${action} مفتوح — يكشف هوية الفاعل`);
+    }
+  });
+
   await t.test('walletBalance غير مقروء من العميل', () => {
     assert.ok(classOf('Mosques').classLevelPermissions.protectedFields['*']
       .includes('walletBalance'));
@@ -4091,7 +5019,8 @@ test('نقاط الدخول', async (t) => {
     'getNearbyMosques', 'searchMosques', 'claimMosque', 'getMyClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'assignWorker', 'startWork', 'markWorkDone',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
-    'confirmDonation', 'payoutContractor', 'getMosqueLedger', 'health',
+    'confirmDonation', 'payoutContractor', 'getMosqueLedger',
+    'getMosqueAuditTrail', 'health',
   ];
 
   const EXPECTED_TRIGGERS = [
@@ -4107,6 +5036,13 @@ test('نقاط الدخول', async (t) => {
         `دوال النسخة ${entry} لا تطابق المتوقَّع`);
       assert.deepEqual(Object.keys(api.triggers).sort(), [...EXPECTED_TRIGGERS].sort(),
         `مُشغّلات النسخة ${entry} لا تطابق المتوقَّع`);
+    }
+  });
+
+  await t.test('المهمة الدورية مسجَّلة في النسختين', () => {
+    for (const entry of ['modular', 'bundle']) {
+      const api = loadCloud(entry);
+      assert.deepEqual(Object.keys(api.jobs), ['reviewPendingDonations'], `النسخة ${entry}`);
     }
   });
 

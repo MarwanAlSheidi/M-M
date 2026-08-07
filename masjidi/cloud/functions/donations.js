@@ -3,6 +3,7 @@ const { requireUser, requireRole, fetchPointer } = require('../lib/auth');
 const { pushToUsers } = require('../lib/push');
 const payments = require('../lib/payments');
 const { STATUS } = require('./requests');
+const audit = require('../lib/audit');
 
 /**
  * ⚠️ ثلاثة أخطاء جوهرية في النسخة الأصلية من fundRequest تم إصلاحها هنا:
@@ -141,6 +142,14 @@ Parse.Cloud.define('confirmDonation', async (request) => {
     E.invalid('المبلغ المدفوع لا يطابق المبلغ المسجّل — راجع الإدارة.');
   }
 
+  return captureDonation(transaction, verification);
+});
+
+/**
+ * قيد تبرّع مؤكَّد الدفع. مشتركة بين `confirmDonation` والمهمة الدورية، فلا
+ * يوجد مساران يُقيّدان المال بمنطقين مختلفين.
+ */
+async function captureDonation(transaction, verification) {
   transaction.set('status', 'captured');
   transaction.set('paymentGatewayRef', verification.reference);
   transaction.set('capturedAt', new Date());
@@ -158,6 +167,14 @@ Parse.Cloud.define('confirmDonation', async (request) => {
   await serviceRequest.save(null, { useMasterKey: true });
   await serviceRequest.fetch({ useMasterKey: true });
 
+  await audit.record({
+    action: audit.ACTIONS.DONATION_CAPTURED,
+    target: transaction,
+    mosque,
+    actor: transaction.get('donorId'),
+    amount,
+  });
+
   if (serviceRequest.get('fundedAmount') >= serviceRequest.get('estimatedCost')) {
     serviceRequest.set('status', STATUS.FUNDED);
     serviceRequest.set('isFundedByDonors', true);
@@ -174,7 +191,7 @@ Parse.Cloud.define('confirmDonation', async (request) => {
   }
 
   return { status: 'captured', fundedAmount: serviceRequest.get('fundedAmount') };
-});
+}
 
 /**
  * صرف المستحقات للشركة بعد اعتماد الإمام. مشرف فقط.
@@ -225,6 +242,14 @@ Parse.Cloud.define('payoutContractor', async (request) => {
   payout.set('approvedBy', admin);
   await payout.save(null, { useMasterKey: true });
 
+  await audit.record({
+    action: audit.ACTIONS.PAYOUT_RECORDED,
+    target: payout,
+    mosque,
+    actor: admin,
+    amount: value,
+  });
+
   return { message: 'تم تسجيل الصرف.', transactionId: payout.id };
 });
 
@@ -250,5 +275,112 @@ Parse.Cloud.define('getMosqueLedger', async (request) => {
     type: t.get('type'),
     createdAt: t.get('createdAt'),
     requestId: t.get('requestId') ? t.get('requestId').id : null,
+  }));
+});
+
+/**
+ * مراجعة المعاملات المعلّقة.
+ *
+ * `confirmDonation` تُستدعى عند عودة المستخدم من صفحة الدفع، فإن أغلق التطبيق
+ * بعد الدفع مباشرة بقيت معاملته `pending` ومالُه غير مقيَّد. تُجدوَل هذه المهمة
+ * من لوحة Back4app (Server Settings → Background Jobs) كل ساعة.
+ *
+ * تسأل البوابة عن كل معاملة معلّقة تجاوزت مهلة الحجز:
+ *   دُفعت    → تُقيَّد عبر `captureDonation` نفسها التي تستعملها الدالة
+ *   انتهت    → `failed`
+ *   مفتوحة   → تُترك، إلا إذا تجاوزت المهلة القصوى فتصير `expired`
+ */
+const PENDING_MAX_AGE_HOURS = 24;
+
+Parse.Cloud.job('reviewPendingDonations', async (request) => {
+  const { message } = request;
+
+  if (!payments.isConfigured()) {
+    message('بوابة الدفع غير مهيأة — لا شيء لمراجعته.');
+    return 'skipped';
+  }
+
+  const cutoff = new Date(Date.now() - PENDING_TTL_MINUTES * 60 * 1000);
+  const stale = await new Parse.Query('Transactions')
+    .equalTo('type', 'donation')
+    .equalTo('status', 'pending')
+    .lessThan('createdAt', cutoff)
+    .limit(100)
+    .find({ useMasterKey: true });
+
+  const counts = { captured: 0, failed: 0, expired: 0, open: 0, errors: 0 };
+  const expiryLimit = new Date(Date.now() - PENDING_MAX_AGE_HOURS * 3600 * 1000);
+
+  for (const transaction of stale) {
+    try {
+      const verification = await payments.verifySession(transaction.get('paymentSessionId'));
+
+      if (verification.paid) {
+        // نفس فحص المطابقة الذي في confirmDonation — لا يُقيَّد مبلغ مخالف
+        if (Math.abs(verification.amountOmr - transaction.get('amount')) > 0.001) {
+          transaction.set('status', 'mismatch');
+          await transaction.save(null, { useMasterKey: true });
+          counts.errors += 1;
+          continue;
+        }
+        await captureDonation(transaction, verification);
+        counts.captured += 1;
+      } else if (verification.terminal) {
+        transaction.set('status', 'failed');
+        await transaction.save(null, { useMasterKey: true });
+        counts.failed += 1;
+      } else if (transaction.get('createdAt') < expiryLimit) {
+        transaction.set('status', 'expired');
+        await transaction.save(null, { useMasterKey: true });
+        await audit.record({
+          action: audit.ACTIONS.DONATION_EXPIRED,
+          target: transaction,
+          mosque: transaction.get('mosqueId'),
+          amount: transaction.get('amount'),
+        });
+        counts.expired += 1;
+      } else {
+        counts.open += 1;
+      }
+    } catch (error) {
+      counts.errors += 1;
+      console.error('[reviewPendingDonations]', transaction.id, error && error.message);
+    }
+  }
+
+  const summary = `فُحصت ${stale.length}: قُيّدت ${counts.captured}، فشلت ${counts.failed}، `
+    + `انتهت ${counts.expired}، ما تزال مفتوحة ${counts.open}، أخطاء ${counts.errors}`;
+  message(summary);
+  return summary;
+});
+
+/**
+ * سجل التدقيق لمسجد — من فعل ماذا ومتى.
+ * `getMosqueLedger` يُظهر المال، وهذا يُظهر القرارات. هوية الفاعل لا تُعاد،
+ * دوره فقط: الغرض تتبّع المسار لا كشف الأشخاص.
+ */
+Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
+  requireUser(request);
+  const { mosqueId, limit = 50 } = request.params;
+  if (!mosqueId) E.invalid('معرّف المسجد مطلوب.');
+
+  const mosque = new Parse.Object('Mosques');
+  mosque.id = mosqueId;
+
+  const entries = await new Parse.Query('AuditLog')
+    .equalTo('mosqueId', mosque)
+    .descending('createdAt')
+    .limit(Math.min(Number(limit) || 50, 100))
+    .find({ useMasterKey: true });
+
+  return entries.map((entry) => ({
+    action: entry.get('action'),
+    targetClass: entry.get('targetClass'),
+    targetId: entry.get('targetId'),
+    fromStatus: entry.get('fromStatus'),
+    toStatus: entry.get('toStatus'),
+    actorRole: entry.get('actorRole'),
+    amount: entry.get('amount'),
+    createdAt: entry.get('createdAt'),
   }));
 });

@@ -116,6 +116,27 @@
       }
     },
     {
+      "className": "AuditLog",
+      "_comment": "سجل التدقيق. مقفل على Master Key ويُقرأ عبر getMosqueAuditTrail وحدها، فلا تُكشف هوية الفاعل.",
+      "fields": {
+        "action": { "type": "String", "required": true },
+        "targetClass": { "type": "String" },
+        "targetId": { "type": "String" },
+        "mosqueId": { "type": "Pointer", "targetClass": "Mosques" },
+        "fromStatus": { "type": "String" },
+        "toStatus": { "type": "String" },
+        "actorId": { "type": "Pointer", "targetClass": "_User" },
+        "actorRole": { "type": "String" },
+        "amount": { "type": "Number" }
+      },
+      "indexes": {
+        "trail": { "mosqueId": 1, "createdAt": -1 }
+      },
+      "classLevelPermissions": {
+        "find": {}, "get": {}, "create": {}, "update": {}, "delete": {}, "addField": {}
+      }
+    },
+    {
       "className": "_User",
       "fields": {
         "role": { "type": "String", "defaultValue": "donor" },
