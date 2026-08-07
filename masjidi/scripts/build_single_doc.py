@@ -18,6 +18,7 @@ CLOUD_FILES = [
     "cloud/lib/push.js",
     "cloud/lib/payments.js",
     "cloud/lib/audit.js",
+    "cloud/lib/geo.js",
     "cloud/functions/mosques.js",
     "cloud/functions/requests.js",
     "cloud/functions/donations.js",

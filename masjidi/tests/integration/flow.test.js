@@ -82,6 +82,39 @@ test('الرحلة الكاملة على خادم حقيقي', options, async (t
     }
   });
 
+  // القرب على حقلين رقميين لا على فهرس مكاني: هذه الحالة تُثبت أن الاستعلام
+  // يعمل على خادم حقيقي بلا PostGIS ولا 2dsphere.
+  await t.test('القرب يعمل بلا فهرس مكاني', async () => {
+    const user = await signUp('volunteer');
+    const Mosque = Parse.Object.extend('Mosques');
+
+    const put = async (name, lat, lng) => {
+      const mosque = new Mosque();
+      mosque.set('externalId', `geo-${name}-${Date.now()}-${++unique}`);
+      mosque.set('name', name);
+      mosque.set('governorate', 'مسقط');
+      mosque.set('lat', lat);
+      mosque.set('lng', lng);
+      await mosque.save(null, MASTER);
+      return mosque;
+    };
+
+    await put('قريب جداً', 23.5920, 58.3829);
+    await put('متوسط', 23.6150, 58.3829);
+    await put('بعيد جداً', 25.0000, 58.3829);
+
+    const near = await as(user, 'getNearbyMosques',
+      { lat: 23.5880, lng: 58.3829, radius: 10 });
+
+    const names = near.map((row) => row.name);
+    assert.ok(names.includes('قريب جداً'));
+    assert.ok(!names.includes('بعيد جداً'), 'أُعيد ما هو خارج النطاق');
+    assert.ok(near[0].distanceKm < near[near.length - 1].distanceKm, 'غير مرتّب بالمسافة');
+
+    const saved = await as(user, 'updateMyLocation', { lat: 23.5880, lng: 58.3829 });
+    assert.equal(saved.lat, 23.5880);
+  });
+
   await t.test('الرحلة: من طلب الملكية إلى اعتماد العمل', async () => {
     const imam = await signUp('imam', { fullName: 'الشيخ سعيد' });
     const volunteer = await signUp('volunteer', { fullName: 'سالم', skills: ['كهرباء'] });

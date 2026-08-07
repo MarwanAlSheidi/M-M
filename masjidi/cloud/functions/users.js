@@ -2,6 +2,7 @@ const E = require('../lib/errors');
 const { requireUser, requireRole } = require('../lib/auth');
 const { pushToUsers } = require('../lib/push');
 const audit = require('../lib/audit');
+const geo = require('../lib/geo');
 
 /**
  * شؤون الحسابات: اعتماد الشركات، والملف الشخصي.
@@ -88,6 +89,26 @@ Parse.Cloud.define('setFavoriteMosque', async (request) => {
   await user.save(null, { useMasterKey: true });
 
   return { favoriteMosqueId: mosque.id, mosqueName: mosque.get('name') };
+});
+
+/**
+ * تحديث آخر موقع معروف للمستخدم.
+ *
+ * عليه يقوم إشعار «فرصة تطوّع قريبة»: بلا موقع محفوظ لا يصل المتطوّع خبرٌ إلا
+ * إن فتح التطبيق. يُكتب الحقلان الرقميان معاً لأن البحث بالقرب يعمل عليهما.
+ */
+Parse.Cloud.define('updateMyLocation', async (request) => {
+  const user = requireUser(request);
+  const { lat, lng } = request.params;
+
+  if (!geo.validCoordinates(lat, lng)) E.invalid('الإحداثيات مطلوبة كأرقام صحيحة.');
+
+  user.set('lastKnownLocation', new Parse.GeoPoint({ latitude: lat, longitude: lng }));
+  user.set('lastLat', lat);
+  user.set('lastLng', lng);
+  await user.save(null, { useMasterKey: true });
+
+  return { lat, lng };
 });
 
 /** ملف المستخدم كما يعرضه التطبيق. */

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import * as api from './api';
 import {
-  AdminHome, Auth, ClaimMosque, ImamHome, MyVolunteering,
+  AdminHome, AroundMe, Auth, ClaimMosque, ImamHome, MyVolunteering,
   Opportunities, Profile,
 } from './screens.jsx';
 
@@ -9,11 +9,13 @@ import {
 const TABS = {
   imam: [
     ['home', 'مساجدي', ImamHome],
+    ['near', 'حولي', AroundMe],
     ['claim', 'تسجيل مسجد', ClaimMosque],
     ['me', 'حسابي', Profile],
   ],
   volunteer: [
     ['home', 'الفرص', Opportunities],
+    ['near', 'حولي', AroundMe],
     ['mine', 'مهامّي', MyVolunteering],
     ['me', 'حسابي', Profile],
   ],
@@ -21,7 +23,7 @@ const TABS = {
     ['home', 'الإدارة', AdminHome],
     ['me', 'حسابي', Profile],
   ],
-  donor: [['me', 'حسابي', Profile]],
+  donor: [['near', 'حولي', AroundMe], ['me', 'حسابي', Profile]],
   contractor: [['me', 'حسابي', Profile]],
 };
 

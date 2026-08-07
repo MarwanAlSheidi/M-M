@@ -34,23 +34,33 @@ async function pushToUsers(users, payload) {
   return { sent: list.length };
 }
 
+const geo = require('./geo');
+
 /** متطوعون قريبون: نطاق جغرافي أولاً، ثم المحافظة كخطة بديلة. */
 async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
   const base = new Parse.Query(Parse.User);
   base.equalTo('role', 'volunteer');
   base.equalTo('isActive', true);
 
-  const location = mosque.get('location');
   let volunteers = [];
 
   try {
-    if (location) {
-      const geo = new Parse.Query(Parse.User);
-      geo.equalTo('role', 'volunteer');
-      geo.equalTo('isActive', true);
-      geo.withinKilometers('lastKnownLocation', location, radiusKm);
-      geo.limit(500);
-      volunteers = await geo.find({ useMasterKey: true });
+    // صندوق إحاطة على `lastLat`/`lastLng` لا `withinKilometers`: الأخيرة تفرض
+    // فهرساً مكانياً على _User يُضاف يدوياً — انظر lib/geo.js
+    const lat = mosque.get('lat');
+    const lng = mosque.get('lng');
+
+    if (geo.validCoordinates(lat, lng)) {
+      const near = new Parse.Query(Parse.User);
+      near.equalTo('role', 'volunteer');
+      near.equalTo('isActive', true);
+      geo.withinBox(near, geo.boundingBox(lat, lng, radiusKm), 'lastLat', 'lastLng');
+      near.limit(500);
+
+      volunteers = geo
+        .sortByDistance(await near.find({ useMasterKey: true }), lat, lng, radiusKm,
+          'lastLat', 'lastLng')
+        .map(({ row }) => row);
     }
 
     if (volunteers.length === 0) {

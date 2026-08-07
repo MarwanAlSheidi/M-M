@@ -1,34 +1,97 @@
 const E = require('../lib/errors');
 const { requireUser, requireRole } = require('../lib/auth');
 const audit = require('../lib/audit');
+const geo = require('../lib/geo');
 
 const PUBLIC_FIELDS = [
   'name', 'mosqueNumber', 'type', 'typeSlug', 'governorate', 'wilayat',
   'village', 'location', 'isClaimed', 'openRequestsCount',
 ];
 
+const MAX_RADIUS_KM = 50;
+const BOX_CANDIDATE_CAP = 500;
+
+/** يقرأ الإحداثيات ونصف القطر من الطلب بعد التحقق. */
+function readPoint(params, defaultRadius = 5) {
+  const { lat, lng } = params;
+  if (!geo.validCoordinates(lat, lng)) {
+    E.invalid('الإحداثيات (lat, lng) مطلوبة كأرقام صحيحة.');
+  }
+  const radiusKm = Math.min(Math.max(Number(params.radius) || defaultRadius, 0.5), MAX_RADIUS_KM);
+  return { lat, lng, radiusKm };
+}
+
 /**
- * المساجد القريبة.
- * إصلاحات مقابل النسخة الأصلية: حد أقصى للنتائج، تحديد الحقول المُعادة،
- * سقف لنصف القطر، ولا نُعيد كائنات كاملة بصلاحيات Master.
+ * المساجد القريبة، مرتّبةً بالأقرب ومعها المسافة.
+ *
+ * صندوق إحاطة على `lat`/`lng` ثم هافرساين — لا `withinKilometers`، فذلك يفرض
+ * فهرساً مكانياً يُضاف يدوياً وقد يغيب. التفصيل في `cloud/lib/geo.js`.
  */
 Parse.Cloud.define('getNearbyMosques', async (request) => {
   requireUser(request);
-  const { lat, lng, radius = 5, limit = 50 } = request.params;
+  const { lat, lng, radiusKm } = readPoint(request.params);
+  const cap = Math.min(Number(request.params.limit) || 50, 100);
 
-  if (typeof lat !== 'number' || typeof lng !== 'number') {
-    E.invalid('الإحداثيات (lat, lng) مطلوبة كأرقام.');
-  }
-  const radiusKm = Math.min(Math.max(Number(radius) || 5, 0.5), 50);
-
-  const point = new Parse.GeoPoint({ latitude: lat, longitude: lng });
   const query = new Parse.Query('Mosques');
-  query.withinKilometers('location', point, radiusKm, true); // sorted = true
-  query.select(...PUBLIC_FIELDS);
-  query.limit(Math.min(Number(limit) || 50, 100));
+  geo.withinBox(query, geo.boundingBox(lat, lng, radiusKm));
+  query.select(...PUBLIC_FIELDS, 'lat', 'lng');
+  query.limit(BOX_CANDIDATE_CAP);
 
-  const results = await query.find({ useMasterKey: true });
-  return results.map((m) => m.toJSON());
+  const candidates = await query.find({ useMasterKey: true });
+
+  return geo.sortByDistance(candidates, lat, lng, radiusKm)
+    .slice(0, cap)
+    .map(({ row, km }) => ({ ...row.toJSON(), distanceKm: Math.round(km * 100) / 100 }));
+});
+
+/**
+ * فرص التطوّع القريبة — شاشة المتطوّع الأولى.
+ *
+ * المتطوّع لا يبحث عن مسجد بل عن عمل قريب منه، فالترتيب بالمسافة لا بالتاريخ.
+ */
+Parse.Cloud.define('getNearbyOpportunities', async (request) => {
+  requireUser(request);
+  const { lat, lng, radiusKm } = readPoint(request.params, 15);
+
+  const mosqueQuery = new Parse.Query('Mosques');
+  geo.withinBox(mosqueQuery, geo.boundingBox(lat, lng, radiusKm));
+  mosqueQuery.greaterThan('openRequestsCount', 0); // لا معنى لمسجد بلا طلبات
+  mosqueQuery.select('name', 'wilayat', 'governorate', 'lat', 'lng');
+  mosqueQuery.limit(BOX_CANDIDATE_CAP);
+
+  const near = geo.sortByDistance(
+    await mosqueQuery.find({ useMasterKey: true }), lat, lng, radiusKm,
+  );
+  if (near.length === 0) return [];
+
+  const byId = new Map(near.map(({ row, km }) => [row.id, { mosque: row, km }]));
+
+  const requests = await new Parse.Query('ServiceRequests')
+    .containedIn('mosqueId', near.map(({ row }) => row))
+    .equalTo('status', 'open_for_volunteers')
+    .limit(100)
+    .find({ useMasterKey: true });
+
+  return requests
+    .map((row) => {
+      const pointer = row.get('mosqueId');
+      const hit = pointer ? byId.get(pointer.id) : null;
+      return { row, hit };
+    })
+    .filter(({ hit }) => hit)
+    .sort((a, b) => a.hit.km - b.hit.km)
+    .map(({ row, hit }) => ({
+      id: row.id,
+      title: row.get('title'),
+      description: row.get('description'),
+      category: row.get('category'),
+      urgency: row.get('urgency'),
+      status: row.get('status'),
+      mosqueId: hit.mosque.id,
+      mosqueName: hit.mosque.get('name'),
+      wilayat: hit.mosque.get('wilayat'),
+      distanceKm: Math.round(hit.km * 100) / 100,
+    }));
 });
 
 /**

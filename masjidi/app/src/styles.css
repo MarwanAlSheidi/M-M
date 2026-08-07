@@ -65,6 +65,16 @@ h2:first-child { margin-top: 0; }
 .tag.warn { background: #fdf0d5; color: #7a5200; }
 .tag.done { background: #e6f0e6; color: #23532b; }
 .tag.off { background: #eee; color: #666; }
+.tag.dist { background: #eef3fb; color: #24457a; }
+
+.maplink {
+  color: var(--green);
+  font-size: 14px;
+  text-decoration: none;
+  border: 1px solid var(--green);
+  border-radius: 10px;
+  padding: 9px 16px;
+}
 
 button {
   font: inherit;

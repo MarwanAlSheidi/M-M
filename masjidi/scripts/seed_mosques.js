@@ -97,6 +97,10 @@ async function main() {
           latitude: row.location.latitude,
           longitude: row.location.longitude,
         }));
+        // نسخة رقمية مسطّحة: البحث بالقرب يعمل عليها بصندوق إحاطة، فلا يتوقّف
+        // على فهرس 2dsphere الذي يُضاف يدوياً — انظر cloud/lib/geo.js
+        mosque.set('lat', row.location.latitude);
+        mosque.set('lng', row.location.longitude);
       }
 
       // لا نلمس الحقول التشغيلية عند التحديث حتى لا نمسح رصيداً أو ملكية

@@ -59,7 +59,7 @@
 | دوال السحابة | ✅ مكتوبة، ❌ غير مُختبرة على خادم حقيقي |
 | سكربت الاستيراد | ✅ مكتوب، ❌ لم يُشغّل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
-| تطبيق العميل | ⚠️ واجهة ويب عربية في `app/` تغطي مسار التطوّع — لا React Native ولا خريطة ولا PWA |
+| تطبيق العميل | ⚠️ واجهة ويب عربية في `app/` تغطي مسار التطوّع والقرب الجغرافي — لا React Native ولا خريطة مضمّنة ولا PWA |
 | الاختبارات | ✅ 109 حالة على بديل Parse (`npm test`) + اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
 
 ---
@@ -96,8 +96,9 @@
 - Back4app المجاني: 25k طلب/شهر، قاعدة 250MB. الـ 18k مسجداً تشغل ~15MB — كافٍ.
 - الإشعارات تحتاج تسجيل Installation وربطه بالمستخدم عند تسجيل الدخول،
   وإلا لن يصل أي إشعار.
-- فهرس `2dsphere` على `Mosques.location` **إلزامي** قبل تشغيل `getNearbyMosques`
-  على البيانات الكاملة، وإلا فالاستعلام يمسح 18k وثيقة.
+- القرب الجغرافي **لا يحتاج فهرساً مكانياً**: يعمل على `lat`/`lng` بصندوق إحاطة
+  ثم هافرساين (`cloud/lib/geo.js`). فهرس `geo_box` المركّب يكفي، وفهرس
+  `2dsphere` صار تحسيناً اختيارياً لا شرطاً.
 
 ---
 
@@ -115,6 +116,7 @@ cloud/
     push.js            الإشعارات (استعلام على _Installation لا _User)
     payments.js        محوّل بوابة ثواني
     audit.js           سجل التدقيق — لا يرمي أبداً
+    geo.js             القرب بصندوق إحاطة وهافرساين — بلا فهرس مكاني
   functions/
     mosques.js         البحث، القرب الجغرافي، طلب ملكية المسجد
     requests.js        دورة حياة الطلب، واهتمام المتطوّعين
@@ -347,6 +349,24 @@ if (user.dirty('isVerifiedContractor')) {
 
 ---
 
+### 🟠 جولة سادسة — القرب الجغرافي بلا فهرس مكاني
+
+`getNearbyMosques` و`pushToNearbyVolunteers` كانا يستعملان `withinKilometers`،
+وهي تفرض فهرس `2dsphere` على MongoDB (وPostGIS على PostgreSQL). و`CLAUDE.md`
+ينبّه أن الفهرس **يُضاف يدوياً** من لوحة Back4app — فقد يغيب في أول يوم تشغيل،
+فيفشل الاستعلام أو يمسح 18 ألف وثيقة. وقد فشل فعلاً على أول خادم اختبار، وأسقط
+معه إنشاء الطلب (الجولة الرابعة).
+
+وموقع المسجد هو ما يربط المصلّي بمسجده — فلا يصحّ أن يتعلّق الأمر بخطوة يدوية.
+
+**الإصلاح:** `cloud/lib/geo.js`. حقلان رقميان `lat`/`lng` يخدمهما فهرس مركّب
+عادي، صندوق إحاطة يُضيّق المرشّحين إلى العشرات، ثم مسافة هافرساين الدقيقة في
+الكود تُسقط زوايا الصندوق وترتّب بالأقرب. النتيجة تحمل `distanceKm` — وهو ما
+تعرضه الواجهة أصلاً. حقل `location` (GeoPoint) يبقى للاستعمالات المستقبلية،
+والفهرس المكاني صار تحسيناً لا شرطاً.
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB.** `npm run test:integration`
@@ -408,6 +428,8 @@ if (user.dirty('isVerifiedContractor')) {
         "wilayat": { "type": "String" },
         "village": { "type": "String" },
         "location": { "type": "GeoPoint" },
+        "lat": { "type": "Number" },
+        "lng": { "type": "Number" },
         "hasLocation": { "type": "Boolean", "defaultValue": true },
         "address": { "type": "String" },
         "imamId": { "type": "Pointer", "targetClass": "_User" },
@@ -420,6 +442,7 @@ if (user.dirty('isVerifiedContractor')) {
       "indexes": {
         "externalId_unique": { "externalId": 1 },
         "geo": { "location": "2dsphere" },
+        "geo_box": { "lat": 1, "lng": 1 },
         "gov_wilayat": { "governorate": 1, "wilayat": 1 },
         "name_search": { "nameNormalized": 1 }
       },
@@ -556,6 +579,8 @@ if (user.dirty('isVerifiedContractor')) {
         "governorate": { "type": "String" },
         "wilayat": { "type": "String" },
         "lastKnownLocation": { "type": "GeoPoint" },
+        "lastLat": { "type": "Number" },
+        "lastLng": { "type": "Number" },
         "favoriteMosqueId": { "type": "Pointer", "targetClass": "Mosques" },
         "isActive": { "type": "Boolean", "defaultValue": true },
         "isVerifiedContractor": { "type": "Boolean", "defaultValue": false },
@@ -566,7 +591,8 @@ if (user.dirty('isVerifiedContractor')) {
       },
       "indexes": {
         "role_gov": { "role": 1, "governorate": 1 },
-        "volunteer_geo": { "lastKnownLocation": "2dsphere" }
+        "volunteer_geo": { "lastKnownLocation": "2dsphere" },
+        "volunteer_box": { "role": 1, "lastLat": 1, "lastLng": 1 }
       },
       "_comment_clp": "create مفتوح لأن التسجيل يمرّ عبره. الحماية الفعلية في ACL يضبطه afterSave على المستخدم نفسه، وقراءة بيانات مستخدم آخر تمرّ عبر دوال السحابة بـ Master Key.",
       "classLevelPermissions": {
@@ -859,23 +885,33 @@ async function pushToUsers(users, payload) {
   return { sent: list.length };
 }
 
+const geo = require('./geo');
+
 /** متطوعون قريبون: نطاق جغرافي أولاً، ثم المحافظة كخطة بديلة. */
 async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
   const base = new Parse.Query(Parse.User);
   base.equalTo('role', 'volunteer');
   base.equalTo('isActive', true);
 
-  const location = mosque.get('location');
   let volunteers = [];
 
   try {
-    if (location) {
-      const geo = new Parse.Query(Parse.User);
-      geo.equalTo('role', 'volunteer');
-      geo.equalTo('isActive', true);
-      geo.withinKilometers('lastKnownLocation', location, radiusKm);
-      geo.limit(500);
-      volunteers = await geo.find({ useMasterKey: true });
+    // صندوق إحاطة على `lastLat`/`lastLng` لا `withinKilometers`: الأخيرة تفرض
+    // فهرساً مكانياً على _User يُضاف يدوياً — انظر lib/geo.js
+    const lat = mosque.get('lat');
+    const lng = mosque.get('lng');
+
+    if (geo.validCoordinates(lat, lng)) {
+      const near = new Parse.Query(Parse.User);
+      near.equalTo('role', 'volunteer');
+      near.equalTo('isActive', true);
+      geo.withinBox(near, geo.boundingBox(lat, lng, radiusKm), 'lastLat', 'lastLng');
+      near.limit(500);
+
+      volunteers = geo
+        .sortByDistance(await near.find({ useMasterKey: true }), lat, lng, radiusKm,
+          'lastLat', 'lastLng')
+        .map(({ row }) => row);
     }
 
     if (volunteers.length === 0) {
@@ -1067,40 +1103,188 @@ async function record({ action, target, mosque, actor, fromStatus, toStatus, amo
 module.exports = { record, ACTIONS };
 ```
 
+#### `cloud/lib/geo.js`
+
+```javascript
+/**
+ * حساب القرب الجغرافي بلا فهرس مكاني.
+ *
+ * لماذا لا `withinKilometers`؟ لأنها تفرض فهرس `2dsphere` على MongoDB
+ * (وPostGIS على PostgreSQL). و`CLAUDE.md` ينبّه أن الفهرس يُضاف **يدوياً** من
+ * لوحة Back4app — أي أنه قد يغيب في أول يوم تشغيل، فيفشل الاستعلام أو يمسح
+ * 18 ألف وثيقة. وموقع المسجد هو ما يربط المصلّي بمسجده، فلا يصحّ أن يتعلّق
+ * بخطوة يدوية.
+ *
+ * البديل: صندوق إحاطة على حقلين رقميين عاديين (`lat`/`lng`) يخدمهما فهرس
+ * مركّب بسيط، ثم مسافة هافرساين الدقيقة داخل الكود. الصندوق يُضيّق المرشّحين
+ * إلى العشرات، والحساب الدقيق عليها لا يكلّف شيئاً.
+ */
+
+const EARTH_RADIUS_KM = 6371;
+const KM_PER_DEGREE_LAT = 111.32;
+
+const toRad = (degrees) => (degrees * Math.PI) / 180;
+
+/** المسافة بين نقطتين بالكيلومترات. */
+function distanceKm(fromLat, fromLng, toLat, toLng) {
+  const dLat = toRad(toLat - fromLat);
+  const dLng = toRad(toLng - fromLng);
+
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(fromLat)) * Math.cos(toRad(toLat)) * Math.sin(dLng / 2) ** 2;
+
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/**
+ * حدود صندوق يحيط بدائرة نصف قطرها `radiusKm`.
+ *
+ * الصندوق أوسع من الدائرة دائماً (زواياه خارجها)، فلا يُسقط نتيجة صحيحة —
+ * والتصفية الدقيقة بعده. عرض درجة الطول يتقلّص باتجاه القطبين، ولذلك يُقسم
+ * على جيب تمام خط العرض؛ وعُمان بعيدة عن القطبين فالحارس احتياط لا أكثر.
+ */
+function boundingBox(lat, lng, radiusKm) {
+  const latDelta = radiusKm / KM_PER_DEGREE_LAT;
+  const cosLat = Math.max(Math.cos(toRad(lat)), 0.01);
+  const lngDelta = radiusKm / (KM_PER_DEGREE_LAT * cosLat);
+
+  return {
+    minLat: lat - latDelta,
+    maxLat: lat + latDelta,
+    minLng: lng - lngDelta,
+    maxLng: lng + lngDelta,
+  };
+}
+
+/** يضيف قيود الصندوق إلى استعلام قائم. */
+function withinBox(query, { minLat, maxLat, minLng, maxLng }, latField = 'lat', lngField = 'lng') {
+  query.greaterThanOrEqualTo(latField, minLat);
+  query.lessThanOrEqualTo(latField, maxLat);
+  query.greaterThanOrEqualTo(lngField, minLng);
+  query.lessThanOrEqualTo(lngField, maxLng);
+  return query;
+}
+
+/** يُصفّي مرشّحي الصندوق إلى الدائرة، ويرتّبهم بالأقرب. */
+function sortByDistance(rows, lat, lng, radiusKm, latField = 'lat', lngField = 'lng') {
+  return rows
+    .map((row) => ({
+      row,
+      km: distanceKm(lat, lng, row.get(latField), row.get(lngField)),
+    }))
+    .filter((hit) => Number.isFinite(hit.km) && hit.km <= radiusKm)
+    .sort((a, b) => a.km - b.km);
+}
+
+/** تحقّق من إحداثيات واردة من العميل. */
+function validCoordinates(lat, lng) {
+  return typeof lat === 'number' && typeof lng === 'number'
+    && Number.isFinite(lat) && Number.isFinite(lng)
+    && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+}
+
+module.exports = {
+  distanceKm, boundingBox, withinBox, sortByDistance, validCoordinates,
+};
+```
+
 #### `cloud/functions/mosques.js`
 
 ```javascript
 const E = require('../lib/errors');
 const { requireUser, requireRole } = require('../lib/auth');
 const audit = require('../lib/audit');
+const geo = require('../lib/geo');
 
 const PUBLIC_FIELDS = [
   'name', 'mosqueNumber', 'type', 'typeSlug', 'governorate', 'wilayat',
   'village', 'location', 'isClaimed', 'openRequestsCount',
 ];
 
+const MAX_RADIUS_KM = 50;
+const BOX_CANDIDATE_CAP = 500;
+
+/** يقرأ الإحداثيات ونصف القطر من الطلب بعد التحقق. */
+function readPoint(params, defaultRadius = 5) {
+  const { lat, lng } = params;
+  if (!geo.validCoordinates(lat, lng)) {
+    E.invalid('الإحداثيات (lat, lng) مطلوبة كأرقام صحيحة.');
+  }
+  const radiusKm = Math.min(Math.max(Number(params.radius) || defaultRadius, 0.5), MAX_RADIUS_KM);
+  return { lat, lng, radiusKm };
+}
+
 /**
- * المساجد القريبة.
- * إصلاحات مقابل النسخة الأصلية: حد أقصى للنتائج، تحديد الحقول المُعادة،
- * سقف لنصف القطر، ولا نُعيد كائنات كاملة بصلاحيات Master.
+ * المساجد القريبة، مرتّبةً بالأقرب ومعها المسافة.
+ *
+ * صندوق إحاطة على `lat`/`lng` ثم هافرساين — لا `withinKilometers`، فذلك يفرض
+ * فهرساً مكانياً يُضاف يدوياً وقد يغيب. التفصيل في `cloud/lib/geo.js`.
  */
 Parse.Cloud.define('getNearbyMosques', async (request) => {
   requireUser(request);
-  const { lat, lng, radius = 5, limit = 50 } = request.params;
+  const { lat, lng, radiusKm } = readPoint(request.params);
+  const cap = Math.min(Number(request.params.limit) || 50, 100);
 
-  if (typeof lat !== 'number' || typeof lng !== 'number') {
-    E.invalid('الإحداثيات (lat, lng) مطلوبة كأرقام.');
-  }
-  const radiusKm = Math.min(Math.max(Number(radius) || 5, 0.5), 50);
-
-  const point = new Parse.GeoPoint({ latitude: lat, longitude: lng });
   const query = new Parse.Query('Mosques');
-  query.withinKilometers('location', point, radiusKm, true); // sorted = true
-  query.select(...PUBLIC_FIELDS);
-  query.limit(Math.min(Number(limit) || 50, 100));
+  geo.withinBox(query, geo.boundingBox(lat, lng, radiusKm));
+  query.select(...PUBLIC_FIELDS, 'lat', 'lng');
+  query.limit(BOX_CANDIDATE_CAP);
 
-  const results = await query.find({ useMasterKey: true });
-  return results.map((m) => m.toJSON());
+  const candidates = await query.find({ useMasterKey: true });
+
+  return geo.sortByDistance(candidates, lat, lng, radiusKm)
+    .slice(0, cap)
+    .map(({ row, km }) => ({ ...row.toJSON(), distanceKm: Math.round(km * 100) / 100 }));
+});
+
+/**
+ * فرص التطوّع القريبة — شاشة المتطوّع الأولى.
+ *
+ * المتطوّع لا يبحث عن مسجد بل عن عمل قريب منه، فالترتيب بالمسافة لا بالتاريخ.
+ */
+Parse.Cloud.define('getNearbyOpportunities', async (request) => {
+  requireUser(request);
+  const { lat, lng, radiusKm } = readPoint(request.params, 15);
+
+  const mosqueQuery = new Parse.Query('Mosques');
+  geo.withinBox(mosqueQuery, geo.boundingBox(lat, lng, radiusKm));
+  mosqueQuery.greaterThan('openRequestsCount', 0); // لا معنى لمسجد بلا طلبات
+  mosqueQuery.select('name', 'wilayat', 'governorate', 'lat', 'lng');
+  mosqueQuery.limit(BOX_CANDIDATE_CAP);
+
+  const near = geo.sortByDistance(
+    await mosqueQuery.find({ useMasterKey: true }), lat, lng, radiusKm,
+  );
+  if (near.length === 0) return [];
+
+  const byId = new Map(near.map(({ row, km }) => [row.id, { mosque: row, km }]));
+
+  const requests = await new Parse.Query('ServiceRequests')
+    .containedIn('mosqueId', near.map(({ row }) => row))
+    .equalTo('status', 'open_for_volunteers')
+    .limit(100)
+    .find({ useMasterKey: true });
+
+  return requests
+    .map((row) => {
+      const pointer = row.get('mosqueId');
+      const hit = pointer ? byId.get(pointer.id) : null;
+      return { row, hit };
+    })
+    .filter(({ hit }) => hit)
+    .sort((a, b) => a.hit.km - b.hit.km)
+    .map(({ row, hit }) => ({
+      id: row.id,
+      title: row.get('title'),
+      description: row.get('description'),
+      category: row.get('category'),
+      urgency: row.get('urgency'),
+      status: row.get('status'),
+      mosqueId: hit.mosque.id,
+      mosqueName: hit.mosque.get('name'),
+      wilayat: hit.mosque.get('wilayat'),
+      distanceKm: Math.round(hit.km * 100) / 100,
+    }));
 });
 
 /**
@@ -2281,6 +2465,7 @@ const E = require('../lib/errors');
 const { requireUser, requireRole } = require('../lib/auth');
 const { pushToUsers } = require('../lib/push');
 const audit = require('../lib/audit');
+const geo = require('../lib/geo');
 
 /**
  * شؤون الحسابات: اعتماد الشركات، والملف الشخصي.
@@ -2367,6 +2552,26 @@ Parse.Cloud.define('setFavoriteMosque', async (request) => {
   await user.save(null, { useMasterKey: true });
 
   return { favoriteMosqueId: mosque.id, mosqueName: mosque.get('name') };
+});
+
+/**
+ * تحديث آخر موقع معروف للمستخدم.
+ *
+ * عليه يقوم إشعار «فرصة تطوّع قريبة»: بلا موقع محفوظ لا يصل المتطوّع خبرٌ إلا
+ * إن فتح التطبيق. يُكتب الحقلان الرقميان معاً لأن البحث بالقرب يعمل عليهما.
+ */
+Parse.Cloud.define('updateMyLocation', async (request) => {
+  const user = requireUser(request);
+  const { lat, lng } = request.params;
+
+  if (!geo.validCoordinates(lat, lng)) E.invalid('الإحداثيات مطلوبة كأرقام صحيحة.');
+
+  user.set('lastKnownLocation', new Parse.GeoPoint({ latitude: lat, longitude: lng }));
+  user.set('lastLat', lat);
+  user.set('lastLng', lng);
+  await user.save(null, { useMasterKey: true });
+
+  return { lat, lng };
 });
 
 /** ملف المستخدم كما يعرضه التطبيق. */
@@ -2589,23 +2794,32 @@ async function pushToUsers(users, payload) {
   return { sent: list.length };
 }
 
+
 /** متطوعون قريبون: نطاق جغرافي أولاً، ثم المحافظة كخطة بديلة. */
 async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
   const base = new Parse.Query(Parse.User);
   base.equalTo('role', 'volunteer');
   base.equalTo('isActive', true);
 
-  const location = mosque.get('location');
   let volunteers = [];
 
   try {
-    if (location) {
-      const geo = new Parse.Query(Parse.User);
-      geo.equalTo('role', 'volunteer');
-      geo.equalTo('isActive', true);
-      geo.withinKilometers('lastKnownLocation', location, radiusKm);
-      geo.limit(500);
-      volunteers = await geo.find({ useMasterKey: true });
+    // صندوق إحاطة على `lastLat`/`lastLng` لا `withinKilometers`: الأخيرة تفرض
+    // فهرساً مكانياً على _User يُضاف يدوياً — انظر lib/geo.js
+    const lat = mosque.get('lat');
+    const lng = mosque.get('lng');
+
+    if (geo.validCoordinates(lat, lng)) {
+      const near = new Parse.Query(Parse.User);
+      near.equalTo('role', 'volunteer');
+      near.equalTo('isActive', true);
+      geo.withinBox(near, geo.boundingBox(lat, lng, radiusKm), 'lastLat', 'lastLng');
+      near.limit(500);
+
+      volunteers = geo
+        .sortByDistance(await near.find({ useMasterKey: true }), lat, lng, radiusKm,
+          'lastLat', 'lastLng')
+        .map(({ row }) => row);
     }
 
     if (volunteers.length === 0) {
@@ -2798,6 +3012,90 @@ const audit = { record, ACTIONS };
 
 
 // ======================================================================
+// القرب الجغرافي   [lib/geo.js]
+// ======================================================================
+
+/**
+ * حساب القرب الجغرافي بلا فهرس مكاني.
+ *
+ * لماذا لا `withinKilometers`؟ لأنها تفرض فهرس `2dsphere` على MongoDB
+ * (وPostGIS على PostgreSQL). و`CLAUDE.md` ينبّه أن الفهرس يُضاف **يدوياً** من
+ * لوحة Back4app — أي أنه قد يغيب في أول يوم تشغيل، فيفشل الاستعلام أو يمسح
+ * 18 ألف وثيقة. وموقع المسجد هو ما يربط المصلّي بمسجده، فلا يصحّ أن يتعلّق
+ * بخطوة يدوية.
+ *
+ * البديل: صندوق إحاطة على حقلين رقميين عاديين (`lat`/`lng`) يخدمهما فهرس
+ * مركّب بسيط، ثم مسافة هافرساين الدقيقة داخل الكود. الصندوق يُضيّق المرشّحين
+ * إلى العشرات، والحساب الدقيق عليها لا يكلّف شيئاً.
+ */
+
+const EARTH_RADIUS_KM = 6371;
+const KM_PER_DEGREE_LAT = 111.32;
+
+const toRad = (degrees) => (degrees * Math.PI) / 180;
+
+/** المسافة بين نقطتين بالكيلومترات. */
+function distanceKm(fromLat, fromLng, toLat, toLng) {
+  const dLat = toRad(toLat - fromLat);
+  const dLng = toRad(toLng - fromLng);
+
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(fromLat)) * Math.cos(toRad(toLat)) * Math.sin(dLng / 2) ** 2;
+
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/**
+ * حدود صندوق يحيط بدائرة نصف قطرها `radiusKm`.
+ *
+ * الصندوق أوسع من الدائرة دائماً (زواياه خارجها)، فلا يُسقط نتيجة صحيحة —
+ * والتصفية الدقيقة بعده. عرض درجة الطول يتقلّص باتجاه القطبين، ولذلك يُقسم
+ * على جيب تمام خط العرض؛ وعُمان بعيدة عن القطبين فالحارس احتياط لا أكثر.
+ */
+function boundingBox(lat, lng, radiusKm) {
+  const latDelta = radiusKm / KM_PER_DEGREE_LAT;
+  const cosLat = Math.max(Math.cos(toRad(lat)), 0.01);
+  const lngDelta = radiusKm / (KM_PER_DEGREE_LAT * cosLat);
+
+  return {
+    minLat: lat - latDelta,
+    maxLat: lat + latDelta,
+    minLng: lng - lngDelta,
+    maxLng: lng + lngDelta,
+  };
+}
+
+/** يضيف قيود الصندوق إلى استعلام قائم. */
+function withinBox(query, { minLat, maxLat, minLng, maxLng }, latField = 'lat', lngField = 'lng') {
+  query.greaterThanOrEqualTo(latField, minLat);
+  query.lessThanOrEqualTo(latField, maxLat);
+  query.greaterThanOrEqualTo(lngField, minLng);
+  query.lessThanOrEqualTo(lngField, maxLng);
+  return query;
+}
+
+/** يُصفّي مرشّحي الصندوق إلى الدائرة، ويرتّبهم بالأقرب. */
+function sortByDistance(rows, lat, lng, radiusKm, latField = 'lat', lngField = 'lng') {
+  return rows
+    .map((row) => ({
+      row,
+      km: distanceKm(lat, lng, row.get(latField), row.get(lngField)),
+    }))
+    .filter((hit) => Number.isFinite(hit.km) && hit.km <= radiusKm)
+    .sort((a, b) => a.km - b.km);
+}
+
+/** تحقّق من إحداثيات واردة من العميل. */
+function validCoordinates(lat, lng) {
+  return typeof lat === 'number' && typeof lng === 'number'
+    && Number.isFinite(lat) && Number.isFinite(lng)
+    && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+}
+
+const geo = { distanceKm, boundingBox, withinBox, sortByDistance, validCoordinates };
+
+
+// ======================================================================
 // المُشغّلات (beforeSave / afterSave)   [triggers.js]
 // ======================================================================
 
@@ -2915,28 +3213,90 @@ const PUBLIC_FIELDS = [
   'village', 'location', 'isClaimed', 'openRequestsCount',
 ];
 
+const MAX_RADIUS_KM = 50;
+const BOX_CANDIDATE_CAP = 500;
+
+/** يقرأ الإحداثيات ونصف القطر من الطلب بعد التحقق. */
+function readPoint(params, defaultRadius = 5) {
+  const { lat, lng } = params;
+  if (!geo.validCoordinates(lat, lng)) {
+    E.invalid('الإحداثيات (lat, lng) مطلوبة كأرقام صحيحة.');
+  }
+  const radiusKm = Math.min(Math.max(Number(params.radius) || defaultRadius, 0.5), MAX_RADIUS_KM);
+  return { lat, lng, radiusKm };
+}
+
 /**
- * المساجد القريبة.
- * إصلاحات مقابل النسخة الأصلية: حد أقصى للنتائج، تحديد الحقول المُعادة،
- * سقف لنصف القطر، ولا نُعيد كائنات كاملة بصلاحيات Master.
+ * المساجد القريبة، مرتّبةً بالأقرب ومعها المسافة.
+ *
+ * صندوق إحاطة على `lat`/`lng` ثم هافرساين — لا `withinKilometers`، فذلك يفرض
+ * فهرساً مكانياً يُضاف يدوياً وقد يغيب. التفصيل في `cloud/lib/geo.js`.
  */
 Parse.Cloud.define('getNearbyMosques', async (request) => {
   requireUser(request);
-  const { lat, lng, radius = 5, limit = 50 } = request.params;
+  const { lat, lng, radiusKm } = readPoint(request.params);
+  const cap = Math.min(Number(request.params.limit) || 50, 100);
 
-  if (typeof lat !== 'number' || typeof lng !== 'number') {
-    E.invalid('الإحداثيات (lat, lng) مطلوبة كأرقام.');
-  }
-  const radiusKm = Math.min(Math.max(Number(radius) || 5, 0.5), 50);
-
-  const point = new Parse.GeoPoint({ latitude: lat, longitude: lng });
   const query = new Parse.Query('Mosques');
-  query.withinKilometers('location', point, radiusKm, true); // sorted = true
-  query.select(...PUBLIC_FIELDS);
-  query.limit(Math.min(Number(limit) || 50, 100));
+  geo.withinBox(query, geo.boundingBox(lat, lng, radiusKm));
+  query.select(...PUBLIC_FIELDS, 'lat', 'lng');
+  query.limit(BOX_CANDIDATE_CAP);
 
-  const results = await query.find({ useMasterKey: true });
-  return results.map((m) => m.toJSON());
+  const candidates = await query.find({ useMasterKey: true });
+
+  return geo.sortByDistance(candidates, lat, lng, radiusKm)
+    .slice(0, cap)
+    .map(({ row, km }) => ({ ...row.toJSON(), distanceKm: Math.round(km * 100) / 100 }));
+});
+
+/**
+ * فرص التطوّع القريبة — شاشة المتطوّع الأولى.
+ *
+ * المتطوّع لا يبحث عن مسجد بل عن عمل قريب منه، فالترتيب بالمسافة لا بالتاريخ.
+ */
+Parse.Cloud.define('getNearbyOpportunities', async (request) => {
+  requireUser(request);
+  const { lat, lng, radiusKm } = readPoint(request.params, 15);
+
+  const mosqueQuery = new Parse.Query('Mosques');
+  geo.withinBox(mosqueQuery, geo.boundingBox(lat, lng, radiusKm));
+  mosqueQuery.greaterThan('openRequestsCount', 0); // لا معنى لمسجد بلا طلبات
+  mosqueQuery.select('name', 'wilayat', 'governorate', 'lat', 'lng');
+  mosqueQuery.limit(BOX_CANDIDATE_CAP);
+
+  const near = geo.sortByDistance(
+    await mosqueQuery.find({ useMasterKey: true }), lat, lng, radiusKm,
+  );
+  if (near.length === 0) return [];
+
+  const byId = new Map(near.map(({ row, km }) => [row.id, { mosque: row, km }]));
+
+  const requests = await new Parse.Query('ServiceRequests')
+    .containedIn('mosqueId', near.map(({ row }) => row))
+    .equalTo('status', 'open_for_volunteers')
+    .limit(100)
+    .find({ useMasterKey: true });
+
+  return requests
+    .map((row) => {
+      const pointer = row.get('mosqueId');
+      const hit = pointer ? byId.get(pointer.id) : null;
+      return { row, hit };
+    })
+    .filter(({ hit }) => hit)
+    .sort((a, b) => a.hit.km - b.hit.km)
+    .map(({ row, hit }) => ({
+      id: row.id,
+      title: row.get('title'),
+      description: row.get('description'),
+      category: row.get('category'),
+      urgency: row.get('urgency'),
+      status: row.get('status'),
+      mosqueId: hit.mosque.id,
+      mosqueName: hit.mosque.get('name'),
+      wilayat: hit.mosque.get('wilayat'),
+      distanceKm: Math.round(hit.km * 100) / 100,
+    }));
 });
 
 /**
@@ -4190,6 +4550,26 @@ Parse.Cloud.define('setFavoriteMosque', async (request) => {
   return { favoriteMosqueId: mosque.id, mosqueName: mosque.get('name') };
 });
 
+/**
+ * تحديث آخر موقع معروف للمستخدم.
+ *
+ * عليه يقوم إشعار «فرصة تطوّع قريبة»: بلا موقع محفوظ لا يصل المتطوّع خبرٌ إلا
+ * إن فتح التطبيق. يُكتب الحقلان الرقميان معاً لأن البحث بالقرب يعمل عليهما.
+ */
+Parse.Cloud.define('updateMyLocation', async (request) => {
+  const user = requireUser(request);
+  const { lat, lng } = request.params;
+
+  if (!geo.validCoordinates(lat, lng)) E.invalid('الإحداثيات مطلوبة كأرقام صحيحة.');
+
+  user.set('lastKnownLocation', new Parse.GeoPoint({ latitude: lat, longitude: lng }));
+  user.set('lastLat', lat);
+  user.set('lastLng', lng);
+  await user.save(null, { useMasterKey: true });
+
+  return { lat, lng };
+});
+
 /** ملف المستخدم كما يعرضه التطبيق. */
 Parse.Cloud.define('getMyProfile', async (request) => {
   const user = requireUser(request);
@@ -4316,7 +4696,9 @@ Parse.Cloud.define('health', async () => ({
 
 | الدالة | المستدعي | الوصف |
 |---|---|---|
-| `getNearbyMosques` | الجميع | مساجد ضمن نطاق (سقف 50 كم، 100 نتيجة) |
+| `getNearbyMosques` | الجميع | مساجد ضمن نطاق، مرتّبةً بالأقرب ومعها المسافة |
+| `getNearbyOpportunities` | الجميع | فرص التطوّع القريبة مرتّبةً بالمسافة |
+| `updateMyLocation` | الجميع | حفظ آخر موقع — عليه يقوم إشعار الفرص القريبة |
 | `searchMosques` | الجميع | بحث نصّي مع تطبيع عربي |
 | `claimMosque` | imam | طلب ملكية مسجد |
 | `getMyClaims` | imam | حالة طلبات الملكية الخاصة به |
@@ -4824,6 +5206,10 @@ async function main() {
           latitude: row.location.latitude,
           longitude: row.location.longitude,
         }));
+        // نسخة رقمية مسطّحة: البحث بالقرب يعمل عليها بصندوق إحاطة، فلا يتوقّف
+        // على فهرس 2dsphere الذي يُضاف يدوياً — انظر cloud/lib/geo.js
+        mosque.set('lat', row.location.latitude);
+        mosque.set('lng', row.location.longitude);
       }
 
       // لا نلمس الحقول التشغيلية عند التحديث حتى لا نمسح رصيداً أو ملكية
@@ -4865,6 +5251,7 @@ ORDER = [
     ("lib/push.js", "الإشعارات"),
     ("lib/payments.js", "بوابة الدفع"),
     ("lib/audit.js", "سجل التدقيق"),
+    ("lib/geo.js", "القرب الجغرافي"),
     ("triggers.js", "المُشغّلات (beforeSave / afterSave)"),
     ("functions/mosques.js", "دوال المساجد"),
     ("functions/requests.js", "دوال طلبات الصيانة"),
@@ -4877,6 +5264,8 @@ REPLACEMENTS = {
     "lib/errors.js": [(r"module\.exports = \{", "const E = {")],
     "lib/payments.js": [(r"module\.exports = \{[^}]*\};", "const payments = { isConfigured, createCheckoutSession, verifySession };")],
     "lib/audit.js": [(r"module\.exports = \{[^}]*\};", "const audit = { record, ACTIONS };")],
+    "lib/geo.js": [(r"module\.exports = \{[^}]*\};",
+                    "const geo = { distanceKm, boundingBox, withinBox, sortByDistance, validCoordinates };")],
 }
 
 # يُحذف الاستيراد النسبي وحده (`./` و`../`): الملفات صارت واحداً فلا معنى له.
@@ -4968,6 +5357,7 @@ CLOUD_FILES = [
     "cloud/lib/push.js",
     "cloud/lib/payments.js",
     "cloud/lib/audit.js",
+    "cloud/lib/geo.js",
     "cloud/functions/mosques.js",
     "cloud/functions/requests.js",
     "cloud/functions/donations.js",
@@ -5192,6 +5582,7 @@ node_modules/
 .DS_Store
 data/*.xlsx
 logs/
+dist/
 ```
 
 ### `package.json`
@@ -5369,6 +5760,8 @@ function createMock() {
       this._equal = [];
       this._greater = [];
       this._less = [];
+      this._atLeast = [];
+      this._atMost = [];
       this._contained = [];
       this._prefix = [];
       this._substring = [];
@@ -5377,6 +5770,8 @@ function createMock() {
     equalTo(key, value) { this._equal.push([key, value]); return this; }
     greaterThan(key, value) { this._greater.push([key, value]); return this; }
     lessThan(key, value) { this._less.push([key, value]); return this; }
+    greaterThanOrEqualTo(key, value) { this._atLeast.push([key, value]); return this; }
+    lessThanOrEqualTo(key, value) { this._atMost.push([key, value]); return this; }
     containedIn(key, values) { this._contained.push([key, values]); return this; }
     startsWith(key, prefix) { this._prefix.push([key, prefix]); return this; }
     contains(key, needle) { this._substring.push([key, needle]); return this; }
@@ -5392,6 +5787,8 @@ function createMock() {
         this._equal.every(([k, v]) => matches(object, k, v)) &&
         this._greater.every(([k, v]) => object.get(k) > v) &&
         this._less.every(([k, v]) => object.get(k) < v) &&
+        this._atLeast.every(([k, v]) => object.get(k) >= v) &&
+        this._atMost.every(([k, v]) => object.get(k) <= v) &&
         this._contained.every(([k, values]) => values.includes(object.get(k))) &&
         this._prefix.every(([k, v]) => String(object.get(k) || '').startsWith(v)) &&
         this._substring.every(([k, v]) => String(object.get(k) || '').includes(v)));
@@ -6660,6 +7057,112 @@ test('بحث المساجد', async (t) => {
     assert.equal(substring.ok[0].name, 'جامع النور');
   });
 });
+
+test('القرب الجغرافي', async (t) => {
+  let api;
+  let user;
+
+  // مسقط تقريباً، والمسافات محسوبة من هذه النقطة
+  const HERE = { lat: 23.5880, lng: 58.3829 };
+
+  const mosqueAt = (name, lat, lng, openRequests = 0) => api.make('Mosques', {
+    name, nameNormalized: name, governorate: 'مسقط', wilayat: 'مسقط',
+    lat, lng, openRequestsCount: openRequests,
+  });
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    user = api.make('_User', { role: 'volunteer' });
+  });
+
+  await t.test('المساجد تُعاد مرتّبةً بالأقرب ومعها المسافة', async () => {
+    mosqueAt('البعيد', 23.6800, 58.3829);   // ~10 كم شمالاً
+    mosqueAt('القريب', 23.5920, 58.3829);   // ~450 متراً
+    mosqueAt('المتوسط', 23.6150, 58.3829);  // ~3 كم
+
+    const { ok } = await api.call('getNearbyMosques',
+      { ...HERE, radius: 20 }, { user });
+
+    assert.deepEqual(ok.map((m) => m.name), ['القريب', 'المتوسط', 'البعيد']);
+    assert.ok(ok[0].distanceKm < 0.6, `المسافة ${ok[0].distanceKm}`);
+    assert.ok(ok[2].distanceKm > 9 && ok[2].distanceKm < 11, `المسافة ${ok[2].distanceKm}`);
+  });
+
+  await t.test('ما خرج عن النطاق لا يُعاد', async () => {
+    mosqueAt('داخل', 23.5920, 58.3829);
+    mosqueAt('خارج', 24.5880, 58.3829); // ~111 كم
+
+    const { ok } = await api.call('getNearbyMosques', { ...HERE, radius: 5 }, { user });
+    assert.deepEqual(ok.map((m) => m.name), ['داخل']);
+  });
+
+  await t.test('زاوية الصندوق تُستبعد بالمسافة الدقيقة', async () => {
+    // نقطة داخل صندوق نصف قطره 5 كم لكنها خارج الدائرة (قطرياً ~6.6 كم)
+    mosqueAt('الزاوية', 23.6300, 58.4290);
+
+    const { ok } = await api.call('getNearbyMosques', { ...HERE, radius: 5 }, { user });
+    assert.equal(ok.length, 0, 'الصندوق أوسع من الدائرة، والتصفية الدقيقة بعده');
+  });
+
+  await t.test('الإحداثيات غير الصحيحة تُرفض', async () => {
+    for (const bad of [{ lat: 'شمالاً', lng: 58 }, { lat: 200, lng: 58 }, {}]) {
+      const { error } = await api.call('getNearbyMosques', bad, { user });
+      assert.equal(error.code, api.ParseError.VALIDATION_ERROR, JSON.stringify(bad));
+    }
+  });
+
+  await t.test('الفرص القريبة مرتّبة بالمسافة لا بالتاريخ', async () => {
+    const far = mosqueAt('مسجد بعيد', 23.6800, 58.3829, 1);
+    const near = mosqueAt('مسجد قريب', 23.5920, 58.3829, 1);
+
+    api.make('ServiceRequests', { mosqueId: far, title: 'طلب بعيد', status: 'open_for_volunteers' });
+    api.make('ServiceRequests', { mosqueId: near, title: 'طلب قريب', status: 'open_for_volunteers' });
+
+    const { ok } = await api.call('getNearbyOpportunities',
+      { ...HERE, radius: 20 }, { user });
+
+    assert.deepEqual(ok.map((r) => r.title), ['طلب قريب', 'طلب بعيد']);
+    assert.equal(ok[0].mosqueName, 'مسجد قريب');
+    assert.ok(ok[0].distanceKm < ok[1].distanceKm);
+  });
+
+  await t.test('مسجد بلا طلبات مفتوحة لا يُستعلم عنه', async () => {
+    const quiet = mosqueAt('مسجد هادئ', 23.5920, 58.3829, 0);
+    api.make('ServiceRequests', { mosqueId: quiet, title: 'منجَز', status: 'completed' });
+
+    const { ok } = await api.call('getNearbyOpportunities', { ...HERE, radius: 20 }, { user });
+    assert.equal(ok.length, 0);
+  });
+
+  await t.test('تحديث الموقع يكتب الحقلين الرقميين', async () => {
+    const { ok } = await api.call('updateMyLocation', HERE, { user });
+
+    assert.equal(ok.lat, HERE.lat);
+    assert.equal(user.get('lastLat'), HERE.lat);
+    assert.equal(user.get('lastLng'), HERE.lng);
+    assert.ok(user.get('lastKnownLocation'), 'GeoPoint يبقى للاستعمالات المستقبلية');
+  });
+
+  await t.test('إشعار الفرصة يصل للمتطوّع القريب دون البعيد', async () => {
+    const imam = api.asUser('user_imam', 'imam');
+    const mosque = api.make('Mosques', {
+      name: 'مسجد الحيّ', isClaimed: true, imamId: imam,
+      lat: HERE.lat, lng: HERE.lng, governorate: 'مسقط',
+    });
+
+    api.make('_User', { role: 'volunteer', isActive: true, fullName: 'قريب',
+      lastLat: 23.5920, lastLng: 58.3829 });
+    api.make('_User', { role: 'volunteer', isActive: true, fullName: 'بعيد',
+      lastLat: 24.5880, lastLng: 58.3829 });
+
+    await api.call('createServiceRequest',
+      { title: 'تنظيف', description: 'تنظيف السجاد قبل الجمعة', mosqueId: mosque.id },
+      { user: imam });
+
+    const notified = api.pushes.at(-1).users.map((u) => u.get('fullName'));
+    assert.deepEqual(notified, ['قريب'], 'أُشعر البعيد أيضاً');
+  });
+});
 ```
 
 #### `tests/schema.test.js` — الصلاحيات وتطابق النسختين
@@ -6738,7 +7241,7 @@ test('المخطط', async (t) => {
 
 test('نقاط الدخول', async (t) => {
   const EXPECTED_FUNCTIONS = [
-    'getNearbyMosques', 'searchMosques', 'claimMosque', 'getMyClaims', 'reviewMosqueClaim',
+    'getNearbyMosques', 'getNearbyOpportunities', 'updateMyLocation', 'searchMosques', 'claimMosque', 'getMyClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'expressInterest', 'withdrawInterest',
     'getRequestInterests', 'getMyInterests', 'assignWorker', 'startWork', 'markWorkDone',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
@@ -7060,6 +7563,39 @@ test('الرحلة الكاملة على خادم حقيقي', options, async (t
       assert.equal(seen[0].get('phone'), undefined, 'رقم الهاتف مكشوف لمستخدم آخر');
       assert.equal(seen[0].get('lastKnownLocation'), undefined, 'موقع المتطوّع مكشوف');
     }
+  });
+
+  // القرب على حقلين رقميين لا على فهرس مكاني: هذه الحالة تُثبت أن الاستعلام
+  // يعمل على خادم حقيقي بلا PostGIS ولا 2dsphere.
+  await t.test('القرب يعمل بلا فهرس مكاني', async () => {
+    const user = await signUp('volunteer');
+    const Mosque = Parse.Object.extend('Mosques');
+
+    const put = async (name, lat, lng) => {
+      const mosque = new Mosque();
+      mosque.set('externalId', `geo-${name}-${Date.now()}-${++unique}`);
+      mosque.set('name', name);
+      mosque.set('governorate', 'مسقط');
+      mosque.set('lat', lat);
+      mosque.set('lng', lng);
+      await mosque.save(null, MASTER);
+      return mosque;
+    };
+
+    await put('قريب جداً', 23.5920, 58.3829);
+    await put('متوسط', 23.6150, 58.3829);
+    await put('بعيد جداً', 25.0000, 58.3829);
+
+    const near = await as(user, 'getNearbyMosques',
+      { lat: 23.5880, lng: 58.3829, radius: 10 });
+
+    const names = near.map((row) => row.name);
+    assert.ok(names.includes('قريب جداً'));
+    assert.ok(!names.includes('بعيد جداً'), 'أُعيد ما هو خارج النطاق');
+    assert.ok(near[0].distanceKm < near[near.length - 1].distanceKm, 'غير مرتّب بالمسافة');
+
+    const saved = await as(user, 'updateMyLocation', { lat: 23.5880, lng: 58.3829 });
+    assert.equal(saved.lat, 23.5880);
   });
 
   await t.test('الرحلة: من طلب الملكية إلى اعتماد العمل', async () => {

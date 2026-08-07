@@ -15,6 +15,8 @@
         "wilayat": { "type": "String" },
         "village": { "type": "String" },
         "location": { "type": "GeoPoint" },
+        "lat": { "type": "Number" },
+        "lng": { "type": "Number" },
         "hasLocation": { "type": "Boolean", "defaultValue": true },
         "address": { "type": "String" },
         "imamId": { "type": "Pointer", "targetClass": "_User" },
@@ -27,6 +29,7 @@
       "indexes": {
         "externalId_unique": { "externalId": 1 },
         "geo": { "location": "2dsphere" },
+        "geo_box": { "lat": 1, "lng": 1 },
         "gov_wilayat": { "governorate": 1, "wilayat": 1 },
         "name_search": { "nameNormalized": 1 }
       },
@@ -163,6 +166,8 @@
         "governorate": { "type": "String" },
         "wilayat": { "type": "String" },
         "lastKnownLocation": { "type": "GeoPoint" },
+        "lastLat": { "type": "Number" },
+        "lastLng": { "type": "Number" },
         "favoriteMosqueId": { "type": "Pointer", "targetClass": "Mosques" },
         "isActive": { "type": "Boolean", "defaultValue": true },
         "isVerifiedContractor": { "type": "Boolean", "defaultValue": false },
@@ -173,7 +178,8 @@
       },
       "indexes": {
         "role_gov": { "role": 1, "governorate": 1 },
-        "volunteer_geo": { "lastKnownLocation": "2dsphere" }
+        "volunteer_geo": { "lastKnownLocation": "2dsphere" },
+        "volunteer_box": { "role": 1, "lastLat": 1, "lastLng": 1 }
       },
       "_comment_clp": "create مفتوح لأن التسجيل يمرّ عبره. الحماية الفعلية في ACL يضبطه afterSave على المستخدم نفسه، وقراءة بيانات مستخدم آخر تمرّ عبر دوال السحابة بـ Master Key.",
       "classLevelPermissions": {

@@ -65,6 +65,14 @@ export const logOut = () => Parse.User.logOut();
 
 /* ————— المساجد ————— */
 
+export const nearbyMosques = (lat, lng, radius = 5) =>
+  run('getNearbyMosques', { lat, lng, radius });
+
+export const nearbyOpportunities = (lat, lng, radius = 15) =>
+  run('getNearbyOpportunities', { lat, lng, radius });
+
+export const updateMyLocation = (lat, lng) => run('updateMyLocation', { lat, lng });
+
 export const searchMosques = (term, governorate) =>
   run('searchMosques', { term, governorate, limit: 30 });
 
@@ -136,6 +144,37 @@ export const completeService = (requestId, rating, volunteerHours) =>
 
 export const getMyProfile = () => run('getMyProfile');
 export const setFavoriteMosque = (mosqueId) => run('setFavoriteMosque', { mosqueId });
+
+/**
+ * موقع الجهاز.
+ *
+ * يُرفض بلا HTTPS (عدا localhost) وقد يرفضه المستخدم — والحالتان متوقّعتان، فلا
+ * تُعامَلان كخطأ في النظام بل تُشرحان له.
+ */
+export function currentPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('جهازك لا يدعم تحديد الموقع.'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => resolve({ lat: coords.latitude, lng: coords.longitude }),
+      (error) => reject(new Error(
+        error.code === 1 ? 'لم تُسمح للتطبيق بمعرفة موقعك — فعّل الإذن لترى ما حولك.'
+          : 'تعذّر تحديد موقعك، حاول في مكان مكشوف.',
+      )),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+    );
+  });
+}
+
+/** «٤٥٠ متراً» أوضح من «0.45 كم». */
+export const formatDistance = (km) =>
+  (km < 1 ? `${Math.round(km * 1000)} متراً` : `${km.toFixed(1)} كم`);
+
+/** رابط خرائط يفتح بتطبيق الجهاز — بلا تضمين خرائط خارجية في الصفحة. */
+export const mapsLink = (lat, lng, label) =>
+  `https://www.google.com/maps/search/?api=1&query=${lat},${lng}${label ? `&query_place_id=${encodeURIComponent(label)}` : ''}`;
 
 /* ————— الإدارة ————— */
 

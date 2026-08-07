@@ -131,6 +131,8 @@ function createMock() {
       this._equal = [];
       this._greater = [];
       this._less = [];
+      this._atLeast = [];
+      this._atMost = [];
       this._contained = [];
       this._prefix = [];
       this._substring = [];
@@ -139,6 +141,8 @@ function createMock() {
     equalTo(key, value) { this._equal.push([key, value]); return this; }
     greaterThan(key, value) { this._greater.push([key, value]); return this; }
     lessThan(key, value) { this._less.push([key, value]); return this; }
+    greaterThanOrEqualTo(key, value) { this._atLeast.push([key, value]); return this; }
+    lessThanOrEqualTo(key, value) { this._atMost.push([key, value]); return this; }
     containedIn(key, values) { this._contained.push([key, values]); return this; }
     startsWith(key, prefix) { this._prefix.push([key, prefix]); return this; }
     contains(key, needle) { this._substring.push([key, needle]); return this; }
@@ -154,6 +158,8 @@ function createMock() {
         this._equal.every(([k, v]) => matches(object, k, v)) &&
         this._greater.every(([k, v]) => object.get(k) > v) &&
         this._less.every(([k, v]) => object.get(k) < v) &&
+        this._atLeast.every(([k, v]) => object.get(k) >= v) &&
+        this._atMost.every(([k, v]) => object.get(k) <= v) &&
         this._contained.every(([k, values]) => values.includes(object.get(k))) &&
         this._prefix.every(([k, v]) => String(object.get(k) || '').startsWith(v)) &&
         this._substring.every(([k, v]) => String(object.get(k) || '').includes(v)));

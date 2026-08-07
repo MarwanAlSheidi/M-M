@@ -215,3 +215,109 @@ test('بحث المساجد', async (t) => {
     assert.equal(substring.ok[0].name, 'جامع النور');
   });
 });
+
+test('القرب الجغرافي', async (t) => {
+  let api;
+  let user;
+
+  // مسقط تقريباً، والمسافات محسوبة من هذه النقطة
+  const HERE = { lat: 23.5880, lng: 58.3829 };
+
+  const mosqueAt = (name, lat, lng, openRequests = 0) => api.make('Mosques', {
+    name, nameNormalized: name, governorate: 'مسقط', wilayat: 'مسقط',
+    lat, lng, openRequestsCount: openRequests,
+  });
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    user = api.make('_User', { role: 'volunteer' });
+  });
+
+  await t.test('المساجد تُعاد مرتّبةً بالأقرب ومعها المسافة', async () => {
+    mosqueAt('البعيد', 23.6800, 58.3829);   // ~10 كم شمالاً
+    mosqueAt('القريب', 23.5920, 58.3829);   // ~450 متراً
+    mosqueAt('المتوسط', 23.6150, 58.3829);  // ~3 كم
+
+    const { ok } = await api.call('getNearbyMosques',
+      { ...HERE, radius: 20 }, { user });
+
+    assert.deepEqual(ok.map((m) => m.name), ['القريب', 'المتوسط', 'البعيد']);
+    assert.ok(ok[0].distanceKm < 0.6, `المسافة ${ok[0].distanceKm}`);
+    assert.ok(ok[2].distanceKm > 9 && ok[2].distanceKm < 11, `المسافة ${ok[2].distanceKm}`);
+  });
+
+  await t.test('ما خرج عن النطاق لا يُعاد', async () => {
+    mosqueAt('داخل', 23.5920, 58.3829);
+    mosqueAt('خارج', 24.5880, 58.3829); // ~111 كم
+
+    const { ok } = await api.call('getNearbyMosques', { ...HERE, radius: 5 }, { user });
+    assert.deepEqual(ok.map((m) => m.name), ['داخل']);
+  });
+
+  await t.test('زاوية الصندوق تُستبعد بالمسافة الدقيقة', async () => {
+    // نقطة داخل صندوق نصف قطره 5 كم لكنها خارج الدائرة (قطرياً ~6.6 كم)
+    mosqueAt('الزاوية', 23.6300, 58.4290);
+
+    const { ok } = await api.call('getNearbyMosques', { ...HERE, radius: 5 }, { user });
+    assert.equal(ok.length, 0, 'الصندوق أوسع من الدائرة، والتصفية الدقيقة بعده');
+  });
+
+  await t.test('الإحداثيات غير الصحيحة تُرفض', async () => {
+    for (const bad of [{ lat: 'شمالاً', lng: 58 }, { lat: 200, lng: 58 }, {}]) {
+      const { error } = await api.call('getNearbyMosques', bad, { user });
+      assert.equal(error.code, api.ParseError.VALIDATION_ERROR, JSON.stringify(bad));
+    }
+  });
+
+  await t.test('الفرص القريبة مرتّبة بالمسافة لا بالتاريخ', async () => {
+    const far = mosqueAt('مسجد بعيد', 23.6800, 58.3829, 1);
+    const near = mosqueAt('مسجد قريب', 23.5920, 58.3829, 1);
+
+    api.make('ServiceRequests', { mosqueId: far, title: 'طلب بعيد', status: 'open_for_volunteers' });
+    api.make('ServiceRequests', { mosqueId: near, title: 'طلب قريب', status: 'open_for_volunteers' });
+
+    const { ok } = await api.call('getNearbyOpportunities',
+      { ...HERE, radius: 20 }, { user });
+
+    assert.deepEqual(ok.map((r) => r.title), ['طلب قريب', 'طلب بعيد']);
+    assert.equal(ok[0].mosqueName, 'مسجد قريب');
+    assert.ok(ok[0].distanceKm < ok[1].distanceKm);
+  });
+
+  await t.test('مسجد بلا طلبات مفتوحة لا يُستعلم عنه', async () => {
+    const quiet = mosqueAt('مسجد هادئ', 23.5920, 58.3829, 0);
+    api.make('ServiceRequests', { mosqueId: quiet, title: 'منجَز', status: 'completed' });
+
+    const { ok } = await api.call('getNearbyOpportunities', { ...HERE, radius: 20 }, { user });
+    assert.equal(ok.length, 0);
+  });
+
+  await t.test('تحديث الموقع يكتب الحقلين الرقميين', async () => {
+    const { ok } = await api.call('updateMyLocation', HERE, { user });
+
+    assert.equal(ok.lat, HERE.lat);
+    assert.equal(user.get('lastLat'), HERE.lat);
+    assert.equal(user.get('lastLng'), HERE.lng);
+    assert.ok(user.get('lastKnownLocation'), 'GeoPoint يبقى للاستعمالات المستقبلية');
+  });
+
+  await t.test('إشعار الفرصة يصل للمتطوّع القريب دون البعيد', async () => {
+    const imam = api.asUser('user_imam', 'imam');
+    const mosque = api.make('Mosques', {
+      name: 'مسجد الحيّ', isClaimed: true, imamId: imam,
+      lat: HERE.lat, lng: HERE.lng, governorate: 'مسقط',
+    });
+
+    api.make('_User', { role: 'volunteer', isActive: true, fullName: 'قريب',
+      lastLat: 23.5920, lastLng: 58.3829 });
+    api.make('_User', { role: 'volunteer', isActive: true, fullName: 'بعيد',
+      lastLat: 24.5880, lastLng: 58.3829 });
+
+    await api.call('createServiceRequest',
+      { title: 'تنظيف', description: 'تنظيف السجاد قبل الجمعة', mosqueId: mosque.id },
+      { user: imam });
+
+    const notified = api.pushes.at(-1).users.map((u) => u.get('fullName'));
+    assert.deepEqual(notified, ['قريب'], 'أُشعر البعيد أيضاً');
+  });
+});

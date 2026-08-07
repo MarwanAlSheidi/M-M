@@ -123,11 +123,126 @@ export function Auth({ onDone }) {
   );
 }
 
+
+/* ————— الموقع ————— */
+
+/**
+ * موقع الجهاز مرة واحدة، ويُرسَل إلى الخادم ليصل المتطوّعَ إشعارُ الفرص القريبة.
+ * إرسال الموقع أثر جانبي، ففشله لا يمنع عرض ما حولك.
+ */
+export function useLocation() {
+  const [state, setState] = useState({ loading: true, point: null, error: '' });
+
+  const locate = useCallback(async () => {
+    setState({ loading: true, point: null, error: '' });
+    try {
+      const point = await api.currentPosition();
+      setState({ loading: false, point, error: '' });
+      api.updateMyLocation(point.lat, point.lng).catch(() => {});
+    } catch (error) {
+      setState({ loading: false, point: null, error: api.messageOf(error) });
+    }
+  }, []);
+
+  useEffect(() => { locate(); }, [locate]);
+  return { ...state, locate };
+}
+
+function LocationGate({ location, children }) {
+  if (location.loading) return <p className="empty">جارٍ تحديد موقعك…</p>;
+  if (location.error) {
+    return (
+      <>
+        <div className="error">{location.error}</div>
+        <button className="ghost" onClick={location.locate}>حاول مرة أخرى</button>
+      </>
+    );
+  }
+  return children;
+}
+
+const DistanceTag = ({ km }) => <span className="tag dist">{api.formatDistance(km)}</span>;
+
+/** المساجد حول المستخدم — «موقع المسجد هو ما يربط المصلّي بمسجده». */
+export function AroundMe() {
+  const location = useLocation();
+  const [radius, setRadius] = useState(5);
+  const [message, setMessage] = useState('');
+
+  const state = useList(
+    async () => (location.point
+      ? api.nearbyMosques(location.point.lat, location.point.lng, radius) : []),
+    [location.point && location.point.lat, location.point && location.point.lng, radius],
+  );
+
+  async function pick(mosque) {
+    setMessage('');
+    try {
+      const result = await api.setFavoriteMosque(mosque.objectId);
+      setMessage(`${result.mosqueName} صار مسجدك.`);
+    } catch (error) {
+      setMessage(api.messageOf(error));
+    }
+  }
+
+  return (
+    <>
+      <h2>حولي</h2>
+      <LocationGate location={location}>
+        <>
+          <div className="row" style={{ marginBottom: 12 }}>
+            {[1, 5, 15, 50].map((km) => (
+              <button key={km} className={radius === km ? '' : 'ghost'}
+                onClick={() => setRadius(km)}>
+                {km} كم
+              </button>
+            ))}
+          </div>
+          {message && <div className="notice">{message}</div>}
+
+          <Listing state={state} empty="لا مسجد ضمن هذا النطاق — وسّع الدائرة.">
+            <div>
+              {state.rows.map((mosque) => (
+                <article className="card" key={mosque.objectId}>
+                  <div className="spread">
+                    <h3>{mosque.name}</h3>
+                    <DistanceTag km={mosque.distanceKm} />
+                  </div>
+                  <p>{mosque.wilayat} — {mosque.village || mosque.governorate}</p>
+                  <div className="row">
+                    <button className="ghost" onClick={() => pick(mosque)}>هذا مسجدي</button>
+                    {mosque.lat != null && (
+                      <a className="maplink"
+                        href={api.mapsLink(mosque.lat, mosque.lng, mosque.name)}
+                        target="_blank" rel="noreferrer">الاتجاهات</a>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </Listing>
+        </>
+      </LocationGate>
+    </>
+  );
+}
+
 /* ————— المتطوّع ————— */
 
 export function Opportunities() {
-  const state = useList(api.openOpportunities);
+  const location = useLocation();
+  const [radius, setRadius] = useState(15);
   const [message, setMessage] = useState('');
+
+  // المتطوّع يبحث عن عمل قريب منه، فالترتيب بالمسافة. وإن تعذّر الموقع تُعرض
+  // الفرص كلها بالأحدث بدل شاشة فارغة.
+  const nearby = Boolean(location.point);
+  const state = useList(
+    async () => (nearby
+      ? api.nearbyOpportunities(location.point.lat, location.point.lng, radius)
+      : api.openOpportunities()),
+    [nearby, location.point && location.point.lat, radius],
+  );
 
   async function join(requestId) {
     setMessage('');
@@ -141,7 +256,24 @@ export function Opportunities() {
 
   return (
     <>
-      <h2>فرص التطوّع المفتوحة</h2>
+      <h2>{nearby ? 'فرص قريبة منك' : 'فرص التطوّع المفتوحة'}</h2>
+
+      {location.loading && <p className="empty">جارٍ تحديد موقعك…</p>}
+      {location.error && (
+        <div className="notice">
+          {location.error} — تُعرض الفرص كلها بلا ترتيب بالمسافة.{' '}
+          <button className="link" onClick={location.locate}>أعد المحاولة</button>
+        </div>
+      )}
+      {nearby && (
+        <div className="row" style={{ marginBottom: 12 }}>
+          {[5, 15, 50].map((km) => (
+            <button key={km} className={radius === km ? '' : 'ghost'}
+              onClick={() => setRadius(km)}>ضمن {km} كم</button>
+          ))}
+        </div>
+      )}
+
       {message && <div className="notice">{message}</div>}
       <Listing state={state} empty="لا توجد فرص مفتوحة الآن.">
         <div>
@@ -149,7 +281,9 @@ export function Opportunities() {
             <article className="card" key={row.id}>
               <div className="spread">
                 <h3>{row.title}</h3>
-                <StatusTag status={row.status} />
+                {row.distanceKm != null
+                  ? <DistanceTag km={row.distanceKm} />
+                  : <StatusTag status={row.status} />}
               </div>
               <p>{row.mosqueName} — {row.wilayat}</p>
               <p>{row.description}</p>
