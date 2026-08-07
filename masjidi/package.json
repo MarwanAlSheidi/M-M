@@ -1,0 +1,21 @@
+{
+  "name": "masjidi",
+  "version": "1.0.0",
+  "description": "منصة لربط الأئمة والمتطوعين والشركات لصيانة مساجد سلطنة عُمان",
+  "private": true,
+  "scripts": {
+    "clean:data": "python3 scripts/clean_mosques.py \"$npm_config_src\"",
+    "seed": "node scripts/seed_mosques.js",
+    "seed:dry": "node scripts/seed_mosques.js --dry-run",
+    "schema": "node scripts/apply_schema.js",
+    "lint": "eslint cloud scripts --ext .js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "parse": "^5.3.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"
+  },
+  "engines": { "node": ">=18" }
+}

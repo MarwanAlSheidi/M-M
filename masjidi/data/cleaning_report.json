@@ -1,0 +1,19 @@
+{
+  "source_file": " Masajid Data with geographic locations-1.xlsx",
+  "generated_at": "2026-08-07T14:10:05.766692+00:00",
+  "rows_in": 18214,
+  "number_flags": {
+    "recovered_from_date": 1380,
+    "ok": 16810,
+    "recovered_ambiguous": 24
+  },
+  "coord_flags": {
+    "ok": 18189,
+    "out_of_bounds": 13,
+    "missing": 3,
+    "swapped": 9
+  },
+  "dropped_no_location": 16,
+  "duplicate_keys": 0,
+  "rows_out": 18214
+}

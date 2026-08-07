@@ -1,0 +1,142 @@
+{
+  "_comment": "مخطط قاعدة البيانات. طبّقه عبر: node scripts/apply_schema.js أو يدوياً من لوحة Back4app.",
+  "classes": [
+    {
+      "className": "Mosques",
+      "fields": {
+        "externalId": { "type": "String", "required": true },
+        "mosqueNumber": { "type": "String" },
+        "name": { "type": "String", "required": true },
+        "nameNormalized": { "type": "String" },
+        "type": { "type": "String" },
+        "typeSlug": { "type": "String" },
+        "governorate": { "type": "String", "required": true },
+        "governorateSlug": { "type": "String" },
+        "wilayat": { "type": "String" },
+        "village": { "type": "String" },
+        "location": { "type": "GeoPoint" },
+        "hasLocation": { "type": "Boolean", "defaultValue": true },
+        "address": { "type": "String" },
+        "imamId": { "type": "Pointer", "targetClass": "_User" },
+        "isClaimed": { "type": "Boolean", "defaultValue": false },
+        "walletBalance": { "type": "Number", "defaultValue": 0 },
+        "openRequestsCount": { "type": "Number", "defaultValue": 0 },
+        "dataQuality": { "type": "Object" },
+        "source": { "type": "String" }
+      },
+      "indexes": {
+        "externalId_unique": { "externalId": 1 },
+        "geo": { "location": "2dsphere" },
+        "gov_wilayat": { "governorate": 1, "wilayat": 1 },
+        "name_search": { "nameNormalized": 1 }
+      },
+      "classLevelPermissions": {
+        "find": { "requiresAuthentication": true },
+        "get": { "requiresAuthentication": true },
+        "create": {}, "update": {}, "delete": {},
+        "addField": {},
+        "protectedFields": { "*": ["walletBalance", "dataQuality"] }
+      }
+    },
+    {
+      "className": "MosqueClaims",
+      "fields": {
+        "mosqueId": { "type": "Pointer", "targetClass": "Mosques", "required": true },
+        "imamId": { "type": "Pointer", "targetClass": "_User", "required": true },
+        "status": { "type": "String", "defaultValue": "pending" },
+        "evidenceNote": { "type": "String" },
+        "reviewedBy": { "type": "Pointer", "targetClass": "_User" },
+        "reviewedAt": { "type": "Date" }
+      },
+      "classLevelPermissions": {
+        "find": {}, "get": {}, "create": {}, "update": {}, "delete": {}, "addField": {}
+      }
+    },
+    {
+      "className": "ServiceRequests",
+      "fields": {
+        "mosqueId": { "type": "Pointer", "targetClass": "Mosques", "required": true },
+        "createdBy": { "type": "Pointer", "targetClass": "_User" },
+        "title": { "type": "String", "required": true },
+        "description": { "type": "String" },
+        "category": { "type": "String" },
+        "urgency": { "type": "String", "defaultValue": "normal" },
+        "estimatedCost": { "type": "Number", "defaultValue": 0 },
+        "fundedAmount": { "type": "Number", "defaultValue": 0 },
+        "status": { "type": "String", "required": true },
+        "assignedVolunteerId": { "type": "Pointer", "targetClass": "_User" },
+        "assignedContractorId": { "type": "Pointer", "targetClass": "_User" },
+        "isFundedByDonors": { "type": "Boolean", "defaultValue": false },
+        "isPaidOut": { "type": "Boolean", "defaultValue": false },
+        "workerNotes": { "type": "String" },
+        "completionPhotos": { "type": "Array" },
+        "imamRating": { "type": "Number" },
+        "volunteerHours": { "type": "Number", "defaultValue": 0 },
+        "assignedAt": { "type": "Date" },
+        "startedAt": { "type": "Date" },
+        "workDoneAt": { "type": "Date" },
+        "fundedAt": { "type": "Date" },
+        "imamApprovalDate": { "type": "Date" },
+        "cancelledAt": { "type": "Date" }
+      },
+      "indexes": {
+        "status_mosque": { "status": 1, "mosqueId": 1 },
+        "open_feed": { "status": 1, "createdAt": -1 }
+      },
+      "classLevelPermissions": {
+        "find": { "requiresAuthentication": true },
+        "get": { "requiresAuthentication": true },
+        "create": {}, "update": {}, "delete": {}, "addField": {}
+      }
+    },
+    {
+      "className": "Transactions",
+      "fields": {
+        "donorId": { "type": "Pointer", "targetClass": "_User" },
+        "payeeId": { "type": "Pointer", "targetClass": "_User" },
+        "mosqueId": { "type": "Pointer", "targetClass": "Mosques", "required": true },
+        "requestId": { "type": "Pointer", "targetClass": "ServiceRequests" },
+        "amount": { "type": "Number", "required": true },
+        "type": { "type": "String", "required": true },
+        "status": { "type": "String", "defaultValue": "pending" },
+        "paymentSessionId": { "type": "String" },
+        "paymentGatewayRef": { "type": "String" },
+        "approvedBy": { "type": "Pointer", "targetClass": "_User" },
+        "capturedAt": { "type": "Date" }
+      },
+      "indexes": {
+        "session": { "paymentSessionId": 1 },
+        "ledger": { "mosqueId": 1, "status": 1, "createdAt": -1 }
+      },
+      "classLevelPermissions": {
+        "find": { "requiresAuthentication": true },
+        "get": { "requiresAuthentication": true },
+        "create": {}, "update": {}, "delete": {}, "addField": {},
+        "protectedFields": { "*": ["donorId", "paymentSessionId", "paymentGatewayRef"] }
+      }
+    },
+    {
+      "className": "_User",
+      "fields": {
+        "role": { "type": "String", "defaultValue": "donor" },
+        "fullName": { "type": "String" },
+        "phone": { "type": "String" },
+        "skills": { "type": "Array" },
+        "governorate": { "type": "String" },
+        "wilayat": { "type": "String" },
+        "lastKnownLocation": { "type": "GeoPoint" },
+        "favoriteMosqueId": { "type": "Pointer", "targetClass": "Mosques" },
+        "isActive": { "type": "Boolean", "defaultValue": true },
+        "isVerifiedContractor": { "type": "Boolean", "defaultValue": false },
+        "companyName": { "type": "String" },
+        "crNumber": { "type": "String" },
+        "completedJobs": { "type": "Number", "defaultValue": 0 },
+        "avgRating": { "type": "Number" }
+      },
+      "indexes": {
+        "role_gov": { "role": 1, "governorate": 1 },
+        "volunteer_geo": { "lastKnownLocation": "2dsphere" }
+      }
+    }
+  ]
+}

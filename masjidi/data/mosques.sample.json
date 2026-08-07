@@ -1,0 +1,1252 @@
+[
+  {
+    "externalId": "05/1979|مصلي النساء|المزرع العلوي - وادي الميح",
+    "mosqueNumber": "05/1979",
+    "name": "مصلى النساء",
+    "nameNormalized": "مصلي النساء",
+    "type": "مصلى نساء ( خاص )",
+    "typeSlug": "musalla_women",
+    "governorate": "مسقط",
+    "governorateSlug": "muscat",
+    "wilayat": "العامرات",
+    "village": "المزرع العلوي - وادي الميح",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.4308686,
+      "longitude": 58.5514992
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "recovered_from_date",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "39/196|مصلي النساء بالبطين|بطين",
+    "mosqueNumber": "39/196",
+    "name": "مصلى النساء بالبطين",
+    "nameNormalized": "مصلي النساء بالبطين",
+    "type": "مصلى نساء ( خاص )",
+    "typeSlug": "musalla_women",
+    "governorate": "شمال الشرقية",
+    "governorateSlug": "north_sharqiyah",
+    "wilayat": "القابل",
+    "village": "بطين",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 22.7814,
+      "longitude": 58.6818
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "14/102|مصلي للنساء(1)|مسفاه العبريين",
+    "mosqueNumber": "14/102",
+    "name": "مصلى للنساء(1)",
+    "nameNormalized": "مصلي للنساء(1)",
+    "type": "مصلى نساء ( خاص )",
+    "typeSlug": "musalla_women",
+    "governorate": "الداخلية",
+    "governorateSlug": "dakhiliyah",
+    "wilayat": "الحمراء",
+    "village": "مسفاة العبريين",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.141013,
+      "longitude": 57.312774
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "51/225|مصلي مركز البلديه الترفيهي|سهل اتين",
+    "mosqueNumber": "51/225",
+    "name": "مصلى مركز البلدية الترفيهي",
+    "nameNormalized": "مصلي مركز البلديه الترفيهي",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "صلالة",
+    "village": "سهل أتين",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 17.0351053,
+      "longitude": 54.0572405
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "51/226|مصلي دوار اثين|سهل اتين",
+    "mosqueNumber": "51/226",
+    "name": "مصلى دوار أثين",
+    "nameNormalized": "مصلي دوار اثين",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "صلالة",
+    "village": "سهل أتين",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 17.0812688,
+      "longitude": 54.0696752
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "02/6|الرسول الاعظم صلي الله عليه وسلم|دغمر",
+    "mosqueNumber": "02/6",
+    "name": "الرسول الأعظم صلى الله عليه وسلم",
+    "nameNormalized": "الرسول الاعظم صلي الله عليه وسلم",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "مسقط",
+    "governorateSlug": "muscat",
+    "wilayat": "قريات",
+    "village": "دغمر",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.5976842,
+      "longitude": 58.4207714
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "recovered_from_date",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "08/703|اليقين|الغبره",
+    "mosqueNumber": "08/703",
+    "name": "اليقين",
+    "nameNormalized": "اليقين",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "الداخلية",
+    "governorateSlug": "dakhiliyah",
+    "wilayat": "سمائل",
+    "village": "الغبرة",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.3087436,
+      "longitude": 58.0274259
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "51/219|مصلي السوق المركزي|صلاله",
+    "mosqueNumber": "51/219",
+    "name": "مصلى السوق المركزي",
+    "nameNormalized": "مصلي السوق المركزي",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "صلالة",
+    "village": "صلالة",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 17.0185,
+      "longitude": 54.099
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "54/36|مصلي شعيت|ميتان",
+    "mosqueNumber": "54/36",
+    "name": "مصلى شعيت",
+    "nameNormalized": "مصلي شعيت",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "المزيونة",
+    "village": "ميتان",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 18.894474,
+      "longitude": 52.0909238
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "38/597|المبين|الجرداء",
+    "mosqueNumber": "38/597",
+    "name": "المبين",
+    "nameNormalized": "المبين",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "شمال الشرقية",
+    "governorateSlug": "north_sharqiyah",
+    "wilayat": "المضيبي",
+    "village": "الجرداء",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.5976842,
+      "longitude": 58.4207714
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "15/576|الصحابي القعقاع بن عمرو|الوقيبه",
+    "mosqueNumber": "15/576",
+    "name": "الصحابي القعقاع بن عمرو",
+    "nameNormalized": "الصحابي القعقاع بن عمرو",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "شمال الباطنة",
+    "governorateSlug": "north_batinah",
+    "wilayat": "صحار",
+    "village": "الوقيبة",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 24.3497072,
+      "longitude": 56.730862
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "59/6|مصلي التدريب بعيدم|عيدم",
+    "mosqueNumber": "59/6",
+    "name": "مصلى التدريب بعيدم",
+    "nameNormalized": "مصلي التدريب بعيدم",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "رخيوت",
+    "village": "عيدم",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 16.9903285,
+      "longitude": 53.361969
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "08/705|المكارم|سرور",
+    "mosqueNumber": "08/705",
+    "name": "المكارم",
+    "nameNormalized": "المكارم",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "الداخلية",
+    "governorateSlug": "dakhiliyah",
+    "wilayat": "سمائل",
+    "village": "سرور",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.5976842,
+      "longitude": 58.4207714
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "02/326|المجيب|المعبيله الجنوبيه",
+    "mosqueNumber": "02/326",
+    "name": "المجيب",
+    "nameNormalized": "المجيب",
+    "type": "جامع",
+    "typeSlug": "jamie",
+    "governorate": "مسقط",
+    "governorateSlug": "muscat",
+    "wilayat": "السيب",
+    "village": "المعبيلة الجنوبية",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.6186311,
+      "longitude": 58.0945034
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "19/132|الصحابي الخباب بن الارت|نبر",
+    "mosqueNumber": "19/132",
+    "name": "الصحابي الخباب بن الأرت",
+    "nameNormalized": "الصحابي الخباب بن الارت",
+    "type": "جامع",
+    "typeSlug": "jamie",
+    "governorate": "شمال الباطنة",
+    "governorateSlug": "north_batinah",
+    "wilayat": "لوى",
+    "village": "نبر",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 24.5508023,
+      "longitude": 56.514691
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "10/19|جامع نبر علي الساحل|نبر",
+    "mosqueNumber": "10/19",
+    "name": "جامع نبر على الساحل",
+    "nameNormalized": "جامع نبر علي الساحل",
+    "type": "جامع",
+    "typeSlug": "jamie",
+    "governorate": "شمال الباطنة",
+    "governorateSlug": "north_batinah",
+    "wilayat": "لوى",
+    "village": "نبر",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 24.5641981,
+      "longitude": 56.5697354
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "recovered_from_date",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "03/29|العلايه|العلايه",
+    "mosqueNumber": "03/29",
+    "name": "العلاية",
+    "nameNormalized": "العلايه",
+    "type": "جامع",
+    "typeSlug": "jamie",
+    "governorate": "الظاهرة",
+    "governorateSlug": "dhahirah",
+    "wilayat": "ضـنـك",
+    "village": "العلاية",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.5401063,
+      "longitude": 56.2803224
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "recovered_from_date",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "59/15|فرقه بعل صعب|شرستي",
+    "mosqueNumber": "59/15",
+    "name": "فرقة بعل صعب",
+    "nameNormalized": "فرقه بعل صعب",
+    "type": "جامع",
+    "typeSlug": "jamie",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "رخيوت",
+    "village": "شرستي",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 16.8305157,
+      "longitude": 53.5141302
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "54/50|الصحابي خالد بن الوليد|المزيونه",
+    "mosqueNumber": "54/50",
+    "name": "الصحابي خالد بن الوليد",
+    "nameNormalized": "الصحابي خالد بن الوليد",
+    "type": "جامع",
+    "typeSlug": "jamie",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "المزيونة",
+    "village": "المزيونة",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.5976842,
+      "longitude": 58.4207714
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "54/3|معسكر المزيونه|المزيونه",
+    "mosqueNumber": "54/3",
+    "name": "معسكر المزيونة",
+    "nameNormalized": "معسكر المزيونه",
+    "type": "جامع",
+    "typeSlug": "jamie",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "المزيونة",
+    "village": "المزيونة",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 17.8568439,
+      "longitude": 52.6912022
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "51/359|القدير جل جلاله|صحلنوت",
+    "mosqueNumber": "51/359",
+    "name": "القدير جل جلاله",
+    "nameNormalized": "القدير جل جلاله",
+    "type": "جامع",
+    "typeSlug": "jamie",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "صلالة",
+    "village": "صحلنوت",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 17.0951287,
+      "longitude": 54.1700032
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "51/104|جامع النجور|صحلنوت",
+    "mosqueNumber": "51/104",
+    "name": "جامع النجور",
+    "nameNormalized": "جامع النجور",
+    "type": "جامع",
+    "typeSlug": "jamie",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "صلالة",
+    "village": "صحلنوت",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 17.0701233,
+      "longitude": 54.1764861
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "51/383|سعيد بن عبدالعزيز الرواس|صحلنوت",
+    "mosqueNumber": "51/383",
+    "name": "سعيد بن عبدالعزيز الرواس",
+    "nameNormalized": "سعيد بن عبدالعزيز الرواس",
+    "type": "جامع",
+    "typeSlug": "jamie",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "صلالة",
+    "village": "صحلنوت",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.5976842,
+      "longitude": 58.4207714
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "51/388|صحلنوت|صحلنوت",
+    "mosqueNumber": "51/388",
+    "name": "صحلنوت",
+    "nameNormalized": "صحلنوت",
+    "type": "جامع",
+    "typeSlug": "jamie",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "صلالة",
+    "village": "صحلنوت",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 17.0743881,
+      "longitude": 54.1992601
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "19/127|العزيز جل جلاله|الفليج",
+    "mosqueNumber": "19/127",
+    "name": "العزيز جل جلاله",
+    "nameNormalized": "العزيز جل جلاله",
+    "type": "جامع",
+    "typeSlug": "jamie",
+    "governorate": "شمال الباطنة",
+    "governorateSlug": "north_batinah",
+    "wilayat": "لوى",
+    "village": "الفليج",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 24.518611,
+      "longitude": 56.4728779
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "19/123|الصحابي خالد بن الوليد|لوي الجديده",
+    "mosqueNumber": "19/123",
+    "name": "الصحابي خالد بن الوليد",
+    "nameNormalized": "الصحابي خالد بن الوليد",
+    "type": "جامع",
+    "typeSlug": "jamie",
+    "governorate": "شمال الباطنة",
+    "governorateSlug": "north_batinah",
+    "wilayat": "لوى",
+    "village": "لوى الجديدة",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 24.5257683,
+      "longitude": 56.5411428
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "17/344|العيدين|الرديده",
+    "mosqueNumber": "17/344",
+    "name": "العيدين",
+    "nameNormalized": "العيدين",
+    "type": "مصلى العيدين",
+    "typeSlug": "musalla_eid",
+    "governorate": "شمال الباطنة",
+    "governorateSlug": "north_batinah",
+    "wilayat": "الخابورة",
+    "village": "الرديده",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.9919513,
+      "longitude": 57.0929439
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "26/578|العيدين|الصبيخي",
+    "mosqueNumber": "26/578",
+    "name": "العيدين",
+    "nameNormalized": "العيدين",
+    "type": "مصلى العيدين",
+    "typeSlug": "musalla_eid",
+    "governorate": "شمال الباطنة",
+    "governorateSlug": "north_batinah",
+    "wilayat": "السويق",
+    "village": "الصبيخي",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.831127,
+      "longitude": 57.369895
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "17/250|السرحات|قصبيه الحواسنه",
+    "mosqueNumber": "17/250",
+    "name": "السرحات",
+    "nameNormalized": "السرحات",
+    "type": "مصلى العيدين",
+    "typeSlug": "musalla_eid",
+    "governorate": "شمال الباطنة",
+    "governorateSlug": "north_batinah",
+    "wilayat": "الخابورة",
+    "village": "قصبية الحواسنة",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 24.0107401,
+      "longitude": 57.0707734
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "51/234|مصلي ميناء صلاله|ريسوت",
+    "mosqueNumber": "51/234",
+    "name": "مصلى ميناء صلالة",
+    "nameNormalized": "مصلي ميناء صلاله",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "صلالة",
+    "village": "ريسوت",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 16.9411123,
+      "longitude": 53.9957213
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "48/40|مصلي الميناء|قرون الصيد",
+    "mosqueNumber": "48/40",
+    "name": "مصلى الميناء",
+    "nameNormalized": "مصلي الميناء",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "مسندم",
+    "governorateSlug": "musandam",
+    "wilayat": "دبا",
+    "village": "قرون الصيد",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.5976842,
+      "longitude": 58.4207714
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "51/218|مصلي دايره الصيانه(مكتب المحافظ)|الصناعيه",
+    "mosqueNumber": "51/218",
+    "name": "مصلى دائرة الصيانة(مكتب المحافظ)",
+    "nameNormalized": "مصلي دايره الصيانه(مكتب المحافظ)",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "صلالة",
+    "village": "الصناعية",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 17.0645002,
+      "longitude": 54.1354322
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "02/431|مصلي المهتدين|المعبيله الجنوبيه",
+    "mosqueNumber": "02/431",
+    "name": "مصلى المهتدين",
+    "nameNormalized": "مصلي المهتدين",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "مسقط",
+    "governorateSlug": "muscat",
+    "wilayat": "السيب",
+    "village": "المعبيلة الجنوبية",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.6810971,
+      "longitude": 58.1068585
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "54/31|مصلي توسنات الشمالي|توسنات",
+    "mosqueNumber": "54/31",
+    "name": "مصلى توسنات الشمالي",
+    "nameNormalized": "مصلي توسنات الشمالي",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "المزيونة",
+    "village": "توسنات",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 17.5447,
+      "longitude": 52.7839
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "54/32|مصلي توسنات الجنوبي|توسنات",
+    "mosqueNumber": "54/32",
+    "name": "مصلى توسنات الجنوبي",
+    "nameNormalized": "مصلي توسنات الجنوبي",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "المزيونة",
+    "village": "توسنات",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 17.5415,
+      "longitude": 52.7818
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "54/37|مصلي مفرق قفع|قفع",
+    "mosqueNumber": "54/37",
+    "name": "مصلى مفرق قفع",
+    "nameNormalized": "مصلي مفرق قفع",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "المزيونة",
+    "village": "قفع",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 17.867233,
+      "longitude": 53.0732788
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "21/203|مصلي المبين|المحدوث",
+    "mosqueNumber": "21/203",
+    "name": "مصلى المبين",
+    "nameNormalized": "مصلي المبين",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "جنوب الباطنة",
+    "governorateSlug": "south_batinah",
+    "wilayat": "العوابي",
+    "village": "المحدوث",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.5976842,
+      "longitude": 58.4207714
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "17/125|مسجد الفلج|السهير",
+    "mosqueNumber": "17/125",
+    "name": "مسجد الفلج",
+    "nameNormalized": "مسجد الفلج",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "شمال الباطنة",
+    "governorateSlug": "north_batinah",
+    "wilayat": "الخابورة",
+    "village": "السهير",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 24.3349849,
+      "longitude": 56.7454669
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "51/223|مصلي اثور|طيطام",
+    "mosqueNumber": "51/223",
+    "name": "مصلى أثور",
+    "nameNormalized": "مصلي اثور",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "صلالة",
+    "village": "طيطام",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 17.0202151,
+      "longitude": 54.0989837
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "55/38|مصلي مقبره مرباط|مرباط",
+    "mosqueNumber": "55/38",
+    "name": "مصلى مقبرة مرباط",
+    "nameNormalized": "مصلي مقبره مرباط",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "مرباط",
+    "village": "مرباط",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 17.0041489,
+      "longitude": 54.6907997
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "46/73|السيح الرميله|علي الشارع العام",
+    "mosqueNumber": "46/73",
+    "name": "السيح الرميلة",
+    "nameNormalized": "السيح الرميله",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "الوسطى",
+    "governorateSlug": "wusta",
+    "wilayat": "محوت",
+    "village": "على الشارع العام",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 20.3332152,
+      "longitude": 57.7880094
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "39/202|حديقه السلام|الغلاجي",
+    "mosqueNumber": "39/202",
+    "name": "حديقة السلام",
+    "nameNormalized": "حديقه السلام",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "شمال الشرقية",
+    "governorateSlug": "north_sharqiyah",
+    "wilayat": "القابل",
+    "village": "الغلاجي",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 22.6444939,
+      "longitude": 58.6219253
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "59/39|الغفار جل جلاله|مذهوب",
+    "mosqueNumber": "59/39",
+    "name": "الغفار جل جلاله",
+    "nameNormalized": "الغفار جل جلاله",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "رخيوت",
+    "village": "مذهوب",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.5976842,
+      "longitude": 58.4207714
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "59/41|الكريم جل جلاله|مذهوب",
+    "mosqueNumber": "59/41",
+    "name": "الكريم جل جلاله",
+    "nameNormalized": "الكريم جل جلاله",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "ظفار",
+    "governorateSlug": "dhofar",
+    "wilayat": "رخيوت",
+    "village": "مذهوب",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.5976842,
+      "longitude": 58.4207714
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "06/1958|مصلي مدرسه معاذ بن جبل رضي الله عنه|صياء الحدريه",
+    "mosqueNumber": "06/1958",
+    "name": "مصلى مدرسة معاذ بن جبل رضي الله عنه",
+    "nameNormalized": "مصلي مدرسه معاذ بن جبل رضي الله عنه",
+    "type": "مصلى",
+    "typeSlug": "musalla",
+    "governorate": "مسقط",
+    "governorateSlug": "muscat",
+    "wilayat": "قريات",
+    "village": "صياء الحدرية",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.2181132,
+      "longitude": 58.6876895
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "recovered_from_date",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "39/213|مصلي العيدين|المنجرد",
+    "mosqueNumber": "39/213",
+    "name": "مصلى العيدين",
+    "nameNormalized": "مصلي العيدين",
+    "type": "مصلى العيدين",
+    "typeSlug": "musalla_eid",
+    "governorate": "شمال الشرقية",
+    "governorateSlug": "north_sharqiyah",
+    "wilayat": "القابل",
+    "village": "المنجرد",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 22.7439006,
+      "longitude": 58.648207
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "32/440|العيدين|كبدا",
+    "mosqueNumber": "32/440",
+    "name": "العيدين",
+    "nameNormalized": "العيدين",
+    "type": "مصلى العيدين",
+    "typeSlug": "musalla_eid",
+    "governorate": "جنوب الشرقية",
+    "governorateSlug": "south_sharqiyah",
+    "wilayat": "صور",
+    "village": "كبدا",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.5976842,
+      "longitude": 58.4207714
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "17/337|العيدين|ميحه بني كيوم",
+    "mosqueNumber": "17/337",
+    "name": "العيدين",
+    "nameNormalized": "العيدين",
+    "type": "مصلى العيدين",
+    "typeSlug": "musalla_eid",
+    "governorate": "شمال الباطنة",
+    "governorateSlug": "north_batinah",
+    "wilayat": "الخابورة",
+    "village": "ميحة بني كيوم",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.6780609,
+      "longitude": 57.0707033
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "26/579|مصلي العيدين|العويدات",
+    "mosqueNumber": "26/579",
+    "name": "مصلى العيدين",
+    "nameNormalized": "مصلي العيدين",
+    "type": "مصلى العيدين",
+    "typeSlug": "musalla_eid",
+    "governorate": "شمال الباطنة",
+    "governorateSlug": "north_batinah",
+    "wilayat": "السويق",
+    "village": "العويدات",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 23.5976842,
+      "longitude": 58.4207714
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  },
+  {
+    "externalId": "07/581|العيدين|المعتمر",
+    "mosqueNumber": "07/581",
+    "name": "العيدين",
+    "nameNormalized": "العيدين",
+    "type": "مصلى العيدين",
+    "typeSlug": "musalla_eid",
+    "governorate": "الداخلية",
+    "governorateSlug": "dakhiliyah",
+    "wilayat": "نزوى",
+    "village": "المعتمر",
+    "location": {
+      "__type": "GeoPoint",
+      "latitude": 22.784976,
+      "longitude": 57.4965593
+    },
+    "hasLocation": true,
+    "dataQuality": {
+      "number": "ok",
+      "coordinates": "ok"
+    },
+    "source": "MARA Open Data 2025-2026",
+    "isClaimed": false,
+    "walletBalance": 0
+  }
+]
