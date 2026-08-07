@@ -224,13 +224,79 @@ Parse.Cloud.define("completeService", async (request) => {
 
 ---
 
+---
+
+### 🔴 جولة ثانية — ثغرات في الكود المُصلَح نفسه
+
+الإصلاحات أعلاه صحيحة في جوهرها، لكن ثلاثاً منها بقيت مفتوحة عند حوافّها.
+
+#### 1. `confirmDonation` بلا تحقق من الملكية — يُضيّع مال المتبرع
+
+```js
+Parse.Cloud.define('confirmDonation', async (request) => {
+    requireUser(request);                       // ← أي مستخدم مصادَق، لا صاحب المعاملة
+    ...
+    if (!verification.paid) {
+        transaction.set('status', 'failed');    // ← والجلسة قد تكون ما تزال مفتوحة
+```
+
+الشرطان معاً يفتحان مساراً لإتلاف تبرّع: يستدعي أي مستخدم مصادَق الدالة على
+معاملة غيره **قبل** أن يدفع صاحبها، فالبوابة تردّ `unpaid` فتُعلَّم `failed`.
+ثم يدفع المتبرع فعلاً، ويعود للتأكيد فيصطدم بشرط `status === 'pending'` —
+المال مقبوض لدى البوابة ولا سبيل لقيده، ولا مسار استرداد في النظام.
+
+**الإصلاح:** التأكيد لصاحب المعاملة وحده أو بـ Master Key (webhook البوابة).
+و`verifySession` صارت تميّز الحالة النهائية (`cancelled`/`expired`) من الجلسة
+التي ما تزال مفتوحة؛ الثانية تُترك `pending` ليصحّ التأكيد بعد الدفع.
+
+#### 2. سباق التمويل الزائد في `initiateDonation`
+
+```js
+const remaining = serviceRequest.get('estimatedCost') - (serviceRequest.get('fundedAmount') || 0);
+```
+
+`fundedAmount` لا يعدّ إلا المُقيَّد، فكل متبرّع يرى المتبقي كاملاً متاحاً ما دام
+لم يدفع أحد بعد. خمسة متبرّعين يبدأون معاً بـ500 ريال لطلب تكلفته 500 ويدفعون
+جميعاً ⇐ تُقبض 2500 ريال بلا استرداد.
+
+**الإصلاح:** نيّات التبرّع المعلّقة تُحجز ضمن المتبقي، بمهلة 30 دقيقة يُفرَج
+بعدها عن الحجز حتى لا يُعطّل متبرّعٌ لم يُكمل الدفع تمويلَ الطلب إلى الأبد.
+هذا يُضيّق النافذة إلى الطلبات المتزامنة في اللحظة نفسها ولا يُلغيها كلياً —
+الإلغاء التام يحتاج قيداً على مستوى قاعدة البيانات.
+
+#### 3. `_User` بلا صلاحيات في المخطط
+
+`schema.json` عرّف `classLevelPermissions` لكل الفئات إلا `_User`، و
+`apply_schema.js` لا يستدعي `setCLP` إلا عند وجود المفتاح. النتيجة أن الفئة
+تبقى على إعداد الخادم الافتراضي — وقراءة `_User` العامة تكشف `phone` و
+`fullName` و`lastKnownLocation`، أي المواقع الجغرافية للمتطوعين.
+
+**الإصلاح:** صلاحيات صريحة في المخطط (`create` مفتوح لأن التسجيل يمرّ عبره،
+والقراءة تتطلب مصادقة، و`protectedFields` تُخفي الحقول الحسّاسة)، ومعها
+`afterSave` يقفل الـ ACL على صاحب الحساب عند التسجيل. الـ ACL هو الحماية
+الفعلية: لا يُضبط في `beforeSave` لأن `objectId` لم يُسنَد بعد عند الإنشاء.
+
+---
+
 ### ما لم يُعالَج بعد
 
-- **لا توجد اختبارات.** المنطق المالي بلا تغطية = خطر. أولوية أولى.
-- **لا يوجد webhook للبوابة** — `confirmDonation` تُستدعى من العميل عند العودة،
-  وإذا أغلق المستخدم التطبيق تبقى المعاملة `pending`. يلزم مهمة دورية
-  (`Parse.Cloud.job`) تُراجع المعاملات المعلّقة.
-- **لا يوجد استرداد (refund)** لحالات إلغاء الطلب بعد التمويل.
+- **لا توجد اختبارات في المستودع.** المنطق المالي بلا تغطية = خطر. أولوية أولى.
+- **لا يوجد webhook للبوابة.** `confirmDonation` صارت تقبل الاستدعاء بـ Master
+  Key فأصبح ربط webhook ممكناً، لكن لا نقطة نهاية مُنفَّذة بعد. وإذا أغلق
+  المستخدم التطبيق تبقى المعاملة `pending` حتى تنتهي مهلة الحجز. يلزم
+  `Parse.Cloud.job` دورية تُراجع المعاملات المعلّقة وتُقفلها لدى البوابة.
+- **لا يوجد استرداد (refund)** لحالات إلغاء الطلب بعد التمويل، ولا للتمويل
+  الزائد إن أفلت من الحجز.
+- **`payoutContractor` يقرأ الرصيد ثم يُنقصه** — استدعاءان متزامنان يجتازان
+  الفحص معاً. `increment` ذرّي لكن الفحص الذي يسبقه ليس كذلك.
+- **`cancelServiceRequest` يُلغي طلباً قيد التنفيذ** رغم أن تعليقه يقول
+  "قبل التنفيذ"، ولا يُشعر المنفّذ المكلَّف.
+- **الدور يُعيّنه المستخدم بنفسه** عدا `admin` — فلا يصلح وحده أساساً للتفويض،
+  وكل دالة جديدة يجب أن تتحقق من الملكية لا من الدور فقط.
+- **لا يستطيع الإمام رؤية حالة طلب ملكيته** — `MosqueClaims` مقفلة على Master
+  Key ولا دالة تُعيدها.
+- **حقول معرّفة ولا تُكتب أبداً:** `completedJobs` و`avgRating` و`skills` و
+  `favoriteMosqueId` و`crNumber` و`companyName` — تقييم المنفّذين معطّل فعلياً.
 - **لا يوجد سجل تدقيق** لتغييرات الحالة — مفيد للشفافية أمام المتبرعين.
 
 ---
@@ -378,6 +444,16 @@ Parse.Cloud.define("completeService", async (request) => {
       "indexes": {
         "role_gov": { "role": 1, "governorate": 1 },
         "volunteer_geo": { "lastKnownLocation": "2dsphere" }
+      },
+      "_comment_clp": "create مفتوح لأن التسجيل يمرّ عبره. الحماية الفعلية في ACL يضبطه afterSave على المستخدم نفسه، وقراءة بيانات مستخدم آخر تمرّ عبر دوال السحابة بـ Master Key.",
+      "classLevelPermissions": {
+        "find": { "requiresAuthentication": true },
+        "get": { "requiresAuthentication": true },
+        "create": { "*": true },
+        "update": { "requiresAuthentication": true },
+        "delete": { "requiresAuthentication": true },
+        "addField": {},
+        "protectedFields": { "*": ["phone", "lastKnownLocation", "crNumber"] }
       }
     }
   ]
@@ -444,6 +520,28 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
   }
 
   if (user.isNew()) user.set('isActive', true);
+});
+
+/**
+ * إقفال المستخدم الجديد على نفسه.
+ *
+ * الـ CLP وحده لا يكفي: افتراض Parse أن يمنح المستخدم الجديد قراءة عامة، فيصبح
+ * `phone` و`lastKnownLocation` (موقع المتطوع) مقروءاً لكل من يملك مفتاح العميل.
+ * الـ ACL لا يُضبط في beforeSave لأن `objectId` لم يُسنَد بعد عند الإنشاء.
+ * قراءة بيانات مستخدم آخر تبقى ممكنة من دوال السحابة عبر Master Key.
+ */
+Parse.Cloud.afterSave(Parse.User, async (request) => {
+  if (request.original) return; // تحديث، لا إنشاء — وهو أيضاً ما يمنع الحلقة اللانهائية
+
+  const user = request.object;
+  const acl = user.getACL();
+  if (acl && !acl.getPublicReadAccess() && !acl.getPublicWriteAccess()) return;
+
+  const own = new Parse.ACL();
+  own.setReadAccess(user.id, true);
+  own.setWriteAccess(user.id, true);
+  user.setACL(own);
+  await user.save(null, { useMasterKey: true });
 });
 
 /** الرصيد والحالات لا تُعدّل إلا من دوال السحابة. */
@@ -708,6 +806,14 @@ async function createCheckoutSession({ amountOmr, clientReferenceId, description
   };
 }
 
+/**
+ * حالات "غير مدفوع" النهائية: لا أمل في اكتمال الدفع بعدها.
+ * ما عداها (unpaid مثلاً) يعني أن الجلسة ما تزال مفتوحة والمستخدم قد يدفع لاحقاً.
+ * التمييز ضروري: تعليم معاملة `failed` وهي ما تزال قابلة للدفع يُسقطها من
+ * شرط `pending` في confirmDonation، فيدفع المتبرع ولا يُقيَّد مبلغه أبداً.
+ */
+const TERMINAL_UNPAID = ['cancelled', 'canceled', 'expired', 'failed', 'refunded'];
+
 /** التحقق من حالة الجلسة لدى البوابة — المصدر الوحيد للحقيقة. */
 async function verifySession(sessionId) {
   const response = await Parse.Cloud.httpRequest({
@@ -717,8 +823,11 @@ async function verifySession(sessionId) {
   });
 
   const session = response.data.data;
+  const status = String(session.payment_status || '').toLowerCase();
   return {
-    paid: session.payment_status === 'paid',
+    paid: status === 'paid',
+    terminal: TERMINAL_UNPAID.includes(status),
+    status,
     amountOmr: (session.total_amount || 0) / BAISA_PER_OMR,
     reference: session.invoice || session.session_id,
     raw: session,
@@ -1084,6 +1193,30 @@ const { STATUS } = require('./requests');
 const MIN_DONATION_OMR = 1;
 const MAX_DONATION_OMR = 1000;
 
+// مهلة حجز نيّة التبرّع. بعدها تُعتبر الجلسة مهجورة ويُفرَج عن مبلغها
+// ليتبرّع به غيره — وإلا عطّل متبرّعٌ لم يُكمل الدفع تمويلَ الطلب إلى الأبد.
+const PENDING_TTL_MINUTES = 30;
+
+/**
+ * مجموع نيّات التبرّع المعلّقة الحيّة لهذا الطلب.
+ *
+ * `fundedAmount` لا يعدّ إلا المبالغ المُقيَّدة، فلو اعتمدنا عليه وحده لرأى كل
+ * متبرّع المتبقي كاملاً متاحاً: خمسة متبرّعين يبدأون معاً بـ500 ريال لطلب
+ * تكلفته 500، ويدفعون جميعاً، فتُقبض 2500 ريال بلا مسار استرداد.
+ */
+async function reservedAmount(serviceRequest) {
+  const cutoff = new Date(Date.now() - PENDING_TTL_MINUTES * 60 * 1000);
+  const pending = await new Parse.Query('Transactions')
+    .equalTo('requestId', serviceRequest)
+    .equalTo('type', 'donation')
+    .equalTo('status', 'pending')
+    .greaterThan('createdAt', cutoff)
+    .limit(1000)
+    .find({ useMasterKey: true });
+
+  return pending.reduce((sum, t) => sum + (Number(t.get('amount')) || 0), 0);
+}
+
 /** الخطوة 1: إنشاء نيّة تبرّع + جلسة دفع. لا يتحرك أي رصيد هنا. */
 Parse.Cloud.define('initiateDonation', async (request) => {
   const donor = requireRole(request, 'donor', 'imam', 'volunteer', 'contractor', 'admin');
@@ -1102,8 +1235,14 @@ Parse.Cloud.define('initiateDonation', async (request) => {
     E.invalid('هذا الطلب لا يقبل التمويل حالياً.');
   }
 
-  const remaining = serviceRequest.get('estimatedCost') - (serviceRequest.get('fundedAmount') || 0);
-  if (value > remaining) E.invalid(`المتبقي للطلب ${remaining} ريال فقط.`);
+  const funded = serviceRequest.get('fundedAmount') || 0;
+  const reserved = await reservedAmount(serviceRequest);
+  const remaining = serviceRequest.get('estimatedCost') - funded - reserved;
+
+  if (remaining <= 0) {
+    E.invalid(`الطلب محجوز بالكامل حالياً — أعد المحاولة بعد ${PENDING_TTL_MINUTES} دقيقة.`);
+  }
+  if (value > remaining) E.invalid(`المتاح للتبرّع الآن ${remaining} ريال فقط.`);
 
   const mosque = await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
 
@@ -1137,12 +1276,19 @@ Parse.Cloud.define('initiateDonation', async (request) => {
  * idempotent: استدعاؤها مرتين لا يضاعف الرصيد.
  */
 Parse.Cloud.define('confirmDonation', async (request) => {
-  requireUser(request);
+  const caller = request.master ? null : requireUser(request);
   const { transactionId } = request.params;
 
   const transaction = await new Parse.Query('Transactions')
     .get(transactionId, { useMasterKey: true })
     .catch(() => E.notFound('المعاملة غير موجودة.'));
+
+  // صاحب المعاملة وحده — أو استدعاء بـ Master Key من webhook البوابة.
+  // بدون هذا الشرط يستطيع أي مستخدم مصادَق أن يستدعيها على معاملة غيره.
+  if (caller) {
+    const owner = transaction.get('donorId');
+    if (!owner || owner.id !== caller.id) E.forbidden('هذه المعاملة ليست لك.');
+  }
 
   if (transaction.get('status') === 'captured') {
     return { status: 'captured', message: 'سبق تأكيد هذه المعاملة.' };
@@ -1151,9 +1297,14 @@ Parse.Cloud.define('confirmDonation', async (request) => {
 
   const verification = await payments.verifySession(transaction.get('paymentSessionId'));
   if (!verification.paid) {
+    // الجلسة ما تزال مفتوحة: تبقى المعاملة `pending` ليصحّ التأكيد بعد الدفع.
+    // تعليمها `failed` هنا يُسقطها نهائياً من مسار التأكيد ويضيّع مبلغ المتبرع.
+    if (!verification.terminal) {
+      return { status: 'pending', message: 'لم يكتمل الدفع بعد — أعد المحاولة بعد إتمامه.' };
+    }
     transaction.set('status', 'failed');
     await transaction.save(null, { useMasterKey: true });
-    return { status: 'failed', message: 'لم يكتمل الدفع.' };
+    return { status: 'failed', message: 'أُلغيت عملية الدفع أو انتهت صلاحية الجلسة.' };
   }
 
   // تطابق المبلغ — حماية من التلاعب في صفحة الدفع
@@ -1499,6 +1650,14 @@ async function createCheckoutSession({ amountOmr, clientReferenceId, description
   };
 }
 
+/**
+ * حالات "غير مدفوع" النهائية: لا أمل في اكتمال الدفع بعدها.
+ * ما عداها (unpaid مثلاً) يعني أن الجلسة ما تزال مفتوحة والمستخدم قد يدفع لاحقاً.
+ * التمييز ضروري: تعليم معاملة `failed` وهي ما تزال قابلة للدفع يُسقطها من
+ * شرط `pending` في confirmDonation، فيدفع المتبرع ولا يُقيَّد مبلغه أبداً.
+ */
+const TERMINAL_UNPAID = ['cancelled', 'canceled', 'expired', 'failed', 'refunded'];
+
 /** التحقق من حالة الجلسة لدى البوابة — المصدر الوحيد للحقيقة. */
 async function verifySession(sessionId) {
   const response = await Parse.Cloud.httpRequest({
@@ -1508,8 +1667,11 @@ async function verifySession(sessionId) {
   });
 
   const session = response.data.data;
+  const status = String(session.payment_status || '').toLowerCase();
   return {
-    paid: session.payment_status === 'paid',
+    paid: status === 'paid',
+    terminal: TERMINAL_UNPAID.includes(status),
+    status,
     amountOmr: (session.total_amount || 0) / BAISA_PER_OMR,
     reference: session.invoice || session.session_id,
     raw: session,
@@ -1545,6 +1707,28 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
   }
 
   if (user.isNew()) user.set('isActive', true);
+});
+
+/**
+ * إقفال المستخدم الجديد على نفسه.
+ *
+ * الـ CLP وحده لا يكفي: افتراض Parse أن يمنح المستخدم الجديد قراءة عامة، فيصبح
+ * `phone` و`lastKnownLocation` (موقع المتطوع) مقروءاً لكل من يملك مفتاح العميل.
+ * الـ ACL لا يُضبط في beforeSave لأن `objectId` لم يُسنَد بعد عند الإنشاء.
+ * قراءة بيانات مستخدم آخر تبقى ممكنة من دوال السحابة عبر Master Key.
+ */
+Parse.Cloud.afterSave(Parse.User, async (request) => {
+  if (request.original) return; // تحديث، لا إنشاء — وهو أيضاً ما يمنع الحلقة اللانهائية
+
+  const user = request.object;
+  const acl = user.getACL();
+  if (acl && !acl.getPublicReadAccess() && !acl.getPublicWriteAccess()) return;
+
+  const own = new Parse.ACL();
+  own.setReadAccess(user.id, true);
+  own.setWriteAccess(user.id, true);
+  user.setACL(own);
+  await user.save(null, { useMasterKey: true });
 });
 
 /** الرصيد والحالات لا تُعدّل إلا من دوال السحابة. */
@@ -1937,6 +2121,30 @@ async function loadAssignedRequest(requestId, user) {
 const MIN_DONATION_OMR = 1;
 const MAX_DONATION_OMR = 1000;
 
+// مهلة حجز نيّة التبرّع. بعدها تُعتبر الجلسة مهجورة ويُفرَج عن مبلغها
+// ليتبرّع به غيره — وإلا عطّل متبرّعٌ لم يُكمل الدفع تمويلَ الطلب إلى الأبد.
+const PENDING_TTL_MINUTES = 30;
+
+/**
+ * مجموع نيّات التبرّع المعلّقة الحيّة لهذا الطلب.
+ *
+ * `fundedAmount` لا يعدّ إلا المبالغ المُقيَّدة، فلو اعتمدنا عليه وحده لرأى كل
+ * متبرّع المتبقي كاملاً متاحاً: خمسة متبرّعين يبدأون معاً بـ500 ريال لطلب
+ * تكلفته 500، ويدفعون جميعاً، فتُقبض 2500 ريال بلا مسار استرداد.
+ */
+async function reservedAmount(serviceRequest) {
+  const cutoff = new Date(Date.now() - PENDING_TTL_MINUTES * 60 * 1000);
+  const pending = await new Parse.Query('Transactions')
+    .equalTo('requestId', serviceRequest)
+    .equalTo('type', 'donation')
+    .equalTo('status', 'pending')
+    .greaterThan('createdAt', cutoff)
+    .limit(1000)
+    .find({ useMasterKey: true });
+
+  return pending.reduce((sum, t) => sum + (Number(t.get('amount')) || 0), 0);
+}
+
 /** الخطوة 1: إنشاء نيّة تبرّع + جلسة دفع. لا يتحرك أي رصيد هنا. */
 Parse.Cloud.define('initiateDonation', async (request) => {
   const donor = requireRole(request, 'donor', 'imam', 'volunteer', 'contractor', 'admin');
@@ -1955,8 +2163,14 @@ Parse.Cloud.define('initiateDonation', async (request) => {
     E.invalid('هذا الطلب لا يقبل التمويل حالياً.');
   }
 
-  const remaining = serviceRequest.get('estimatedCost') - (serviceRequest.get('fundedAmount') || 0);
-  if (value > remaining) E.invalid(`المتبقي للطلب ${remaining} ريال فقط.`);
+  const funded = serviceRequest.get('fundedAmount') || 0;
+  const reserved = await reservedAmount(serviceRequest);
+  const remaining = serviceRequest.get('estimatedCost') - funded - reserved;
+
+  if (remaining <= 0) {
+    E.invalid(`الطلب محجوز بالكامل حالياً — أعد المحاولة بعد ${PENDING_TTL_MINUTES} دقيقة.`);
+  }
+  if (value > remaining) E.invalid(`المتاح للتبرّع الآن ${remaining} ريال فقط.`);
 
   const mosque = await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
 
@@ -1990,12 +2204,19 @@ Parse.Cloud.define('initiateDonation', async (request) => {
  * idempotent: استدعاؤها مرتين لا يضاعف الرصيد.
  */
 Parse.Cloud.define('confirmDonation', async (request) => {
-  requireUser(request);
+  const caller = request.master ? null : requireUser(request);
   const { transactionId } = request.params;
 
   const transaction = await new Parse.Query('Transactions')
     .get(transactionId, { useMasterKey: true })
     .catch(() => E.notFound('المعاملة غير موجودة.'));
+
+  // صاحب المعاملة وحده — أو استدعاء بـ Master Key من webhook البوابة.
+  // بدون هذا الشرط يستطيع أي مستخدم مصادَق أن يستدعيها على معاملة غيره.
+  if (caller) {
+    const owner = transaction.get('donorId');
+    if (!owner || owner.id !== caller.id) E.forbidden('هذه المعاملة ليست لك.');
+  }
 
   if (transaction.get('status') === 'captured') {
     return { status: 'captured', message: 'سبق تأكيد هذه المعاملة.' };
@@ -2004,9 +2225,14 @@ Parse.Cloud.define('confirmDonation', async (request) => {
 
   const verification = await payments.verifySession(transaction.get('paymentSessionId'));
   if (!verification.paid) {
+    // الجلسة ما تزال مفتوحة: تبقى المعاملة `pending` ليصحّ التأكيد بعد الدفع.
+    // تعليمها `failed` هنا يُسقطها نهائياً من مسار التأكيد ويضيّع مبلغ المتبرع.
+    if (!verification.terminal) {
+      return { status: 'pending', message: 'لم يكتمل الدفع بعد — أعد المحاولة بعد إتمامه.' };
+    }
     transaction.set('status', 'failed');
     await transaction.save(null, { useMasterKey: true });
-    return { status: 'failed', message: 'لم يكتمل الدفع.' };
+    return { status: 'failed', message: 'أُلغيت عملية الدفع أو انتهت صلاحية الجلسة.' };
   }
 
   // تطابق المبلغ — حماية من التلاعب في صفحة الدفع
@@ -2184,7 +2410,7 @@ Parse.Cloud.define('health', async () => ({
 
 | الفئة | القراءة | الكتابة |
 |---|---|---|
-| `_User` | مصادَق | المستخدم نفسه، مع حظر تعديل `role=admin` و`isVerifiedContractor` |
+| `_User` | صاحب الحساب فقط — `afterSave` يقفل الـ ACL عليه عند التسجيل، وقراءة بيانات مستخدم آخر تمرّ عبر دوال السحابة | المستخدم نفسه، مع حظر تعديل `role=admin` و`isVerifiedContractor` |
 | `Mosques` | مصادَق | Master Key فقط |
 | `ServiceRequests` | مصادَق | Master Key فقط (عبر دوال السحابة) |
 | `Transactions` | مصادَق، مع إخفاء بيانات المتبرع | Master Key فقط |

@@ -56,6 +56,14 @@ async function createCheckoutSession({ amountOmr, clientReferenceId, description
   };
 }
 
+/**
+ * حالات "غير مدفوع" النهائية: لا أمل في اكتمال الدفع بعدها.
+ * ما عداها (unpaid مثلاً) يعني أن الجلسة ما تزال مفتوحة والمستخدم قد يدفع لاحقاً.
+ * التمييز ضروري: تعليم معاملة `failed` وهي ما تزال قابلة للدفع يُسقطها من
+ * شرط `pending` في confirmDonation، فيدفع المتبرع ولا يُقيَّد مبلغه أبداً.
+ */
+const TERMINAL_UNPAID = ['cancelled', 'canceled', 'expired', 'failed', 'refunded'];
+
 /** التحقق من حالة الجلسة لدى البوابة — المصدر الوحيد للحقيقة. */
 async function verifySession(sessionId) {
   const response = await Parse.Cloud.httpRequest({
@@ -65,8 +73,11 @@ async function verifySession(sessionId) {
   });
 
   const session = response.data.data;
+  const status = String(session.payment_status || '').toLowerCase();
   return {
-    paid: session.payment_status === 'paid',
+    paid: status === 'paid',
+    terminal: TERMINAL_UNPAID.includes(status),
+    status,
     amountOmr: (session.total_amount || 0) / BAISA_PER_OMR,
     reference: session.invoice || session.session_id,
     raw: session,

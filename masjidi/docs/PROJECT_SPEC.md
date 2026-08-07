@@ -88,7 +88,7 @@
 
 | الفئة | القراءة | الكتابة |
 |---|---|---|
-| `_User` | مصادَق | المستخدم نفسه، مع حظر تعديل `role=admin` و`isVerifiedContractor` |
+| `_User` | صاحب الحساب فقط — `afterSave` يقفل الـ ACL عليه عند التسجيل، وقراءة بيانات مستخدم آخر تمرّ عبر دوال السحابة | المستخدم نفسه، مع حظر تعديل `role=admin` و`isVerifiedContractor` |
 | `Mosques` | مصادَق | Master Key فقط |
 | `ServiceRequests` | مصادَق | Master Key فقط (عبر دوال السحابة) |
 | `Transactions` | مصادَق، مع إخفاء بيانات المتبرع | Master Key فقط |

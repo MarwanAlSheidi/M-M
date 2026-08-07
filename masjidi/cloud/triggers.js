@@ -24,6 +24,28 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
   if (user.isNew()) user.set('isActive', true);
 });
 
+/**
+ * إقفال المستخدم الجديد على نفسه.
+ *
+ * الـ CLP وحده لا يكفي: افتراض Parse أن يمنح المستخدم الجديد قراءة عامة، فيصبح
+ * `phone` و`lastKnownLocation` (موقع المتطوع) مقروءاً لكل من يملك مفتاح العميل.
+ * الـ ACL لا يُضبط في beforeSave لأن `objectId` لم يُسنَد بعد عند الإنشاء.
+ * قراءة بيانات مستخدم آخر تبقى ممكنة من دوال السحابة عبر Master Key.
+ */
+Parse.Cloud.afterSave(Parse.User, async (request) => {
+  if (request.original) return; // تحديث، لا إنشاء — وهو أيضاً ما يمنع الحلقة اللانهائية
+
+  const user = request.object;
+  const acl = user.getACL();
+  if (acl && !acl.getPublicReadAccess() && !acl.getPublicWriteAccess()) return;
+
+  const own = new Parse.ACL();
+  own.setReadAccess(user.id, true);
+  own.setWriteAccess(user.id, true);
+  user.setACL(own);
+  await user.save(null, { useMasterKey: true });
+});
+
 /** الرصيد والحالات لا تُعدّل إلا من دوال السحابة. */
 Parse.Cloud.beforeSave('Mosques', async (request) => {
   const mosque = request.object;

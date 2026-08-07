@@ -136,6 +136,16 @@
       "indexes": {
         "role_gov": { "role": 1, "governorate": 1 },
         "volunteer_geo": { "lastKnownLocation": "2dsphere" }
+      },
+      "_comment_clp": "create مفتوح لأن التسجيل يمرّ عبره. الحماية الفعلية في ACL يضبطه afterSave على المستخدم نفسه، وقراءة بيانات مستخدم آخر تمرّ عبر دوال السحابة بـ Master Key.",
+      "classLevelPermissions": {
+        "find": { "requiresAuthentication": true },
+        "get": { "requiresAuthentication": true },
+        "create": { "*": true },
+        "update": { "requiresAuthentication": true },
+        "delete": { "requiresAuthentication": true },
+        "addField": {},
+        "protectedFields": { "*": ["phone", "lastKnownLocation", "crNumber"] }
       }
     }
   ]
