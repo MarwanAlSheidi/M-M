@@ -1,0 +1,205 @@
+/**
+ * شؤون الحسابات والاسترداد والبحث — البنود الأخيرة من «ما لم يُعالَج».
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { loadCloud } = require('./helpers/parse-mock');
+
+test('اعتماد الشركات', async (t) => {
+  let api;
+  let admin;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    admin = api.asUser('user_admin', 'admin');
+  });
+
+  const contractor = (extra = {}) => api.make('_User',
+    { role: 'contractor', isVerifiedContractor: false, companyName: 'شركة النور', ...extra });
+
+  await t.test('المشرف يرى المنتظرين بسجلّهم التجاري', async () => {
+    contractor({ crNumber: '1234567', fullName: 'مؤسسة النور' });
+
+    const { ok } = await api.call('listPendingContractors', {}, { user: admin });
+
+    assert.equal(ok.length, 1);
+    assert.equal(ok[0].companyName, 'شركة النور');
+    assert.equal(ok[0].crNumber, '1234567', 'السجل التجاري أساس القرار');
+  });
+
+  await t.test('لا اعتماد بلا سجل تجاري', async () => {
+    const pending = contractor();
+    const { error } = await api.call('reviewContractor',
+      { contractorId: pending.id, approve: true }, { user: admin });
+
+    assert.equal(error.code, api.ParseError.VALIDATION_ERROR);
+    assert.equal(pending.get('isVerifiedContractor'), false);
+  });
+
+  await t.test('الاعتماد يُغيّر الحقل ويُقيَّد ويُشعِر', async () => {
+    const pending = contractor({ crNumber: '1234567' });
+
+    const { ok } = await api.call('reviewContractor',
+      { contractorId: pending.id, approve: true }, { user: admin });
+
+    assert.equal(ok.isVerifiedContractor, true);
+    assert.equal(pending.get('isVerifiedContractor'), true);
+    assert.ok(api.store.AuditLog.some((e) => e.get('action') === 'contractor_reviewed'));
+    assert.equal(api.pushes.at(-1).users[0].id, pending.id);
+  });
+
+  await t.test('المتطوّع ليس شركة', async () => {
+    const volunteer = api.make('_User', { role: 'volunteer' });
+    const { error } = await api.call('reviewContractor',
+      { contractorId: volunteer.id, approve: true }, { user: admin });
+
+    assert.equal(error.code, api.ParseError.VALIDATION_ERROR);
+  });
+
+  await t.test('غير المشرف لا يعتمد', async () => {
+    const pending = contractor({ crNumber: '7' });
+    const { error } = await api.call('reviewContractor',
+      { contractorId: pending.id, approve: true }, { user: api.asUser('u', 'imam') });
+
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
+  });
+});
+
+test('الملف الشخصي والمسجد المفضّل', async (t) => {
+  let api;
+  let user;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    user = api.make('_User', { role: 'volunteer', fullName: 'سالم', skills: ['كهرباء'] });
+  });
+
+  await t.test('ضبط المسجد المفضّل يتحقق من وجوده', async () => {
+    const { error } = await api.call('setFavoriteMosque',
+      { mosqueId: 'لا-وجود-له' }, { user });
+    assert.equal(error.code, api.ParseError.OBJECT_NOT_FOUND);
+  });
+
+  await t.test('الضبط ثم القراءة', async () => {
+    const mosque = api.make('Mosques', { name: 'جامع السلطان' });
+
+    const set = await api.call('setFavoriteMosque', { mosqueId: mosque.id }, { user });
+    assert.equal(set.ok.mosqueName, 'جامع السلطان');
+
+    const profile = await api.call('getMyProfile', {}, { user });
+    assert.equal(profile.ok.favoriteMosqueName, 'جامع السلطان');
+    assert.deepEqual(profile.ok.skills, ['كهرباء']);
+    assert.equal(profile.ok.role, 'volunteer');
+  });
+
+  await t.test('الإرسال بلا معرّف يمسح التفضيل', async () => {
+    const mosque = api.make('Mosques', { name: 'جامع السلطان' });
+    await api.call('setFavoriteMosque', { mosqueId: mosque.id }, { user });
+
+    const cleared = await api.call('setFavoriteMosque', {}, { user });
+    assert.equal(cleared.ok.favoriteMosqueId, null);
+    assert.equal((await api.call('getMyProfile', {}, { user })).ok.favoriteMosqueId, null);
+  });
+});
+
+test('استرداد التبرّع', async (t) => {
+  let api;
+  let admin;
+  let mosque;
+  let serviceRequest;
+  let donation;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    admin = api.asUser('user_admin', 'admin');
+    mosque = api.make('Mosques', { name: 'مسجد الاختبار', walletBalance: 500 });
+    serviceRequest = api.make('ServiceRequests', {
+      mosqueId: mosque, title: 'ترميم', estimatedCost: 500, fundedAmount: 500,
+      status: 'funded', isFundedByDonors: true,
+    });
+    donation = api.make('Transactions', {
+      donorId: api.asUser('user_donor'), mosqueId: mosque, requestId: serviceRequest,
+      amount: 500, type: 'donation', status: 'captured',
+    });
+  });
+
+  await t.test('الاسترداد يعيد الرصيد ويُرجع الطلب للتمويل', async () => {
+    const { ok } = await api.call('refundDonation',
+      { transactionId: donation.id, reason: 'أُلغي الطلب' }, { user: admin });
+
+    assert.equal(ok.fundedAmount, 0);
+    assert.equal(mosque.get('walletBalance'), 0);
+    assert.equal(donation.get('status'), 'refunded');
+    assert.equal(serviceRequest.get('status'), 'pending_funding');
+    assert.equal(serviceRequest.get('isFundedByDonors'), false);
+
+    const entry = api.store.Transactions.find((tx) => tx.get('type') === 'refund');
+    assert.ok(entry, 'لم يُقيَّد سطر استرداد');
+    assert.equal(entry.get('amount'), 500);
+  });
+
+  await t.test('لا استرداد مرتين', async () => {
+    await api.call('refundDonation', { transactionId: donation.id }, { user: admin });
+    const again = await api.call('refundDonation', { transactionId: donation.id }, { user: admin });
+
+    assert.equal(again.error.code, api.ParseError.DUPLICATE_VALUE);
+    assert.equal(mosque.get('walletBalance'), 0, 'خُصم المبلغ مرتين');
+  });
+
+  await t.test('لا استرداد بعد صرف المستحقات', async () => {
+    serviceRequest.set('isPaidOut', true);
+    const { error } = await api.call('refundDonation',
+      { transactionId: donation.id }, { user: admin });
+
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
+    assert.equal(mosque.get('walletBalance'), 500);
+  });
+
+  await t.test('لا استرداد لمبلغ أُنفق على طلب آخر', async () => {
+    mosque.set('walletBalance', 100); // صُرف معظمه
+    const { error } = await api.call('refundDonation',
+      { transactionId: donation.id }, { user: admin });
+
+    assert.equal(error.code, api.ParseError.VALIDATION_ERROR);
+    assert.equal(mosque.get('walletBalance'), 100, 'التعويض لم يُعِد الرصيد');
+  });
+
+  await t.test('غير المشرف لا يسترد', async () => {
+    const { error } = await api.call('refundDonation',
+      { transactionId: donation.id }, { user: api.asUser('u', 'imam') });
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
+  });
+});
+
+test('بحث المساجد', async (t) => {
+  let api;
+  let user;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    user = api.asUser('user_any', 'donor');
+    api.make('Mosques', { name: 'مسجد النور', nameNormalized: 'مسجد النور', governorate: 'مسقط' });
+    api.make('Mosques', { name: 'جامع النور', nameNormalized: 'جامع النور', governorate: 'ظفار' });
+  });
+
+  await t.test('البادئة المثبّتة تُستعمل أولاً', async () => {
+    const { ok } = await api.call('searchMosques', { term: 'مسجد' }, { user });
+    assert.equal(ok.length, 1);
+    assert.equal(ok[0].name, 'مسجد النور');
+  });
+
+  await t.test('كلمة من وسط الاسم تسقط إلى المسح', async () => {
+    const { ok } = await api.call('searchMosques', { term: 'النور' }, { user });
+    assert.equal(ok.length, 2, 'لا نتيجة بالبادئة، فيلزم `contains` كخطة بديلة');
+  });
+
+  await t.test('قيد المحافظة يُطبَّق في الحالتين', async () => {
+    const prefix = await api.call('searchMosques', { term: 'مسجد', governorate: 'ظفار' }, { user });
+    assert.equal(prefix.ok.length, 0);
+
+    const substring = await api.call('searchMosques', { term: 'النور', governorate: 'ظفار' }, { user });
+    assert.equal(substring.ok.length, 1);
+    assert.equal(substring.ok[0].name, 'جامع النور');
+  });
+});

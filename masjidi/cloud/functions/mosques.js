@@ -36,17 +36,35 @@ Parse.Cloud.define('searchMosques', async (request) => {
   requireUser(request);
   const { term, governorate, wilayat, limit = 30 } = request.params;
 
-  const query = new Parse.Query('Mosques');
-  if (term && String(term).trim().length >= 2) {
-    query.contains('nameNormalized', String(term).trim());
+  const cleaned = term ? String(term).trim() : '';
+  const cap = Math.min(Number(limit) || 30, 100);
+
+  /** قيود المحافظة والولاية مشتركة بين المحاولتين. */
+  const scoped = () => {
+    const query = new Parse.Query('Mosques');
+    if (governorate) query.equalTo('governorate', governorate);
+    if (wilayat) query.equalTo('wilayat', wilayat);
+    query.select(...PUBLIC_FIELDS);
+    query.limit(cap);
+    return query;
+  };
+
+  if (cleaned.length < 2) {
+    const all = await scoped().find({ useMasterKey: true });
+    return all.map((m) => m.toJSON());
   }
-  if (governorate) query.equalTo('governorate', governorate);
-  if (wilayat) query.equalTo('wilayat', wilayat);
 
-  query.select(...PUBLIC_FIELDS);
-  query.limit(Math.min(Number(limit) || 30, 100));
+  // البادئة المثبّتة وحدها تستفيد من فهرس `nameNormalized`. `contains` يولّد
+  // `$regex` غير مثبّت فيمسح المجموعة كاملة (18 ألف وثيقة) — يبقى خطة بديلة
+  // لأن المستخدم قد يبحث بكلمة من وسط الاسم، لا احتمالاً أولَ.
+  const byPrefix = scoped();
+  byPrefix.startsWith('nameNormalized', cleaned);
+  const prefixHits = await byPrefix.find({ useMasterKey: true });
+  if (prefixHits.length > 0) return prefixHits.map((m) => m.toJSON());
 
-  const results = await query.find({ useMasterKey: true });
+  const bySubstring = scoped();
+  bySubstring.contains('nameNormalized', cleaned);
+  const results = await bySubstring.find({ useMasterKey: true });
   return results.map((m) => m.toJSON());
 });
 

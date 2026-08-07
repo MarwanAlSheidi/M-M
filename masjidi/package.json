@@ -9,14 +9,20 @@
     "seed:dry": "node scripts/seed_mosques.js --dry-run",
     "schema": "node scripts/apply_schema.js",
     "test": "node --test tests/*.test.js",
-    "lint": "eslint cloud scripts tests --ext .js"
+    "lint": "eslint cloud scripts tests --ext .js",
+    "test:integration": "node --test tests/integration/*.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "parse": "^5.3.0"
   },
   "devDependencies": {
-    "eslint": "^8.57.0"
+    "eslint": "^8.57.0",
+    "express": "^4.21.2",
+    "parse-server": "^9.10.0",
+    "pg": "^8.13.1"
   },
-  "engines": { "node": ">=18" }
+  "engines": {
+    "node": ">=18"
+  }
 }

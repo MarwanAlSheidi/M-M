@@ -15,6 +15,7 @@ ORDER = [
     ("functions/mosques.js", "دوال المساجد"),
     ("functions/requests.js", "دوال طلبات الصيانة"),
     ("functions/donations.js", "دوال التبرعات والصرف"),
+    ("functions/users.js", "شؤون الحسابات"),
     ("functions/maintenance.js", "الصيانة الدورية"),
 ]
 

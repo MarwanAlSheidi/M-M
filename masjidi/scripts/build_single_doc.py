@@ -21,6 +21,7 @@ CLOUD_FILES = [
     "cloud/functions/mosques.js",
     "cloud/functions/requests.js",
     "cloud/functions/donations.js",
+    "cloud/functions/users.js",
     "cloud/functions/maintenance.js",
 ]
 
@@ -30,7 +31,10 @@ TEST_FILES = [
     ("tests/triggers.test.js", "حماية الأدوار وإقفال الحساب على صاحبه"),
     ("tests/requests.test.js", "دورة حياة الطلب والإلغاء والصرف"),
     ("tests/audit.test.js", "سجل التدقيق والمهمة الدورية"),
+    ("tests/users.test.js", "الحسابات والاسترداد والبحث"),
     ("tests/schema.test.js", "الصلاحيات وتطابق النسختين"),
+    ("tests/integration/harness.js", "تشغيل parse-server حقيقي فوق PostgreSQL"),
+    ("tests/integration/flow.test.js", "الرحلة الكاملة على خادم حقيقي"),
 ]
 
 HEADER = """# مسجدي (Masjidi) — الملف الهندسي الكامل

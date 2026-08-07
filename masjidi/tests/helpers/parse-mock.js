@@ -65,6 +65,12 @@ function createMock() {
       return this;
     }
 
+    unset(key) {
+      delete this.attributes[key];
+      this._dirty.add(key);
+      return this;
+    }
+
     get(key) {
       return this.attributes[key];
     }
@@ -126,12 +132,16 @@ function createMock() {
       this._greater = [];
       this._less = [];
       this._contained = [];
+      this._prefix = [];
+      this._substring = [];
     }
 
     equalTo(key, value) { this._equal.push([key, value]); return this; }
     greaterThan(key, value) { this._greater.push([key, value]); return this; }
     lessThan(key, value) { this._less.push([key, value]); return this; }
     containedIn(key, values) { this._contained.push([key, values]); return this; }
+    startsWith(key, prefix) { this._prefix.push([key, prefix]); return this; }
+    contains(key, needle) { this._substring.push([key, needle]); return this; }
     limit() { return this; }
     select() { return this; }
     include() { return this; }
@@ -144,7 +154,9 @@ function createMock() {
         this._equal.every(([k, v]) => matches(object, k, v)) &&
         this._greater.every(([k, v]) => object.get(k) > v) &&
         this._less.every(([k, v]) => object.get(k) < v) &&
-        this._contained.every(([k, values]) => values.includes(object.get(k))));
+        this._contained.every(([k, values]) => values.includes(object.get(k))) &&
+        this._prefix.every(([k, v]) => String(object.get(k) || '').startsWith(v)) &&
+        this._substring.every(([k, v]) => String(object.get(k) || '').includes(v)));
     }
 
     async find() { return this._rows(); }

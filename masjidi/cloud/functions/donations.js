@@ -316,6 +316,83 @@ Parse.Cloud.define('payoutContractor', async (request) => {
   return { message: 'تم تسجيل الصرف.', transactionId: payout.id };
 });
 
+/**
+ * استرداد تبرّع مُقيَّد — مشرف فقط.
+ *
+ * كان المسار مفقوداً كلياً: طلبٌ يُلغى بعد التمويل، أو تمويلٌ زائد أفلت من
+ * الحجز، كلاهما بلا مخرج إلا تعديل قاعدة البيانات يدوياً. التحويل الفعلي يتم
+ * خارج النظام كما في الصرف — هنا يُسجَّل القيد ويُعاد الطلب إلى حالة التمويل.
+ */
+Parse.Cloud.define('refundDonation', async (request) => {
+  const admin = requireRole(request, 'admin');
+  const { transactionId, reason } = request.params;
+  if (!transactionId) E.invalid('معرّف المعاملة مطلوب.');
+
+  const original = await new Parse.Query('Transactions')
+    .get(String(transactionId), { useMasterKey: true })
+    .catch(() => E.notFound('المعاملة غير موجودة.'));
+
+  if (original.get('type') !== 'donation') E.invalid('الاسترداد للتبرعات وحدها.');
+  if (original.get('status') === 'refunded') E.duplicate('سبق استرداد هذه المعاملة.');
+  if (original.get('status') !== 'captured') E.invalid('لا يُسترد إلا مبلغ مُقيَّد.');
+
+  const amount = original.get('amount');
+  const mosque = await fetchPointer(original.get('mosqueId'), 'Mosques');
+  const serviceRequest = await fetchPointer(original.get('requestId'), 'ServiceRequests');
+
+  if (serviceRequest.get('isPaidOut')) {
+    E.forbidden('صُرفت مستحقات هذا الطلب — الاسترداد بعده تسوية محاسبية يدوية.');
+  }
+
+  // الخصم أولاً ثم التحقق، كما في الصرف: الرصيد قد يكون أُنفق على طلب آخر
+  mosque.increment('walletBalance', -amount);
+  await mosque.save(null, { useMasterKey: true });
+  await mosque.fetch({ useMasterKey: true });
+
+  if ((mosque.get('walletBalance') || 0) < 0) {
+    mosque.increment('walletBalance', amount); // تعويض
+    await mosque.save(null, { useMasterKey: true });
+    E.invalid('رصيد المسجد لا يكفي للاسترداد — رُوجع في طلبات أخرى.');
+  }
+
+  original.set('status', 'refunded');
+  await original.save(null, { useMasterKey: true });
+
+  serviceRequest.increment('fundedAmount', -amount);
+  await serviceRequest.save(null, { useMasterKey: true });
+  await serviceRequest.fetch({ useMasterKey: true });
+
+  // الطلب لم يعد مموّلاً بالكامل، فيعود لاستقبال التمويل
+  if (serviceRequest.get('status') === STATUS.FUNDED
+      && serviceRequest.get('fundedAmount') < serviceRequest.get('estimatedCost')) {
+    serviceRequest.set('status', STATUS.PENDING_FUNDING);
+    serviceRequest.set('isFundedByDonors', false);
+    await serviceRequest.save(null, { useMasterKey: true });
+  }
+
+  const Transaction = Parse.Object.extend('Transactions');
+  const entry = new Transaction();
+  entry.set('mosqueId', mosque);
+  entry.set('requestId', serviceRequest);
+  entry.set('payeeId', original.get('donorId'));
+  entry.set('amount', amount);
+  entry.set('type', 'refund');
+  entry.set('status', 'captured');
+  entry.set('paymentGatewayRef', String(reason || ''));
+  entry.set('approvedBy', admin);
+  await entry.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.DONATION_REFUNDED,
+    target: entry,
+    mosque,
+    actor: admin,
+    amount,
+  });
+
+  return { message: 'سُجّل الاسترداد.', transactionId: entry.id, fundedAmount: serviceRequest.get('fundedAmount') };
+});
+
 /** سجل شفاف لكل مسجد — متاح للجميع، بلا بيانات شخصية للمتبرعين. */
 Parse.Cloud.define('getMosqueLedger', async (request) => {
   requireUser(request);

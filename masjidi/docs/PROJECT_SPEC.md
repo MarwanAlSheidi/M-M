@@ -95,6 +95,11 @@
 | `confirmDonation` | متبرع/نظام | تأكيد من البوابة وقيد المبلغ |
 | `paymentWebhook` | البوابة | قيد لحظي — توثيق بسرّ مشترك، والجسم لا يُصدَّق |
 | `payoutContractor` | admin | تسجيل صرف المستحقات |
+| `refundDonation` | admin | استرداد تبرّع مُقيَّد وإعادة الطلب للتمويل |
+| `listPendingContractors` | admin | الشركات المنتظرة اعتماداً بسجلّها التجاري |
+| `reviewContractor` | admin | اعتماد شركة أو سحب اعتمادها |
+| `getMyProfile` | الجميع | الملف الشخصي كما يعرضه التطبيق |
+| `setFavoriteMosque` | الجميع | ضبط المسجد المفضّل |
 | `getMosqueLedger` | الجميع | السجل المالي الشفاف |
 | `getMosqueAuditTrail` | الجميع | سجل القرارات — الدور لا هوية الفاعل |
 | `health` | الجميع | فحص حالة الخادم |

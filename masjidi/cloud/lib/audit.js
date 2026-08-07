@@ -29,6 +29,8 @@ const ACTIONS = {
   DONATION_EXPIRED: 'donation_expired',
   PAYOUT_RECORDED: 'payout_recorded',
   CLAIM_REVIEWED: 'claim_reviewed',
+  CONTRACTOR_REVIEWED: 'contractor_reviewed',
+  DONATION_REFUNDED: 'donation_refunded',
 };
 
 /**

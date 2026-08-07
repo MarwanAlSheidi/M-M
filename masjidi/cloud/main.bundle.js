@@ -301,6 +301,8 @@ const ACTIONS = {
   DONATION_EXPIRED: 'donation_expired',
   PAYOUT_RECORDED: 'payout_recorded',
   CLAIM_REVIEWED: 'claim_reviewed',
+  CONTRACTOR_REVIEWED: 'contractor_reviewed',
+  DONATION_REFUNDED: 'donation_refunded',
 };
 
 /**
@@ -491,17 +493,35 @@ Parse.Cloud.define('searchMosques', async (request) => {
   requireUser(request);
   const { term, governorate, wilayat, limit = 30 } = request.params;
 
-  const query = new Parse.Query('Mosques');
-  if (term && String(term).trim().length >= 2) {
-    query.contains('nameNormalized', String(term).trim());
+  const cleaned = term ? String(term).trim() : '';
+  const cap = Math.min(Number(limit) || 30, 100);
+
+  /** قيود المحافظة والولاية مشتركة بين المحاولتين. */
+  const scoped = () => {
+    const query = new Parse.Query('Mosques');
+    if (governorate) query.equalTo('governorate', governorate);
+    if (wilayat) query.equalTo('wilayat', wilayat);
+    query.select(...PUBLIC_FIELDS);
+    query.limit(cap);
+    return query;
+  };
+
+  if (cleaned.length < 2) {
+    const all = await scoped().find({ useMasterKey: true });
+    return all.map((m) => m.toJSON());
   }
-  if (governorate) query.equalTo('governorate', governorate);
-  if (wilayat) query.equalTo('wilayat', wilayat);
 
-  query.select(...PUBLIC_FIELDS);
-  query.limit(Math.min(Number(limit) || 30, 100));
+  // البادئة المثبّتة وحدها تستفيد من فهرس `nameNormalized`. `contains` يولّد
+  // `$regex` غير مثبّت فيمسح المجموعة كاملة (18 ألف وثيقة) — يبقى خطة بديلة
+  // لأن المستخدم قد يبحث بكلمة من وسط الاسم، لا احتمالاً أولَ.
+  const byPrefix = scoped();
+  byPrefix.startsWith('nameNormalized', cleaned);
+  const prefixHits = await byPrefix.find({ useMasterKey: true });
+  if (prefixHits.length > 0) return prefixHits.map((m) => m.toJSON());
 
-  const results = await query.find({ useMasterKey: true });
+  const bySubstring = scoped();
+  bySubstring.contains('nameNormalized', cleaned);
+  const results = await bySubstring.find({ useMasterKey: true });
   return results.map((m) => m.toJSON());
 });
 
@@ -1370,6 +1390,83 @@ Parse.Cloud.define('payoutContractor', async (request) => {
   return { message: 'تم تسجيل الصرف.', transactionId: payout.id };
 });
 
+/**
+ * استرداد تبرّع مُقيَّد — مشرف فقط.
+ *
+ * كان المسار مفقوداً كلياً: طلبٌ يُلغى بعد التمويل، أو تمويلٌ زائد أفلت من
+ * الحجز، كلاهما بلا مخرج إلا تعديل قاعدة البيانات يدوياً. التحويل الفعلي يتم
+ * خارج النظام كما في الصرف — هنا يُسجَّل القيد ويُعاد الطلب إلى حالة التمويل.
+ */
+Parse.Cloud.define('refundDonation', async (request) => {
+  const admin = requireRole(request, 'admin');
+  const { transactionId, reason } = request.params;
+  if (!transactionId) E.invalid('معرّف المعاملة مطلوب.');
+
+  const original = await new Parse.Query('Transactions')
+    .get(String(transactionId), { useMasterKey: true })
+    .catch(() => E.notFound('المعاملة غير موجودة.'));
+
+  if (original.get('type') !== 'donation') E.invalid('الاسترداد للتبرعات وحدها.');
+  if (original.get('status') === 'refunded') E.duplicate('سبق استرداد هذه المعاملة.');
+  if (original.get('status') !== 'captured') E.invalid('لا يُسترد إلا مبلغ مُقيَّد.');
+
+  const amount = original.get('amount');
+  const mosque = await fetchPointer(original.get('mosqueId'), 'Mosques');
+  const serviceRequest = await fetchPointer(original.get('requestId'), 'ServiceRequests');
+
+  if (serviceRequest.get('isPaidOut')) {
+    E.forbidden('صُرفت مستحقات هذا الطلب — الاسترداد بعده تسوية محاسبية يدوية.');
+  }
+
+  // الخصم أولاً ثم التحقق، كما في الصرف: الرصيد قد يكون أُنفق على طلب آخر
+  mosque.increment('walletBalance', -amount);
+  await mosque.save(null, { useMasterKey: true });
+  await mosque.fetch({ useMasterKey: true });
+
+  if ((mosque.get('walletBalance') || 0) < 0) {
+    mosque.increment('walletBalance', amount); // تعويض
+    await mosque.save(null, { useMasterKey: true });
+    E.invalid('رصيد المسجد لا يكفي للاسترداد — رُوجع في طلبات أخرى.');
+  }
+
+  original.set('status', 'refunded');
+  await original.save(null, { useMasterKey: true });
+
+  serviceRequest.increment('fundedAmount', -amount);
+  await serviceRequest.save(null, { useMasterKey: true });
+  await serviceRequest.fetch({ useMasterKey: true });
+
+  // الطلب لم يعد مموّلاً بالكامل، فيعود لاستقبال التمويل
+  if (serviceRequest.get('status') === STATUS.FUNDED
+      && serviceRequest.get('fundedAmount') < serviceRequest.get('estimatedCost')) {
+    serviceRequest.set('status', STATUS.PENDING_FUNDING);
+    serviceRequest.set('isFundedByDonors', false);
+    await serviceRequest.save(null, { useMasterKey: true });
+  }
+
+  const Transaction = Parse.Object.extend('Transactions');
+  const entry = new Transaction();
+  entry.set('mosqueId', mosque);
+  entry.set('requestId', serviceRequest);
+  entry.set('payeeId', original.get('donorId'));
+  entry.set('amount', amount);
+  entry.set('type', 'refund');
+  entry.set('status', 'captured');
+  entry.set('paymentGatewayRef', String(reason || ''));
+  entry.set('approvedBy', admin);
+  await entry.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.DONATION_REFUNDED,
+    target: entry,
+    mosque,
+    actor: admin,
+    amount,
+  });
+
+  return { message: 'سُجّل الاسترداد.', transactionId: entry.id, fundedAmount: serviceRequest.get('fundedAmount') };
+});
+
 /** سجل شفاف لكل مسجد — متاح للجميع، بلا بيانات شخصية للمتبرعين. */
 Parse.Cloud.define('getMosqueLedger', async (request) => {
   requireUser(request);
@@ -1500,6 +1597,128 @@ Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
     amount: entry.get('amount'),
     createdAt: entry.get('createdAt'),
   }));
+});
+
+
+// ======================================================================
+// شؤون الحسابات   [functions/users.js]
+// ======================================================================
+
+/**
+ * شؤون الحسابات: اعتماد الشركات، والملف الشخصي.
+ *
+ * اعتماد الشركة كان بلا مسار أصلاً: جدول الأدوار يقول إن المشرف «يعتمد
+ * الشركات»، و`beforeSave` يحظر تعديل `isVerifiedContractor` إلا بـ Master Key —
+ * فلم يكن أمام المشرف إلا تعديل السجل يدوياً من لوحة التحكم، بلا أثر في السجل.
+ */
+
+/** الشركات المنتظرة اعتماداً — مشرف فقط. */
+Parse.Cloud.define('listPendingContractors', async (request) => {
+  requireRole(request, 'admin');
+
+  const contractors = await new Parse.Query(Parse.User)
+    .equalTo('role', 'contractor')
+    .equalTo('isVerifiedContractor', false)
+    .ascending('createdAt')
+    .limit(100)
+    .find({ useMasterKey: true });
+
+  return contractors.map((contractor) => ({
+    id: contractor.id,
+    fullName: contractor.get('fullName'),
+    companyName: contractor.get('companyName'),
+    crNumber: contractor.get('crNumber'), // السجل التجاري — أساس الاعتماد
+    phone: contractor.get('phone'),
+    createdAt: contractor.get('createdAt'),
+  }));
+});
+
+/** اعتماد شركة أو سحب اعتمادها — مشرف فقط. */
+Parse.Cloud.define('reviewContractor', async (request) => {
+  const admin = requireRole(request, 'admin');
+  const { contractorId, approve } = request.params;
+  if (!contractorId) E.invalid('معرّف الشركة مطلوب.');
+
+  const contractor = await new Parse.Query(Parse.User)
+    .get(contractorId, { useMasterKey: true })
+    .catch(() => E.notFound('المستخدم غير موجود.'));
+
+  if (contractor.get('role') !== 'contractor') E.invalid('هذا المستخدم ليس شركة خدمات.');
+
+  const verified = Boolean(approve);
+  if (verified && !contractor.get('crNumber')) {
+    E.invalid('لا يُعتمد مزوّد بلا رقم سجل تجاري.');
+  }
+
+  contractor.set('isVerifiedContractor', verified);
+  await contractor.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.CONTRACTOR_REVIEWED,
+    target: contractor,
+    actor: admin,
+    toStatus: verified ? 'verified' : 'unverified',
+  });
+
+  await pushToUsers(contractor, {
+    alert: verified ? 'تم اعتماد شركتكم في منصة مسجدي.' : 'أُوقف اعتماد شركتكم مؤقتاً.',
+  });
+
+  return { isVerifiedContractor: verified };
+});
+
+/**
+ * ضبط المسجد المفضّل — نقطة الدخول الافتراضية في التطبيق.
+ * تمرّ بدالة سحابة لا بكتابة مباشرة، للتحقق من وجود المسجد قبل ربط المؤشّر.
+ */
+Parse.Cloud.define('setFavoriteMosque', async (request) => {
+  const user = requireUser(request);
+  const { mosqueId } = request.params;
+
+  if (!mosqueId) {
+    user.unset('favoriteMosqueId');
+    await user.save(null, { useMasterKey: true });
+    return { favoriteMosqueId: null };
+  }
+
+  const mosque = await new Parse.Query('Mosques')
+    .get(String(mosqueId), { useMasterKey: true })
+    .catch(() => E.notFound('المسجد غير موجود.'));
+
+  user.set('favoriteMosqueId', mosque);
+  await user.save(null, { useMasterKey: true });
+
+  return { favoriteMosqueId: mosque.id, mosqueName: mosque.get('name') };
+});
+
+/** ملف المستخدم كما يعرضه التطبيق. */
+Parse.Cloud.define('getMyProfile', async (request) => {
+  const user = requireUser(request);
+  await user.fetch({ useMasterKey: true });
+
+  const favorite = user.get('favoriteMosqueId');
+  let favoriteName = null;
+  if (favorite) {
+    const loaded = await favorite.fetch({ useMasterKey: true }).catch(() => null);
+    favoriteName = loaded ? loaded.get('name') : null;
+  }
+
+  return {
+    id: user.id,
+    role: user.get('role'),
+    fullName: user.get('fullName'),
+    phone: user.get('phone'),
+    skills: user.get('skills') || [],
+    governorate: user.get('governorate'),
+    wilayat: user.get('wilayat'),
+    companyName: user.get('companyName'),
+    crNumber: user.get('crNumber'),
+    isVerifiedContractor: Boolean(user.get('isVerifiedContractor')),
+    completedJobs: user.get('completedJobs') || 0,
+    avgRating: user.get('avgRating'),
+    favoriteMosqueId: favorite ? favorite.id : null,
+    favoriteMosqueName: favoriteName,
+  };
 });
 
 
