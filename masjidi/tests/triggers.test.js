@@ -36,10 +36,33 @@ test('المُشغّلات', async (t) => {
   });
 
   await t.test('المستخدم لا يعتمد نفسه شركةً معتمدة', async () => {
-    const user = newUser({ role: 'contractor', isVerifiedContractor: true });
+    const existing = api.make('_User', { role: 'contractor', isVerifiedContractor: false });
+    existing.set('isVerifiedContractor', true);
     await assert.rejects(
-      () => api.trigger('beforeSave:_User', { object: user, master: false }),
+      () => api.trigger('beforeSave:_User', { object: existing, master: false }),
       (error) => error.code === api.ParseError.OPERATION_FORBIDDEN);
+  });
+
+  // رُصد على خادم حقيقي: `isVerifiedContractor` له `defaultValue` في المخطط،
+  // فيطبّقه Parse عند الإنشاء ويُعلّم الحقل مُعدَّلاً. حارسٌ يعتمد `dirty()`
+  // وحده كان يرفض **كل تسجيل جديد**. البديل في الذاكرة لا يطبّق القيم
+  // الافتراضية، فتُحاكى هنا بتعليم الحقل صراحةً على مستخدم جديد.
+  await t.test('القيمة الافتراضية في المخطط لا تمنع التسجيل', async () => {
+    const signup = newUser({ role: 'imam', isVerifiedContractor: false });
+
+    await api.trigger('beforeSave:_User', { object: signup, master: false });
+
+    assert.equal(signup.get('role'), 'imam');
+    assert.equal(signup.get('isVerifiedContractor'), false);
+  });
+
+  await t.test('التسجيل بادّعاء الاعتماد يُخفَّض بلا رفض', async () => {
+    const signup = newUser({ role: 'contractor', isVerifiedContractor: true });
+
+    await api.trigger('beforeSave:_User', { object: signup, master: false });
+
+    assert.equal(signup.get('isVerifiedContractor'), false,
+      'الحساب الجديد يبدأ غير معتمد دائماً');
   });
 
   await t.test('الدور يُختار عند التسجيل ثم يُثبَّت', async () => {

@@ -23,7 +23,13 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
         throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'تغيير الدور يتم من الإدارة.');
       }
     }
-    if (user.dirty('isVerifiedContractor')) {
+    // ⚠️ `dirty()` وحده لا يصلح حارساً على حقل له `defaultValue` في المخطط:
+    // Parse يطبّق القيمة الافتراضية عند الإنشاء فيُعلّم الحقل مُعدَّلاً، فكان
+    // هذا الشرط يرفض **كل تسجيل جديد** برسالة اعتماد الشركات. الصواب: الحساب
+    // الجديد يبدأ غير معتمد دائماً، والتعديل بعد ذلك بـ Master Key وحده.
+    if (user.isNew()) {
+      user.set('isVerifiedContractor', false);
+    } else if (user.dirty('isVerifiedContractor')) {
       throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'اعتماد الشركات يتم من الإدارة.');
     }
   }

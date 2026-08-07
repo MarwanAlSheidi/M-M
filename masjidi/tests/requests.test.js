@@ -84,6 +84,41 @@ test('طلبات الصيانة', async (t) => {
     assert.equal(worker.get('avgRating'), 3, 'المتوسط التراكمي (4+2)/2');
   });
 
+  // رُصد على خادم حقيقي: الاستعلام الجغرافي فشل (لا فهرس)، فأسقط إنشاء الطلب
+  // بعد أن كان الطلب قد حُفظ فعلاً — فيرى الإمام خطأً ويُعيد المحاولة فيُكرّر.
+  await t.test('فشل جلب المتطوّعين القريبين لا يُسقط إنشاء الطلب', async () => {
+    const original = Parse.Query.prototype.find;
+    Parse.Query.prototype.find = async function patched() {
+      if (this.className === '_User') throw new Error('لا يوجد فهرس 2dsphere');
+      return original.call(this);
+    };
+
+    try {
+      const { ok, error } = await api.call('createServiceRequest',
+        { title: 'تنظيف', description: 'تنظيف السجاد قبل الجمعة' }, { user: imam });
+
+      assert.equal(error, undefined, error && error.message);
+      assert.equal(ok.status, 'open_for_volunteers');
+    } finally {
+      Parse.Query.prototype.find = original;
+    }
+  });
+
+  await t.test('فشل إرسال الإشعار نفسه لا يُسقط العملية', async () => {
+    const original = Parse.Push.send;
+    Parse.Push.send = async () => { throw new Error('تعذّر الإرسال'); };
+
+    try {
+      const serviceRequest = requestAt('assigned', { assignedVolunteerId: volunteer });
+      const { ok } = await api.call('cancelServiceRequest',
+        { requestId: serviceRequest.id }, { user: imam });
+
+      assert.equal(ok.status, 'cancelled');
+    } finally {
+      Parse.Push.send = original;
+    }
+  });
+
   await t.test('الصرف لا يتجاوز الرصيد ولو تزامن', async () => {
     const admin = api.asUser('user_admin', 'admin');
     mosque.set('walletBalance', 500);

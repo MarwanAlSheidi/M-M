@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ مكتوب، ❌ لم يُشغّل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ❌ لم يبدأ |
-| الاختبارات | ⚠️ 85 حالة على بديل Parse (`npm test`) — لا اختبار تكامل على خادم حقيقي |
+| الاختبارات | ⚠️ 89 حالة على بديل Parse (`npm test`). شُغّل السيناريو الكامل مرة على `parse-server` + PostgreSQL محلياً وكشف خللين — لا اختبار تكامل آلي بعد |
 
 ---
 
@@ -77,8 +77,12 @@
 6. **الـ Pointer الخام لا يحمل بياناته** — استخدم `fetchPointer()` أو `include()`
    قبل قراءة أي حقل منه.
 7. **رسائل الأخطاء بالعربية**، عبر `lib/errors.js` لا `throw new Error`.
-8. **لا تعديل على `data/mosques.json` يدوياً** — عدّل السكربت وأعد توليده.
-9. الكود بالإنجليزية، التعليقات ورسائل المستخدم بالعربية الفصحى.
+8. **`dirty()` وحده لا يصلح حارساً على حقل له `defaultValue`** — Parse يطبّق
+   القيمة الافتراضية عند الإنشاء فيُعلّم الحقل مُعدَّلاً. ميّز `isNew()` أولاً.
+9. **الآثار الجانبية لا تُسقط العملية** — الإشعار والتدقيق يُسجّلان الفشل
+   ويبتلعانه. لا يفشل اعتماد عملٍ منجَز لأن إشعاراً لم يصل.
+10. **لا تعديل على `data/mosques.json` يدوياً** — عدّل السكربت وأعد توليده.
+11. الكود بالإنجليزية، التعليقات ورسائل المستخدم بالعربية الفصحى.
 
 ### القيود المهمة
 
@@ -282,6 +286,46 @@ const remaining = serviceRequest.get('estimatedCost') - (serviceRequest.get('fun
 والقراءة تتطلب مصادقة، و`protectedFields` تُخفي الحقول الحسّاسة)، ومعها
 `afterSave` يقفل الـ ACL على صاحب الحساب عند التسجيل. الـ ACL هو الحماية
 الفعلية: لا يُضبط في `beforeSave` لأن `objectId` لم يُسنَد بعد عند الإنشاء.
+
+---
+
+### 🔴 جولة رابعة — ما كشفه أول تشغيل على خادم حقيقي
+
+شُغّل الكود على `parse-server` فعليّ فوق PostgreSQL، بالمخطط الحقيقي وبـ200 مسجد
+من بيانات الوزارة. الاختبارات الـ87 كانت خضراء، ومع ذلك ظهر خللان لا يستطيع
+البديل في الذاكرة رصدهما — كلاهما كان يمنع الإطلاق.
+
+#### 1. لا يستطيع أحد التسجيل إطلاقاً
+
+```js
+if (user.dirty('isVerifiedContractor')) {
+    throw new Parse.Error(..., 'اعتماد الشركات يتم من الإدارة.');
+}
+```
+
+`isVerifiedContractor` له `defaultValue` في `schema.json`، وParse يطبّق القيم
+الافتراضية عند الإنشاء **فيُعلّم الحقل مُعدَّلاً**. فكان أول تسجيل — لإمام، لا
+لشركة — يُردّ برسالة اعتماد الشركات. المنصّة كانت ستُطلق بلا إمكان إنشاء حساب
+واحد.
+
+البديل في الذاكرة لا يطبّق قيم المخطط الافتراضية، فالحالة لا تنشأ فيه أصلاً.
+
+**الإصلاح:** الحساب الجديد يبدأ غير معتمد دائماً (`set(false)` بلا رفض)،
+والتعديل بعد الإنشاء بـ Master Key وحده. والقاعدة العامة: **`dirty()` وحده لا
+يصلح حارساً على حقل له `defaultValue`.**
+
+#### 2. فشل الإشعار يُسقط العملية التي يُبلّغ عنها
+
+`createServiceRequest` يحفظ الطلب ثم يُشعر المتطوّعين القريبين. الاستعلام
+الجغرافي فشل (لا فهرس مكاني في تلك البيئة)، فارتفع الخطأ وأسقط الدالة كلها —
+**والطلب كان قد حُفظ فعلاً**. فيرى الإمام فشلاً ويُعيد المحاولة فيُنشئ نسخة ثانية.
+
+وهذا ليس افتراضاً بعيداً: `CLAUDE.md` نفسه ينبّه أن فهرس `2dsphere` يُضاف يدوياً
+من لوحة Back4app، وأن الإشعارات تحتاج ربط `_Installation` بالمستخدم — فكلا
+الشرطين قد يغيب في أول يوم تشغيل.
+
+**الإصلاح:** `lib/push.js` لا يرمي أبداً، أسوةً بـ`lib/audit.js`. الإشعار أثر
+جانبي، والفشل يُسجَّل ويُبتلع.
 
 ---
 
@@ -583,7 +627,13 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
         throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'تغيير الدور يتم من الإدارة.');
       }
     }
-    if (user.dirty('isVerifiedContractor')) {
+    // ⚠️ `dirty()` وحده لا يصلح حارساً على حقل له `defaultValue` في المخطط:
+    // Parse يطبّق القيمة الافتراضية عند الإنشاء فيُعلّم الحقل مُعدَّلاً، فكان
+    // هذا الشرط يرفض **كل تسجيل جديد** برسالة اعتماد الشركات. الصواب: الحساب
+    // الجديد يبدأ غير معتمد دائماً، والتعديل بعد ذلك بـ Master Key وحده.
+    if (user.isNew()) {
+      user.set('isVerifiedContractor', false);
+    } else if (user.dirty('isVerifiedContractor')) {
       throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'اعتماد الشركات يتم من الإدارة.');
     }
   }
@@ -774,13 +824,19 @@ async function pushToUsers(users, payload) {
   installations.containedIn('user', list);
   installations.limit(1000);
 
-  await Parse.Push.send(
-    {
-      where: installations,
-      data: { sound: 'default', ...payload },
-    },
-    { useMasterKey: true }
-  );
+  try {
+    await Parse.Push.send(
+      {
+        where: installations,
+        data: { sound: 'default', ...payload },
+      },
+      { useMasterKey: true }
+    );
+  } catch (error) {
+    // مقصود: الإشعار أثر جانبي لا يجوز أن يُسقط العملية التي يُبلّغ عنها
+    console.error('[push] تعذّر الإرسال:', error && error.message);
+    return { sent: 0, failed: true };
+  }
   return { sent: list.length };
 }
 
@@ -793,19 +849,26 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
   const location = mosque.get('location');
   let volunteers = [];
 
-  if (location) {
-    const geo = new Parse.Query(Parse.User);
-    geo.equalTo('role', 'volunteer');
-    geo.equalTo('isActive', true);
-    geo.withinKilometers('lastKnownLocation', location, radiusKm);
-    geo.limit(500);
-    volunteers = await geo.find({ useMasterKey: true });
-  }
+  try {
+    if (location) {
+      const geo = new Parse.Query(Parse.User);
+      geo.equalTo('role', 'volunteer');
+      geo.equalTo('isActive', true);
+      geo.withinKilometers('lastKnownLocation', location, radiusKm);
+      geo.limit(500);
+      volunteers = await geo.find({ useMasterKey: true });
+    }
 
-  if (volunteers.length === 0) {
-    base.equalTo('governorate', mosque.get('governorate'));
-    base.limit(500);
-    volunteers = await base.find({ useMasterKey: true });
+    if (volunteers.length === 0) {
+      base.equalTo('governorate', mosque.get('governorate'));
+      base.limit(500);
+      volunteers = await base.find({ useMasterKey: true });
+    }
+  } catch (error) {
+    // الاستعلام الجغرافي يفشل إن غاب فهرس `2dsphere` — وغيابه وارد: يُضاف
+    // يدوياً من لوحة Back4app. لا يجوز أن يُسقط ذلك إنشاء طلب صيانة.
+    console.error('[push] تعذّر جلب المتطوّعين القريبين:', error && error.message);
+    return { sent: 0, failed: true };
   }
 
   return pushToUsers(volunteers, payload);
@@ -2220,13 +2283,19 @@ async function pushToUsers(users, payload) {
   installations.containedIn('user', list);
   installations.limit(1000);
 
-  await Parse.Push.send(
-    {
-      where: installations,
-      data: { sound: 'default', ...payload },
-    },
-    { useMasterKey: true }
-  );
+  try {
+    await Parse.Push.send(
+      {
+        where: installations,
+        data: { sound: 'default', ...payload },
+      },
+      { useMasterKey: true }
+    );
+  } catch (error) {
+    // مقصود: الإشعار أثر جانبي لا يجوز أن يُسقط العملية التي يُبلّغ عنها
+    console.error('[push] تعذّر الإرسال:', error && error.message);
+    return { sent: 0, failed: true };
+  }
   return { sent: list.length };
 }
 
@@ -2239,19 +2308,26 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
   const location = mosque.get('location');
   let volunteers = [];
 
-  if (location) {
-    const geo = new Parse.Query(Parse.User);
-    geo.equalTo('role', 'volunteer');
-    geo.equalTo('isActive', true);
-    geo.withinKilometers('lastKnownLocation', location, radiusKm);
-    geo.limit(500);
-    volunteers = await geo.find({ useMasterKey: true });
-  }
+  try {
+    if (location) {
+      const geo = new Parse.Query(Parse.User);
+      geo.equalTo('role', 'volunteer');
+      geo.equalTo('isActive', true);
+      geo.withinKilometers('lastKnownLocation', location, radiusKm);
+      geo.limit(500);
+      volunteers = await geo.find({ useMasterKey: true });
+    }
 
-  if (volunteers.length === 0) {
-    base.equalTo('governorate', mosque.get('governorate'));
-    base.limit(500);
-    volunteers = await base.find({ useMasterKey: true });
+    if (volunteers.length === 0) {
+      base.equalTo('governorate', mosque.get('governorate'));
+      base.limit(500);
+      volunteers = await base.find({ useMasterKey: true });
+    }
+  } catch (error) {
+    // الاستعلام الجغرافي يفشل إن غاب فهرس `2dsphere` — وغيابه وارد: يُضاف
+    // يدوياً من لوحة Back4app. لا يجوز أن يُسقط ذلك إنشاء طلب صيانة.
+    console.error('[push] تعذّر جلب المتطوّعين القريبين:', error && error.message);
+    return { sent: 0, failed: true };
   }
 
   return pushToUsers(volunteers, payload);
@@ -2456,7 +2532,13 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
         throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'تغيير الدور يتم من الإدارة.');
       }
     }
-    if (user.dirty('isVerifiedContractor')) {
+    // ⚠️ `dirty()` وحده لا يصلح حارساً على حقل له `defaultValue` في المخطط:
+    // Parse يطبّق القيمة الافتراضية عند الإنشاء فيُعلّم الحقل مُعدَّلاً، فكان
+    // هذا الشرط يرفض **كل تسجيل جديد** برسالة اعتماد الشركات. الصواب: الحساب
+    // الجديد يبدأ غير معتمد دائماً، والتعديل بعد ذلك بـ Master Key وحده.
+    if (user.isNew()) {
+      user.set('isVerifiedContractor', false);
+    } else if (user.dirty('isVerifiedContractor')) {
       throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'اعتماد الشركات يتم من الإدارة.');
     }
   }
@@ -5100,10 +5182,33 @@ test('المُشغّلات', async (t) => {
   });
 
   await t.test('المستخدم لا يعتمد نفسه شركةً معتمدة', async () => {
-    const user = newUser({ role: 'contractor', isVerifiedContractor: true });
+    const existing = api.make('_User', { role: 'contractor', isVerifiedContractor: false });
+    existing.set('isVerifiedContractor', true);
     await assert.rejects(
-      () => api.trigger('beforeSave:_User', { object: user, master: false }),
+      () => api.trigger('beforeSave:_User', { object: existing, master: false }),
       (error) => error.code === api.ParseError.OPERATION_FORBIDDEN);
+  });
+
+  // رُصد على خادم حقيقي: `isVerifiedContractor` له `defaultValue` في المخطط،
+  // فيطبّقه Parse عند الإنشاء ويُعلّم الحقل مُعدَّلاً. حارسٌ يعتمد `dirty()`
+  // وحده كان يرفض **كل تسجيل جديد**. البديل في الذاكرة لا يطبّق القيم
+  // الافتراضية، فتُحاكى هنا بتعليم الحقل صراحةً على مستخدم جديد.
+  await t.test('القيمة الافتراضية في المخطط لا تمنع التسجيل', async () => {
+    const signup = newUser({ role: 'imam', isVerifiedContractor: false });
+
+    await api.trigger('beforeSave:_User', { object: signup, master: false });
+
+    assert.equal(signup.get('role'), 'imam');
+    assert.equal(signup.get('isVerifiedContractor'), false);
+  });
+
+  await t.test('التسجيل بادّعاء الاعتماد يُخفَّض بلا رفض', async () => {
+    const signup = newUser({ role: 'contractor', isVerifiedContractor: true });
+
+    await api.trigger('beforeSave:_User', { object: signup, master: false });
+
+    assert.equal(signup.get('isVerifiedContractor'), false,
+      'الحساب الجديد يبدأ غير معتمد دائماً');
   });
 
   await t.test('الدور يُختار عند التسجيل ثم يُثبَّت', async () => {
@@ -5263,6 +5368,41 @@ test('طلبات الصيانة', async (t) => {
 
     assert.equal(worker.get('completedJobs'), 2);
     assert.equal(worker.get('avgRating'), 3, 'المتوسط التراكمي (4+2)/2');
+  });
+
+  // رُصد على خادم حقيقي: الاستعلام الجغرافي فشل (لا فهرس)، فأسقط إنشاء الطلب
+  // بعد أن كان الطلب قد حُفظ فعلاً — فيرى الإمام خطأً ويُعيد المحاولة فيُكرّر.
+  await t.test('فشل جلب المتطوّعين القريبين لا يُسقط إنشاء الطلب', async () => {
+    const original = Parse.Query.prototype.find;
+    Parse.Query.prototype.find = async function patched() {
+      if (this.className === '_User') throw new Error('لا يوجد فهرس 2dsphere');
+      return original.call(this);
+    };
+
+    try {
+      const { ok, error } = await api.call('createServiceRequest',
+        { title: 'تنظيف', description: 'تنظيف السجاد قبل الجمعة' }, { user: imam });
+
+      assert.equal(error, undefined, error && error.message);
+      assert.equal(ok.status, 'open_for_volunteers');
+    } finally {
+      Parse.Query.prototype.find = original;
+    }
+  });
+
+  await t.test('فشل إرسال الإشعار نفسه لا يُسقط العملية', async () => {
+    const original = Parse.Push.send;
+    Parse.Push.send = async () => { throw new Error('تعذّر الإرسال'); };
+
+    try {
+      const serviceRequest = requestAt('assigned', { assignedVolunteerId: volunteer });
+      const { ok } = await api.call('cancelServiceRequest',
+        { requestId: serviceRequest.id }, { user: imam });
+
+      assert.equal(ok.status, 'cancelled');
+    } finally {
+      Parse.Push.send = original;
+    }
   });
 
   await t.test('الصرف لا يتجاوز الرصيد ولو تزامن', async () => {

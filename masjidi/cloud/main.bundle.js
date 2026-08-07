@@ -122,13 +122,19 @@ async function pushToUsers(users, payload) {
   installations.containedIn('user', list);
   installations.limit(1000);
 
-  await Parse.Push.send(
-    {
-      where: installations,
-      data: { sound: 'default', ...payload },
-    },
-    { useMasterKey: true }
-  );
+  try {
+    await Parse.Push.send(
+      {
+        where: installations,
+        data: { sound: 'default', ...payload },
+      },
+      { useMasterKey: true }
+    );
+  } catch (error) {
+    // مقصود: الإشعار أثر جانبي لا يجوز أن يُسقط العملية التي يُبلّغ عنها
+    console.error('[push] تعذّر الإرسال:', error && error.message);
+    return { sent: 0, failed: true };
+  }
   return { sent: list.length };
 }
 
@@ -141,19 +147,26 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
   const location = mosque.get('location');
   let volunteers = [];
 
-  if (location) {
-    const geo = new Parse.Query(Parse.User);
-    geo.equalTo('role', 'volunteer');
-    geo.equalTo('isActive', true);
-    geo.withinKilometers('lastKnownLocation', location, radiusKm);
-    geo.limit(500);
-    volunteers = await geo.find({ useMasterKey: true });
-  }
+  try {
+    if (location) {
+      const geo = new Parse.Query(Parse.User);
+      geo.equalTo('role', 'volunteer');
+      geo.equalTo('isActive', true);
+      geo.withinKilometers('lastKnownLocation', location, radiusKm);
+      geo.limit(500);
+      volunteers = await geo.find({ useMasterKey: true });
+    }
 
-  if (volunteers.length === 0) {
-    base.equalTo('governorate', mosque.get('governorate'));
-    base.limit(500);
-    volunteers = await base.find({ useMasterKey: true });
+    if (volunteers.length === 0) {
+      base.equalTo('governorate', mosque.get('governorate'));
+      base.limit(500);
+      volunteers = await base.find({ useMasterKey: true });
+    }
+  } catch (error) {
+    // الاستعلام الجغرافي يفشل إن غاب فهرس `2dsphere` — وغيابه وارد: يُضاف
+    // يدوياً من لوحة Back4app. لا يجوز أن يُسقط ذلك إنشاء طلب صيانة.
+    console.error('[push] تعذّر جلب المتطوّعين القريبين:', error && error.message);
+    return { sent: 0, failed: true };
   }
 
   return pushToUsers(volunteers, payload);
@@ -358,7 +371,13 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
         throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'تغيير الدور يتم من الإدارة.');
       }
     }
-    if (user.dirty('isVerifiedContractor')) {
+    // ⚠️ `dirty()` وحده لا يصلح حارساً على حقل له `defaultValue` في المخطط:
+    // Parse يطبّق القيمة الافتراضية عند الإنشاء فيُعلّم الحقل مُعدَّلاً، فكان
+    // هذا الشرط يرفض **كل تسجيل جديد** برسالة اعتماد الشركات. الصواب: الحساب
+    // الجديد يبدأ غير معتمد دائماً، والتعديل بعد ذلك بـ Master Key وحده.
+    if (user.isNew()) {
+      user.set('isVerifiedContractor', false);
+    } else if (user.dirty('isVerifiedContractor')) {
       throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'اعتماد الشركات يتم من الإدارة.');
     }
   }
