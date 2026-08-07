@@ -194,6 +194,18 @@ test('بحث المساجد', async (t) => {
     assert.equal(ok.length, 2, 'لا نتيجة بالبادئة، فيلزم `contains` كخطة بديلة');
   });
 
+  // البيانات مخزَّنة مطبَّعة؛ لو لم يُطبَّع المصطلح لضاع الحقل كله
+  await t.test('التاء المربوطة والألف المهموزة تُطبَّعان قبل البحث', async () => {
+    api.make('Mosques', { name: 'مسجد الرحمة', nameNormalized: 'مسجد الرحمه' });
+
+    const exact = await api.call('searchMosques', { term: 'مسجد الرحمة' }, { user });
+    assert.equal(exact.ok.length, 1, 'كُتبت بالتاء المربوطة والمخزَّن بالهاء');
+
+    api.make('Mosques', { name: 'مسجد الإيمان', nameNormalized: 'مسجد الايمان' });
+    const hamza = await api.call('searchMosques', { term: 'مسجد الإيمان' }, { user });
+    assert.equal(hamza.ok.length, 1, 'الهمزة على الألف');
+  });
+
   await t.test('قيد المحافظة يُطبَّق في الحالتين', async () => {
     const prefix = await api.call('searchMosques', { term: 'مسجد', governorate: 'ظفار' }, { user });
     assert.equal(prefix.ok.length, 0);

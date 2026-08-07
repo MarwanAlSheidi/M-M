@@ -161,6 +161,33 @@ Parse.Cloud.define('withdrawInterest', async (request) => {
 });
 
 /**
+ * اهتمامات المتطوّع المستدعي — `TaskInterests` مقفلة فلا يصلها العميل مباشرةً.
+ */
+Parse.Cloud.define('getMyInterests', async (request) => {
+  const volunteer = requireRole(request, 'volunteer');
+
+  const interests = await new Parse.Query('TaskInterests')
+    .equalTo('volunteerId', volunteer)
+    .descending('createdAt')
+    .include('requestId')
+    .limit(50)
+    .find({ useMasterKey: true });
+
+  return interests.map((interest) => {
+    const serviceRequest = interest.get('requestId');
+    return {
+      id: interest.id,
+      status: interest.get('status'),
+      note: interest.get('note'),
+      createdAt: interest.get('createdAt'),
+      requestId: serviceRequest ? serviceRequest.id : null,
+      requestTitle: serviceRequest ? serviceRequest.get('title') : null,
+      requestStatus: serviceRequest ? serviceRequest.get('status') : null,
+    };
+  });
+});
+
+/**
  * قائمة المهتمّين بطلب — للإمام صاحب المسجد وحده.
  *
  * تُعاد المهارات والتقييم ليختار الإمام عن بيّنة. لا يُعاد رقم الهاتف: التواصل

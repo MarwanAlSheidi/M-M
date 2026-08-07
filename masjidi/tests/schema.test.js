@@ -73,7 +73,7 @@ test('نقاط الدخول', async (t) => {
   const EXPECTED_FUNCTIONS = [
     'getNearbyMosques', 'searchMosques', 'claimMosque', 'getMyClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'expressInterest', 'withdrawInterest',
-    'getRequestInterests', 'assignWorker', 'startWork', 'markWorkDone',
+    'getRequestInterests', 'getMyInterests', 'assignWorker', 'startWork', 'markWorkDone',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
     'confirmDonation', 'paymentWebhook', 'payoutContractor', 'refundDonation',
     'getMosqueLedger', 'listPendingContractors', 'reviewContractor',

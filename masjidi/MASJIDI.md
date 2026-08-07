@@ -59,7 +59,7 @@
 | دوال السحابة | ✅ مكتوبة، ❌ غير مُختبرة على خادم حقيقي |
 | سكربت الاستيراد | ✅ مكتوب، ❌ لم يُشغّل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
-| تطبيق العميل | ❌ لم يبدأ |
+| تطبيق العميل | ⚠️ واجهة ويب عربية في `app/` تغطي مسار التطوّع — لا React Native ولا خريطة ولا PWA |
 | الاختبارات | ✅ 109 حالة على بديل Parse (`npm test`) + اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
 
 ---
@@ -139,6 +139,10 @@ tests/
 data/
   mosques.json         18,214 سجلاً جاهزاً
   cleaning_report.json تقرير جودة البيانات
+app/
+  src/api.js           الطبقة الوحيدة التي تلمس Parse — بلا Master Key
+  src/screens.jsx      الشاشات
+  src/App.jsx          التبويبات حسب الدور
 docs/
   PROJECT_SPEC.md      المواصفات الأصلية
   REVIEW.md            الأخطاء التي أُصلحت ولماذا — اقرأه قبل تعديل المنطق المالي
@@ -329,6 +333,17 @@ if (user.dirty('isVerifiedContractor')) {
 
 **الإصلاح:** `lib/push.js` لا يرمي أبداً، أسوةً بـ`lib/audit.js`. الإشعار أثر
 جانبي، والفشل يُسجَّل ويُبتلع.
+
+---
+
+### 🟠 جولة خامسة — ما كشفه بناء الواجهة
+
+**البحث لا يُطبّع مصطلح المستخدم.** `nameNormalized` وُجد ليطابق «الرحمة»
+بـ«الرحمه»، والبيانات تُخزَّن مطبَّعة عبر `normalize_ar` في سكربت التنظيف —
+لكن `searchMosques` كان يرسل النص كما كتبه المستخدم. فالحقل بلا فائدة: من يكتب
+الاسم بالتاء المربوطة أو بالهمزة لا يجد شيئاً. ظهر فور أول بحث حقيقي من
+الواجهة. **الإصلاح:** `normalizeArabic` في `cloud/functions/mosques.js`، نظير
+دالة بايثون حرفاً بحرف — الطرفان يمرّان بالتطبيع نفسه.
 
 ---
 
@@ -1088,12 +1103,33 @@ Parse.Cloud.define('getNearbyMosques', async (request) => {
   return results.map((m) => m.toJSON());
 });
 
+/**
+ * تطبيع النص العربي — نظير `normalize_ar` في `scripts/clean_mosques.py`.
+ *
+ * البيانات مخزَّنة مطبَّعة في `nameNormalized`، وكان البحث يُرسل النص كما كتبه
+ * المستخدم: فمن يكتب «الرحمة» لا يجد «الرحمه»، وهي المشكلة التي وُجد الحقل
+ * لحلّها. الطرفان يجب أن يمرّا بالتطبيع نفسه، وإلا فالحقل بلا فائدة.
+ */
+function normalizeArabic(text) {
+  return String(text)
+    .normalize('NFKC')
+    .replace(/[\u064B-\u065F\u0670]/g, '') // التشكيل
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ');
+}
+
 /** بحث نصّي بالاسم أو القرية داخل ولاية/محافظة. */
 Parse.Cloud.define('searchMosques', async (request) => {
   requireUser(request);
   const { term, governorate, wilayat, limit = 30 } = request.params;
 
-  const cleaned = term ? String(term).trim() : '';
+  const cleaned = term ? normalizeArabic(term) : '';
   const cap = Math.min(Number(limit) || 30, 100);
 
   /** قيود المحافظة والولاية مشتركة بين المحاولتين. */
@@ -1385,6 +1421,33 @@ Parse.Cloud.define('withdrawInterest', async (request) => {
   });
 
   return { status: 'withdrawn' };
+});
+
+/**
+ * اهتمامات المتطوّع المستدعي — `TaskInterests` مقفلة فلا يصلها العميل مباشرةً.
+ */
+Parse.Cloud.define('getMyInterests', async (request) => {
+  const volunteer = requireRole(request, 'volunteer');
+
+  const interests = await new Parse.Query('TaskInterests')
+    .equalTo('volunteerId', volunteer)
+    .descending('createdAt')
+    .include('requestId')
+    .limit(50)
+    .find({ useMasterKey: true });
+
+  return interests.map((interest) => {
+    const serviceRequest = interest.get('requestId');
+    return {
+      id: interest.id,
+      status: interest.get('status'),
+      note: interest.get('note'),
+      createdAt: interest.get('createdAt'),
+      requestId: serviceRequest ? serviceRequest.id : null,
+      requestTitle: serviceRequest ? serviceRequest.get('title') : null,
+      requestStatus: serviceRequest ? serviceRequest.get('status') : null,
+    };
+  });
 });
 
 /**
@@ -2876,12 +2939,33 @@ Parse.Cloud.define('getNearbyMosques', async (request) => {
   return results.map((m) => m.toJSON());
 });
 
+/**
+ * تطبيع النص العربي — نظير `normalize_ar` في `scripts/clean_mosques.py`.
+ *
+ * البيانات مخزَّنة مطبَّعة في `nameNormalized`، وكان البحث يُرسل النص كما كتبه
+ * المستخدم: فمن يكتب «الرحمة» لا يجد «الرحمه»، وهي المشكلة التي وُجد الحقل
+ * لحلّها. الطرفان يجب أن يمرّا بالتطبيع نفسه، وإلا فالحقل بلا فائدة.
+ */
+function normalizeArabic(text) {
+  return String(text)
+    .normalize('NFKC')
+    .replace(/[\u064B-\u065F\u0670]/g, '') // التشكيل
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ');
+}
+
 /** بحث نصّي بالاسم أو القرية داخل ولاية/محافظة. */
 Parse.Cloud.define('searchMosques', async (request) => {
   requireUser(request);
   const { term, governorate, wilayat, limit = 30 } = request.params;
 
-  const cleaned = term ? String(term).trim() : '';
+  const cleaned = term ? normalizeArabic(term) : '';
   const cap = Math.min(Number(limit) || 30, 100);
 
   /** قيود المحافظة والولاية مشتركة بين المحاولتين. */
@@ -3169,6 +3253,33 @@ Parse.Cloud.define('withdrawInterest', async (request) => {
   });
 
   return { status: 'withdrawn' };
+});
+
+/**
+ * اهتمامات المتطوّع المستدعي — `TaskInterests` مقفلة فلا يصلها العميل مباشرةً.
+ */
+Parse.Cloud.define('getMyInterests', async (request) => {
+  const volunteer = requireRole(request, 'volunteer');
+
+  const interests = await new Parse.Query('TaskInterests')
+    .equalTo('volunteerId', volunteer)
+    .descending('createdAt')
+    .include('requestId')
+    .limit(50)
+    .find({ useMasterKey: true });
+
+  return interests.map((interest) => {
+    const serviceRequest = interest.get('requestId');
+    return {
+      id: interest.id,
+      status: interest.get('status'),
+      note: interest.get('note'),
+      createdAt: interest.get('createdAt'),
+      requestId: serviceRequest ? serviceRequest.id : null,
+      requestTitle: serviceRequest ? serviceRequest.get('title') : null,
+      requestStatus: serviceRequest ? serviceRequest.get('status') : null,
+    };
+  });
 });
 
 /**
@@ -6528,6 +6639,18 @@ test('بحث المساجد', async (t) => {
     assert.equal(ok.length, 2, 'لا نتيجة بالبادئة، فيلزم `contains` كخطة بديلة');
   });
 
+  // البيانات مخزَّنة مطبَّعة؛ لو لم يُطبَّع المصطلح لضاع الحقل كله
+  await t.test('التاء المربوطة والألف المهموزة تُطبَّعان قبل البحث', async () => {
+    api.make('Mosques', { name: 'مسجد الرحمة', nameNormalized: 'مسجد الرحمه' });
+
+    const exact = await api.call('searchMosques', { term: 'مسجد الرحمة' }, { user });
+    assert.equal(exact.ok.length, 1, 'كُتبت بالتاء المربوطة والمخزَّن بالهاء');
+
+    api.make('Mosques', { name: 'مسجد الإيمان', nameNormalized: 'مسجد الايمان' });
+    const hamza = await api.call('searchMosques', { term: 'مسجد الإيمان' }, { user });
+    assert.equal(hamza.ok.length, 1, 'الهمزة على الألف');
+  });
+
   await t.test('قيد المحافظة يُطبَّق في الحالتين', async () => {
     const prefix = await api.call('searchMosques', { term: 'مسجد', governorate: 'ظفار' }, { user });
     assert.equal(prefix.ok.length, 0);
@@ -6617,7 +6740,7 @@ test('نقاط الدخول', async (t) => {
   const EXPECTED_FUNCTIONS = [
     'getNearbyMosques', 'searchMosques', 'claimMosque', 'getMyClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'expressInterest', 'withdrawInterest',
-    'getRequestInterests', 'assignWorker', 'startWork', 'markWorkDone',
+    'getRequestInterests', 'getMyInterests', 'assignWorker', 'startWork', 'markWorkDone',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
     'confirmDonation', 'paymentWebhook', 'payoutContractor', 'refundDonation',
     'getMosqueLedger', 'listPendingContractors', 'reviewContractor',
