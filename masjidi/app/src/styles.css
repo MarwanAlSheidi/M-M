@@ -67,6 +67,17 @@ h2:first-child { margin-top: 0; }
 .tag.off { background: #eee; color: #666; }
 .tag.dist { background: #eef3fb; color: #24457a; }
 
+.mapwrap { margin-bottom: 12px; }
+.mapviews { margin-bottom: 8px; }
+.mapviews button { padding: 6px 14px; font-size: 13px; }
+.map {
+  height: 320px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--green-soft);
+}
+
 .maplink {
   color: var(--green);
   font-size: 14px;

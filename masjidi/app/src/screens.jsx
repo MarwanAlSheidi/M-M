@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as api from './api';
+import { MAPS_KEY, VIEWS, loadGoogleMaps } from './maps';
 
 /* ————— لبنات مشتركة ————— */
 
@@ -161,6 +162,116 @@ function LocationGate({ location, children }) {
   return children;
 }
 
+
+/**
+ * خريطة المساجد حول المستخدم.
+ *
+ * العلامة الزرقاء موقعه، والخُضر المساجد؛ والنقر على مسجد يفتح بطاقته مع زرّ
+ * اختياره. الحدود تُضبط لتشمل الجميع بدل تخمين مستوى التقريب.
+ */
+function MosqueMap({ center, mosques, onPick }) {
+  const holder = useRef(null);
+  const map = useRef(null);
+  const markers = useRef([]);
+  const info = useRef(null);
+  const [view, setView] = useState('roadmap');
+  const [error, setError] = useState('');
+
+  // إنشاء الخريطة مرة واحدة
+  useEffect(() => {
+    let cancelled = false;
+
+    loadGoogleMaps()
+      .then((maps) => {
+        if (cancelled || !holder.current) return;
+        map.current = new maps.Map(holder.current, {
+          center: { lat: center.lat, lng: center.lng },
+          zoom: 14,
+          mapTypeId: view,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+        });
+        info.current = new maps.InfoWindow();
+
+        new maps.Marker({
+          map: map.current,
+          position: { lat: center.lat, lng: center.lng },
+          title: 'موقعك',
+          icon: {
+            path: maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: '#1a73e8',
+            fillOpacity: 1,
+            strokeColor: '#fff',
+            strokeWeight: 2,
+          },
+        });
+      })
+      .catch((caught) => { if (!cancelled) setError(caught.message); });
+
+    return () => { cancelled = true; };
+  }, [center.lat, center.lng]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // إعادة رسم العلامات كلما تغيّرت القائمة (تغيّر النطاق مثلاً)
+  useEffect(() => {
+    const maps = window.google && window.google.maps;
+    if (!maps || !map.current) return;
+
+    markers.current.forEach((marker) => marker.setMap(null));
+    markers.current = [];
+
+    const bounds = new maps.LatLngBounds();
+    bounds.extend({ lat: center.lat, lng: center.lng });
+
+    mosques.filter((mosque) => mosque.lat != null).forEach((mosque) => {
+      const position = { lat: mosque.lat, lng: mosque.lng };
+      const marker = new maps.Marker({ map: map.current, position, title: mosque.name });
+
+      marker.addListener('click', () => {
+        info.current.setContent(
+          `<div dir="rtl" style="font-family:inherit;min-width:150px">
+             <strong>${mosque.name}</strong><br/>
+             ${mosque.wilayat || ''} · ${api.formatDistance(mosque.distanceKm)}
+           </div>`,
+        );
+        info.current.open({ map: map.current, anchor: marker });
+        onPick(mosque);
+      });
+
+      markers.current.push(marker);
+      bounds.extend(position);
+    });
+
+    if (markers.current.length > 0) map.current.fitBounds(bounds, 48);
+  }, [mosques, center.lat, center.lng, onPick]);
+
+  function switchView(next) {
+    setView(next);
+    if (map.current) map.current.setMapTypeId(next);
+  }
+
+  if (error) {
+    return (
+      <div className="notice" data-testid="map-error">
+        {error} — القائمة أدناه تعمل بلا خريطة.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mapwrap">
+      <div className="row mapviews">
+        {Object.entries(VIEWS).map(([key, label]) => (
+          <button key={key} className={view === key ? '' : 'ghost'}
+            onClick={() => switchView(key)}>{label}</button>
+        ))}
+      </div>
+      <div className="map" ref={holder} data-testid="map" />
+    </div>
+  );
+}
+
 const DistanceTag = ({ km }) => <span className="tag dist">{api.formatDistance(km)}</span>;
 
 /** المساجد حول المستخدم — «موقع المسجد هو ما يربط المصلّي بمسجده». */
@@ -185,11 +296,39 @@ export function AroundMe() {
     }
   }
 
+  const [selected, setSelected] = useState(null);
+  const [showMap, setShowMap] = useState(Boolean(MAPS_KEY));
+
   return (
     <>
-      <h2>حولي</h2>
+      <div className="spread">
+        <h2 style={{ margin: 0 }}>حولي</h2>
+        {MAPS_KEY && (
+          <button className="link" onClick={() => setShowMap(!showMap)}>
+            {showMap ? 'عرض كقائمة' : 'عرض على الخريطة'}
+          </button>
+        )}
+      </div>
       <LocationGate location={location}>
         <>
+          {showMap && location.point && (
+            <MosqueMap center={location.point} mosques={state.rows} onPick={setSelected} />
+          )}
+          {selected && (
+            <article className="card" data-testid="picked">
+              <div className="spread">
+                <h3>{selected.name}</h3>
+                <DistanceTag km={selected.distanceKm} />
+              </div>
+              <p>{selected.wilayat} — {selected.village || selected.governorate}</p>
+              <div className="row">
+                <button onClick={() => pick(selected)}>هذا مسجدي</button>
+                <a className="maplink" href={api.mapsLink(selected.lat, selected.lng, selected.name)}
+                  target="_blank" rel="noreferrer">الاتجاهات</a>
+              </div>
+            </article>
+          )}
+
           <div className="row" style={{ marginBottom: 12 }}>
             {[1, 5, 15, 50].map((km) => (
               <button key={km} className={radius === km ? '' : 'ghost'}
