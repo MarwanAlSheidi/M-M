@@ -9,6 +9,7 @@
 ```bash
 npm install
 cp .env.example .env      # املأ مفاتيح Back4app
+npm test                  # اختبارات دوال السحابة — بلا خادم ولا مفاتيح
 ```
 
 ### 1. تجهيز البيانات

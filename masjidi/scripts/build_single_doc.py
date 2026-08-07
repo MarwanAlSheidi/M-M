@@ -22,6 +22,13 @@ CLOUD_FILES = [
     "cloud/functions/donations.js",
 ]
 
+TEST_FILES = [
+    ("tests/helpers/parse-mock.js", "بديل Parse — مخزن في الذاكرة بلا خادم"),
+    ("tests/donations.test.js", "المسار المالي: التأكيد والحجز"),
+    ("tests/triggers.test.js", "حماية الأدوار وإقفال الحساب على صاحبه"),
+    ("tests/schema.test.js", "الصلاحيات وتطابق النسختين"),
+]
+
 HEADER = """# مسجدي (Masjidi) — الملف الهندسي الكامل
 
 **الإصدار:** 1.0.0
@@ -60,7 +67,7 @@ HEADER = """# مسجدي (Masjidi) — الملف الهندسي الكامل
 | 6 | [كود السحابة كاملاً — مجزّأً (6أ) ومدمجاً (6ب)](#6-كود-السحابة-كاملاً) |
 | 7 | [دورة حياة الطلب والدوال وقواعد الأمن](#7-دورة-حياة-الطلب-والدوال-وقواعد-الأمن) |
 | 8 | [البيانات](#8-البيانات) |
-| 9 | [سكربتات التجهيز](#9-سكربتات-التجهيز) |
+| 9 | [سكربتات التجهيز](#9-سكربتات-التجهيز) — و[الاختبارات](#9ب-الاختبارات) |
 | 10 | [خطة التشغيل](#10-خطة-التشغيل) |
 
 ---
@@ -176,7 +183,14 @@ sections.append("## 9. سكربتات التجهيز\n\n"
                 + fence(read("scripts/build_single_doc.py"), "python") + "\n\n"
                 "### `.env.example`\n\n" + fence(read(".env.example"), "bash") + "\n\n"
                 "### `.gitignore`\n\n" + fence(read(".gitignore"), "gitignore") + "\n\n"
-                "### `package.json`\n\n" + fence(read("package.json"), "json"))
+                "### `package.json`\n\n" + fence(read("package.json"), "json") + "\n\n"
+                "## 9ب. الاختبارات\n\n"
+                "`npm test` — تعمل على بديل Parse في الذاكرة، بلا خادم ولا مفاتيح.\n"
+                "ترصد أخطاء المنطق لا أخطاء المنصّة؛ ما يخرج عن تغطيتها مذكور في\n"
+                "«ما لم يُعالَج» بالقسم 4.\n\n"
+                + "\n\n".join(
+                    f"#### `{rel}` — {note}\n\n" + fence(read(rel), "javascript")
+                    for rel, note in TEST_FILES))
 
 # 10
 readme = read("README.md")

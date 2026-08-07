@@ -36,7 +36,7 @@
 | 6 | [كود السحابة كاملاً — مجزّأً (6أ) ومدمجاً (6ب)](#6-كود-السحابة-كاملاً) |
 | 7 | [دورة حياة الطلب والدوال وقواعد الأمن](#7-دورة-حياة-الطلب-والدوال-وقواعد-الأمن) |
 | 8 | [البيانات](#8-البيانات) |
-| 9 | [سكربتات التجهيز](#9-سكربتات-التجهيز) |
+| 9 | [سكربتات التجهيز](#9-سكربتات-التجهيز) — و[الاختبارات](#9ب-الاختبارات) |
 | 10 | [خطة التشغيل](#10-خطة-التشغيل) |
 
 ---
@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ مكتوب، ❌ لم يُشغّل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ❌ لم يبدأ |
-| الاختبارات | ❌ لا توجد |
+| الاختبارات | ⚠️ 39 حالة على بديل Parse (`npm test`) — لا اختبار تكامل على خادم حقيقي |
 
 ---
 
@@ -120,6 +120,11 @@ scripts/
   apply_schema.js      تطبيق schema.json
   build_single_file.py توليد cloud/main.bundle.js من ملفات cloud/
   build_single_doc.py  توليد MASJIDI.md من المستودع كله
+tests/
+  helpers/parse-mock.js بديل Parse مصغَّر — مخزن في الذاكرة، بلا خادم
+  donations.test.js    المسار المالي: التأكيد والحجز
+  triggers.test.js     حماية الأدوار وإقفال الحساب على صاحبه
+  schema.test.js       الصلاحيات، وتطابق النسختين المجزّأة والمدمجة
 data/
   mosques.json         18,214 سجلاً جاهزاً
   cleaning_report.json تقرير جودة البيانات
@@ -280,7 +285,10 @@ const remaining = serviceRequest.get('estimatedCost') - (serviceRequest.get('fun
 
 ### ما لم يُعالَج بعد
 
-- **لا توجد اختبارات في المستودع.** المنطق المالي بلا تغطية = خطر. أولوية أولى.
+- **لا يوجد اختبار تكامل.** `npm test` يغطي المنطق المالي والمُشغّلات على بديل
+  Parse في الذاكرة (`tests/helpers/parse-mock.js`)، وهو يرصد أخطاء المنطق لا
+  أخطاء المنصّة: الفهارس، والصلاحيات كما يطبّقها الخادم فعلاً، وذرّية
+  `increment` تحت التزامن — كلها خارج تغطيته. يلزم `parse-server` محلي.
 - **لا يوجد webhook للبوابة.** `confirmDonation` صارت تقبل الاستدعاء بـ Master
   Key فأصبح ربط webhook ممكناً، لكن لا نقطة نهاية مُنفَّذة بعد. وإذا أغلق
   المستخدم التطبيق تبقى المعاملة `pending` حتى تنتهي مهلة الحجز. يلزم
@@ -3017,6 +3025,13 @@ CLOUD_FILES = [
     "cloud/functions/donations.js",
 ]
 
+TEST_FILES = [
+    ("tests/helpers/parse-mock.js", "بديل Parse — مخزن في الذاكرة بلا خادم"),
+    ("tests/donations.test.js", "المسار المالي: التأكيد والحجز"),
+    ("tests/triggers.test.js", "حماية الأدوار وإقفال الحساب على صاحبه"),
+    ("tests/schema.test.js", "الصلاحيات وتطابق النسختين"),
+]
+
 HEADER = """# مسجدي (Masjidi) — الملف الهندسي الكامل
 
 **الإصدار:** 1.0.0
@@ -3055,7 +3070,7 @@ HEADER = """# مسجدي (Masjidi) — الملف الهندسي الكامل
 | 6 | [كود السحابة كاملاً — مجزّأً (6أ) ومدمجاً (6ب)](#6-كود-السحابة-كاملاً) |
 | 7 | [دورة حياة الطلب والدوال وقواعد الأمن](#7-دورة-حياة-الطلب-والدوال-وقواعد-الأمن) |
 | 8 | [البيانات](#8-البيانات) |
-| 9 | [سكربتات التجهيز](#9-سكربتات-التجهيز) |
+| 9 | [سكربتات التجهيز](#9-سكربتات-التجهيز) — و[الاختبارات](#9ب-الاختبارات) |
 | 10 | [خطة التشغيل](#10-خطة-التشغيل) |
 
 ---
@@ -3171,7 +3186,14 @@ sections.append("## 9. سكربتات التجهيز\n\n"
                 + fence(read("scripts/build_single_doc.py"), "python") + "\n\n"
                 "### `.env.example`\n\n" + fence(read(".env.example"), "bash") + "\n\n"
                 "### `.gitignore`\n\n" + fence(read(".gitignore"), "gitignore") + "\n\n"
-                "### `package.json`\n\n" + fence(read("package.json"), "json"))
+                "### `package.json`\n\n" + fence(read("package.json"), "json") + "\n\n"
+                "## 9ب. الاختبارات\n\n"
+                "`npm test` — تعمل على بديل Parse في الذاكرة، بلا خادم ولا مفاتيح.\n"
+                "ترصد أخطاء المنطق لا أخطاء المنصّة؛ ما يخرج عن تغطيتها مذكور في\n"
+                "«ما لم يُعالَج» بالقسم 4.\n\n"
+                + "\n\n".join(
+                    f"#### `{rel}` — {note}\n\n" + fence(read(rel), "javascript")
+                    for rel, note in TEST_FILES))
 
 # 10
 readme = read("README.md")
@@ -3227,7 +3249,8 @@ data/*.xlsx
     "seed": "node scripts/seed_mosques.js",
     "seed:dry": "node scripts/seed_mosques.js --dry-run",
     "schema": "node scripts/apply_schema.js",
-    "lint": "eslint cloud scripts --ext .js"
+    "test": "node --test tests/*.test.js",
+    "lint": "eslint cloud scripts tests --ext .js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -3240,6 +3263,651 @@ data/*.xlsx
 }
 ```
 
+## 9ب. الاختبارات
+
+`npm test` — تعمل على بديل Parse في الذاكرة، بلا خادم ولا مفاتيح.
+ترصد أخطاء المنطق لا أخطاء المنصّة؛ ما يخرج عن تغطيتها مذكور في
+«ما لم يُعالَج» بالقسم 4.
+
+#### `tests/helpers/parse-mock.js` — بديل Parse — مخزن في الذاكرة بلا خادم
+
+```javascript
+/**
+ * بديل مصغَّر لـ Parse — يكفي لتحميل دوال السحابة وتشغيلها على مخزن في الذاكرة.
+ *
+ * الغرض تغطية المنطق المالي بلا خادم حقيقي. ما يُحاكى هنا هو ما تستعمله الدوال
+ * فعلاً لا أكثر؛ أي استعمال جديد في `cloud/` يلزمه توسيع هذا الملف.
+ *
+ * قيد مقصود: `save` لا تُشغّل المُشغّلات تلقائياً. المُشغّلات تُختبر باستدعائها
+ * مباشرة عبر `api.trigger(...)`، وإلا لزم محاكاة دورة حياة Parse كاملة.
+ */
+
+const path = require('path');
+
+const CLOUD = path.join(__dirname, '..', '..', 'cloud');
+
+/** مسارا نقطة الدخول: المجزّأة والمدمجة. الاختبارات نفسها تُشغَّل على الاثنين. */
+const ENTRIES = {
+  modular: path.join(CLOUD, 'main.js'),
+  bundle: path.join(CLOUD, 'main.bundle.js'),
+};
+
+class ParseError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
+Object.assign(ParseError, {
+  INVALID_SESSION_TOKEN: 209,
+  VALIDATION_ERROR: 142,
+  OBJECT_NOT_FOUND: 101,
+  OPERATION_FORBIDDEN: 119,
+  DUPLICATE_VALUE: 137,
+  OTHER_CAUSE: -1,
+});
+
+function createMock() {
+  const functions = {}; // اسم الدالة → معالجها
+  const triggers = {}; // "beforeSave:Mosques" → معالجه
+  const store = {}; // اسم الفئة → كائنات
+  const gateway = { status: 'unpaid', amountBaisa: 0, sessions: 0 };
+  let seq = 0;
+
+  const nextId = (className) => `${className}_${++seq}`;
+
+  class MockObject {
+    constructor(className) {
+      this.className = className;
+      this.attributes = {};
+      this._dirty = new Set();
+      this._new = true;
+      this._acl = null;
+    }
+
+    set(key, value) {
+      this.attributes[key] = value;
+      this._dirty.add(key);
+      return this;
+    }
+
+    get(key) {
+      return this.attributes[key];
+    }
+
+    increment(key, by = 1) {
+      this.attributes[key] = (this.attributes[key] || 0) + by;
+      this._dirty.add(key);
+      return this;
+    }
+
+    isNew() {
+      return this._new;
+    }
+
+    dirty(key) {
+      return key === undefined ? this._dirty.size > 0 : this._dirty.has(key);
+    }
+
+    getACL() {
+      return this._acl;
+    }
+
+    setACL(acl) {
+      this._acl = acl;
+      return this;
+    }
+
+    toJSON() {
+      return { objectId: this.id, ...this.attributes };
+    }
+
+    async fetch() {
+      return this;
+    }
+
+    async save() {
+      if (this._new) {
+        this.id = nextId(this.className);
+        this.attributes.createdAt = this.attributes.createdAt || new Date();
+        (store[this.className] = store[this.className] || []).push(this);
+        this._new = false;
+      }
+      this._dirty.clear();
+      return this;
+    }
+  }
+
+  const matches = (object, key, expected) => {
+    const actual = object.get(key);
+    if (key === 'objectId') return object.id === expected;
+    if (expected && expected.id) return actual && actual.id === expected.id;
+    return actual === expected;
+  };
+
+  class MockQuery {
+    constructor(target) {
+      this.className = typeof target === 'string' ? target : '_User';
+      this._equal = [];
+      this._greater = [];
+      this._contained = [];
+    }
+
+    equalTo(key, value) { this._equal.push([key, value]); return this; }
+    greaterThan(key, value) { this._greater.push([key, value]); return this; }
+    containedIn(key, values) { this._contained.push([key, values]); return this; }
+    limit() { return this; }
+    select() { return this; }
+    include() { return this; }
+    descending() { return this; }
+    ascending() { return this; }
+    withinKilometers() { return this; }
+
+    _rows() {
+      return (store[this.className] || []).filter((object) =>
+        this._equal.every(([k, v]) => matches(object, k, v)) &&
+        this._greater.every(([k, v]) => object.get(k) > v) &&
+        this._contained.every(([k, values]) => values.includes(object.get(k))));
+    }
+
+    async find() { return this._rows(); }
+    async first() { return this._rows()[0]; }
+    async count() { return this._rows().length; }
+
+    async get(objectId) {
+      const hit = (store[this.className] || []).find((o) => o.id === objectId);
+      if (!hit) throw new ParseError(ParseError.OBJECT_NOT_FOUND, 'Object not found.');
+      return hit;
+    }
+  }
+
+  class MockACL {
+    constructor() { this._read = new Set(); this._write = new Set(); this._public = { read: false, write: false }; }
+    setReadAccess(id, allowed) { allowed ? this._read.add(id) : this._read.delete(id); }
+    setWriteAccess(id, allowed) { allowed ? this._write.add(id) : this._write.delete(id); }
+    getReadAccess(id) { return this._read.has(id); }
+    getWriteAccess(id) { return this._write.has(id); }
+    setPublicReadAccess(allowed) { this._public.read = allowed; }
+    setPublicWriteAccess(allowed) { this._public.write = allowed; }
+    getPublicReadAccess() { return this._public.read; }
+    getPublicWriteAccess() { return this._public.write; }
+  }
+
+  const triggerKey = (target, type) =>
+    `${type}:${typeof target === 'string' ? target : '_User'}`;
+
+  global.Parse = {
+    Error: ParseError,
+    Cloud: {
+      define: (name, handler) => { functions[name] = handler; },
+      beforeSave: (target, handler) => { triggers[triggerKey(target, 'beforeSave')] = handler; },
+      afterSave: (target, handler) => { triggers[triggerKey(target, 'afterSave')] = handler; },
+      httpRequest: async ({ method }) => (method === 'POST'
+        ? { data: { data: { session_id: `sess_${++gateway.sessions}` } } }
+        : {
+          data: {
+            data: {
+              payment_status: gateway.status,
+              total_amount: gateway.amountBaisa,
+              invoice: 'inv_test',
+            },
+          },
+        }),
+    },
+    Query: MockQuery,
+    Object: Object.assign(function ParseObject() {}, {
+      extend: (className) => class extends MockObject {
+        constructor() { super(className); }
+      },
+    }),
+    ACL: MockACL,
+    User: function User() {},
+    Installation: function Installation() {},
+    GeoPoint: class GeoPoint {},
+    Push: { send: async () => {} },
+  };
+
+  return {
+    functions,
+    triggers,
+    store,
+    gateway,
+    ParseError,
+
+    /** كائن مخزَّن جاهز — يتخطّى `save` ليمكن ضبط `createdAt` في الماضي. */
+    make(className, attributes = {}, createdAt = new Date()) {
+      const object = new MockObject(className);
+      Object.assign(object.attributes, attributes, { createdAt });
+      object.id = nextId(className);
+      object._new = false;
+      object._dirty.clear();
+      (store[className] = store[className] || []).push(object);
+      return object;
+    },
+
+    /** مستخدم كما تراه دوال السحابة: الدور يُقرأ عبر `get` لا من الحقول. */
+    asUser(id, role = 'donor') {
+      return { id, get: (key) => (key === 'role' ? role : undefined) };
+    },
+
+    /** استدعاء دالة سحابة؛ يعيد `{ ok }` أو `{ error }` بدل الرمي. */
+    async call(name, params = {}, { user = null, master = false } = {}) {
+      if (!this.functions[name]) throw new Error(`دالة غير مسجّلة: ${name}`);
+      try {
+        return { ok: await this.functions[name]({ params, user, master }) };
+      } catch (error) {
+        return { error };
+      }
+    },
+
+    /** استدعاء مُشغّل مباشرةً — `save` في هذا البديل لا تُشغّلها تلقائياً. */
+    async trigger(key, request) {
+      if (!this.triggers[key]) throw new Error(`مُشغّل غير مسجّل: ${key}`);
+      return this.triggers[key](request);
+    },
+  };
+}
+
+/**
+ * يثبّت البديل ثم يحمّل كود السحابة من الصفر.
+ * التحميل بعد التثبيت لازم: الوحدات تقرأ `Parse` وتسجّل معالجاتها عند التحميل.
+ */
+function loadCloud(entry = 'modular') {
+  process.env.THAWANI_SECRET_KEY = 'sk_test';
+  process.env.THAWANI_PUBLISHABLE_KEY = 'pk_test';
+
+  const file = ENTRIES[entry];
+  if (!file) throw new Error(`نقطة دخول غير معروفة: ${entry}`);
+
+  const api = createMock();
+  for (const loaded of Object.keys(require.cache)) {
+    if (loaded.startsWith(CLOUD)) delete require.cache[loaded];
+  }
+  require(file);
+  return api;
+}
+
+module.exports = { loadCloud, ENTRIES, CLOUD };
+```
+
+#### `tests/donations.test.js` — المسار المالي: التأكيد والحجز
+
+```javascript
+/**
+ * المسار المالي: تأكيد التبرّع وحجز نيّات التبرّع.
+ *
+ * كل حالة هنا تُقابل ثغرة أُصلحت — راجع `docs/REVIEW.md` قبل تعديل أي توقُّع.
+ * الاختبارات تُشغَّل على النسختين المجزّأة والمدمجة، فأي انحراف بينهما يظهر هنا.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { loadCloud, ENTRIES } = require('./helpers/parse-mock');
+
+const OMR = (baisa) => baisa * 1000;
+
+for (const entry of Object.keys(ENTRIES)) {
+  test(`التبرعات — النسخة ${entry}`, async (t) => {
+    let api;
+    let donor;
+    let attacker;
+    let mosque;
+
+    t.beforeEach(() => {
+      api = loadCloud(entry);
+      donor = api.asUser('user_donor');
+      attacker = api.asUser('user_attacker');
+      mosque = api.make('Mosques', { name: 'مسجد الاختبار', walletBalance: 0 });
+    });
+
+    /** طلب صيانة مموّل بتكلفة 500 ريال، بلا تمويل بعد. */
+    const openRequest = () => api.make('ServiceRequests', {
+      mosqueId: mosque,
+      title: 'إصلاح المكيّف',
+      estimatedCost: 500,
+      fundedAmount: 0,
+      status: 'pending_funding',
+    });
+
+    const pendingDonation = (serviceRequest, amount = 500, ageMinutes = 0) =>
+      api.make('Transactions', {
+        donorId: donor,
+        mosqueId: mosque,
+        requestId: serviceRequest,
+        amount,
+        type: 'donation',
+        status: 'pending',
+        paymentSessionId: 'sess_test',
+      }, new Date(Date.now() - ageMinutes * 60 * 1000));
+
+    await t.test('لا يؤكّد المعاملةَ إلا صاحبها', async () => {
+      const transaction = pendingDonation(openRequest());
+      api.gateway.status = 'unpaid';
+
+      const { error } = await api.call('confirmDonation',
+        { transactionId: transaction.id }, { user: attacker });
+
+      assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
+      assert.equal(transaction.get('status'), 'pending',
+        'محاولة الغريب يجب ألا تمسّ حالة المعاملة');
+    });
+
+    await t.test('الجلسة المفتوحة تبقى pending فلا يضيع الدفع اللاحق', async () => {
+      const serviceRequest = openRequest();
+      const transaction = pendingDonation(serviceRequest);
+
+      // يعود المتبرّع قبل أن يُتمّ الدفع
+      api.gateway.status = 'unpaid';
+      const early = await api.call('confirmDonation',
+        { transactionId: transaction.id }, { user: donor });
+
+      assert.equal(early.ok.status, 'pending');
+      assert.equal(transaction.get('status'), 'pending',
+        'تعليمها failed هنا يُسقطها من شرط pending فيضيع المبلغ');
+
+      // ثم يدفع فعلاً ويعود
+      api.gateway.status = 'paid';
+      api.gateway.amountBaisa = OMR(500);
+      const settled = await api.call('confirmDonation',
+        { transactionId: transaction.id }, { user: donor });
+
+      assert.equal(settled.ok.status, 'captured');
+      assert.equal(mosque.get('walletBalance'), 500);
+      assert.equal(serviceRequest.get('status'), 'funded');
+    });
+
+    await t.test('الجلسة الملغاة وحدها تُعلَّم failed', async () => {
+      const transaction = pendingDonation(openRequest(), 100);
+      api.gateway.status = 'cancelled';
+
+      const { ok } = await api.call('confirmDonation',
+        { transactionId: transaction.id }, { user: donor });
+
+      assert.equal(ok.status, 'failed');
+      assert.equal(transaction.get('status'), 'failed');
+    });
+
+    await t.test('استدعاء webhook بـ Master Key يمرّ بلا مستخدم', async () => {
+      const transaction = pendingDonation(openRequest());
+      api.gateway.status = 'paid';
+      api.gateway.amountBaisa = OMR(500);
+
+      const { ok } = await api.call('confirmDonation',
+        { transactionId: transaction.id }, { master: true });
+
+      assert.equal(ok.status, 'captured');
+    });
+
+    await t.test('التأكيد المكرَّر لا يضاعف الرصيد', async () => {
+      const transaction = pendingDonation(openRequest());
+      api.gateway.status = 'paid';
+      api.gateway.amountBaisa = OMR(500);
+
+      await api.call('confirmDonation', { transactionId: transaction.id }, { user: donor });
+      const again = await api.call('confirmDonation',
+        { transactionId: transaction.id }, { user: donor });
+
+      assert.equal(again.ok.status, 'captured');
+      assert.equal(mosque.get('walletBalance'), 500, 'قُيّد المبلغ مرتين');
+    });
+
+    await t.test('مبلغ البوابة المخالف يُرفض ويُعلَّم mismatch', async () => {
+      const transaction = pendingDonation(openRequest());
+      api.gateway.status = 'paid';
+      api.gateway.amountBaisa = OMR(5); // دُفع 5 بدل 500
+
+      const { error } = await api.call('confirmDonation',
+        { transactionId: transaction.id }, { user: donor });
+
+      assert.equal(error.code, api.ParseError.VALIDATION_ERROR);
+      assert.equal(transaction.get('status'), 'mismatch');
+      assert.equal(mosque.get('walletBalance'), 0);
+    });
+
+    await t.test('نيّة التبرّع المعلّقة تحجز المبلغ فيُمنع التمويل الزائد', async () => {
+      const serviceRequest = openRequest();
+
+      const first = await api.call('initiateDonation',
+        { requestId: serviceRequest.id, amount: 500 }, { user: donor });
+      assert.ok(first.ok, 'المتبرّع الأول يجب أن يُقبل');
+
+      const second = await api.call('initiateDonation',
+        { requestId: serviceRequest.id, amount: 500 }, { user: attacker });
+
+      assert.equal(second.error.code, api.ParseError.VALIDATION_ERROR,
+        'بلا حجز يدفع الاثنان فتُقبض 1000 ريال لطلب تكلفته 500');
+    });
+
+    await t.test('الحجز المهجور يسقط بعد المهلة', async () => {
+      const serviceRequest = openRequest();
+      pendingDonation(serviceRequest, 500, 31); // معلّقة منذ 31 دقيقة
+
+      const { ok } = await api.call('initiateDonation',
+        { requestId: serviceRequest.id, amount: 500 }, { user: donor });
+
+      assert.ok(ok, 'متبرّع لم يُكمل الدفع يجب ألا يُعطّل الطلب إلى الأبد');
+    });
+
+    await t.test('الحجز الجزئي يترك الباقي متاحاً', async () => {
+      const serviceRequest = openRequest();
+      pendingDonation(serviceRequest, 200);
+
+      const fits = await api.call('initiateDonation',
+        { requestId: serviceRequest.id, amount: 300 }, { user: attacker });
+      assert.ok(fits.ok, 'المتبقي 300 ريال فيجب أن يُقبل');
+
+      const overflows = await api.call('initiateDonation',
+        { requestId: serviceRequest.id, amount: 1 }, { user: attacker });
+      assert.ok(overflows.error, 'لم يبقَ شيء بعد الحجزين');
+    });
+  });
+}
+```
+
+#### `tests/triggers.test.js` — حماية الأدوار وإقفال الحساب على صاحبه
+
+```javascript
+/**
+ * المُشغّلات: حماية الأدوار وإقفال حساب المستخدم على نفسه.
+ *
+ * `save` في البديل لا تُشغّل المُشغّلات تلقائياً، فتُستدعى هنا مباشرةً بطلب
+ * مُركَّب — وهو ما تفعله Parse فعلياً قبل الكتابة وبعدها.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { loadCloud } = require('./helpers/parse-mock');
+
+test('المُشغّلات', async (t) => {
+  let api;
+
+  t.beforeEach(() => { api = loadCloud('modular'); });
+
+  /** كائن مستخدم كما يصل إلى beforeSave. */
+  const newUser = (attributes = {}) => {
+    const user = api.make('_User', attributes);
+    user._new = true;
+    for (const key of Object.keys(attributes)) user._dirty.add(key);
+    return user;
+  };
+
+  await t.test('المستخدم لا يرقّي نفسه إلى admin', async () => {
+    const user = newUser({ role: 'admin' });
+    await assert.rejects(
+      () => api.trigger('beforeSave:_User', { object: user, master: false }),
+      (error) => error.code === api.ParseError.OPERATION_FORBIDDEN);
+  });
+
+  await t.test('الإدارة ترقّي بـ Master Key', async () => {
+    const user = newUser({ role: 'admin' });
+    await api.trigger('beforeSave:_User', { object: user, master: true });
+    assert.equal(user.get('role'), 'admin');
+  });
+
+  await t.test('المستخدم لا يعتمد نفسه شركةً معتمدة', async () => {
+    const user = newUser({ role: 'contractor', isVerifiedContractor: true });
+    await assert.rejects(
+      () => api.trigger('beforeSave:_User', { object: user, master: false }),
+      (error) => error.code === api.ParseError.OPERATION_FORBIDDEN);
+  });
+
+  await t.test('الدور المجهول يُرفض', async () => {
+    const user = newUser({ role: 'superuser' });
+    await assert.rejects(
+      () => api.trigger('beforeSave:_User', { object: user, master: false }),
+      (error) => error.code === api.ParseError.VALIDATION_ERROR);
+  });
+
+  await t.test('الدور الافتراضي donor عند التسجيل', async () => {
+    const user = newUser();
+    await api.trigger('beforeSave:_User', { object: user, master: false });
+    assert.equal(user.get('role'), 'donor');
+    assert.equal(user.get('isActive'), true);
+  });
+
+  await t.test('حساب جديد يُقفل على صاحبه', async () => {
+    const user = api.make('_User', { phone: '9xxxxxxx' });
+
+    // بلا ACL: الافتراض قراءة عامة تكشف الهاتف وموقع المتطوع
+    await api.trigger('afterSave:_User', { object: user, original: undefined });
+
+    const acl = user.getACL();
+    assert.ok(acl, 'لم يُضبط ACL');
+    assert.equal(acl.getPublicReadAccess(), false);
+    assert.equal(acl.getPublicWriteAccess(), false);
+    assert.equal(acl.getReadAccess(user.id), true);
+    assert.equal(acl.getWriteAccess(user.id), true);
+  });
+
+  await t.test('التحديث لا يُعيد ضبط ACL — وهو ما يمنع الحلقة اللانهائية', async () => {
+    const user = api.make('_User', {});
+    const marker = new Parse.ACL();
+    marker.setReadAccess('someone_else', true);
+    user.setACL(marker);
+
+    await api.trigger('afterSave:_User', { object: user, original: user });
+
+    assert.equal(user.getACL(), marker, 'لُمس ACL في مسار التحديث');
+  });
+
+  await t.test('الرصيد السالب مرفوض', async () => {
+    const mosque = api.make('Mosques', { walletBalance: -1 });
+    await assert.rejects(
+      () => api.trigger('beforeSave:Mosques', { object: mosque, master: true }),
+      (error) => error.code === api.ParseError.VALIDATION_ERROR);
+  });
+
+  await t.test('الطلبات والمعاملات لا تُكتب من العميل', async () => {
+    for (const className of ['ServiceRequests', 'Transactions']) {
+      await assert.rejects(
+        () => api.trigger(`beforeSave:${className}`,
+          { object: api.make(className, {}), master: false }),
+        (error) => error.code === api.ParseError.OPERATION_FORBIDDEN,
+        `${className} مفتوحة للكتابة من العميل`);
+    }
+  });
+});
+```
+
+#### `tests/schema.test.js` — الصلاحيات وتطابق النسختين
+
+```javascript
+/**
+ * المخطط ونقاط الدخول.
+ *
+ * `apply_schema.js` لا يستدعي `setCLP` إلا عند وجود المفتاح، فغيابه عن فئة
+ * يعني بصمت أنها تبقى على إعداد الخادم الافتراضي — وهي الطريقة التي بقيت بها
+ * `_User` مكشوفة. هذا الملف يحرس ذلك ويحرس تطابق النسختين المجزّأة والمدمجة.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const { loadCloud, CLOUD } = require('./helpers/parse-mock');
+
+const schema = JSON.parse(
+  fs.readFileSync(path.join(CLOUD, 'schema.json'), 'utf8'));
+
+const classOf = (name) => schema.classes.find((c) => c.className === name);
+
+test('المخطط', async (t) => {
+  await t.test('كل فئة تعرّف صلاحياتها صراحةً', () => {
+    for (const definition of schema.classes) {
+      assert.ok(definition.classLevelPermissions,
+        `${definition.className} بلا classLevelPermissions — ستبقى على إعداد الخادم الافتراضي`);
+    }
+  });
+
+  await t.test('_User: القراءة مصادَقة والحقول الحسّاسة محميّة', () => {
+    const clp = classOf('_User').classLevelPermissions;
+
+    assert.equal(clp.find.requiresAuthentication, true);
+    assert.equal(clp.get.requiresAuthentication, true);
+    assert.deepEqual(clp.create, { '*': true }, 'التسجيل يمرّ عبر create فيبقى مفتوحاً');
+
+    for (const field of ['phone', 'lastKnownLocation']) {
+      assert.ok(clp.protectedFields['*'].includes(field),
+        `${field} مكشوف — موقع المتطوّع ورقمه ليسا عامّين`);
+    }
+  });
+
+  await t.test('الفئات المالية مقفلة للكتابة من العميل', () => {
+    for (const name of ['Mosques', 'ServiceRequests', 'Transactions']) {
+      const clp = classOf(name).classLevelPermissions;
+      for (const action of ['create', 'update', 'delete']) {
+        assert.deepEqual(clp[action], {},
+          `${name}.${action} مفتوح — الكتابة يجب أن تمرّ بدوال السحابة`);
+      }
+    }
+  });
+
+  await t.test('walletBalance غير مقروء من العميل', () => {
+    assert.ok(classOf('Mosques').classLevelPermissions.protectedFields['*']
+      .includes('walletBalance'));
+  });
+});
+
+test('نقاط الدخول', async (t) => {
+  const EXPECTED_FUNCTIONS = [
+    'getNearbyMosques', 'searchMosques', 'claimMosque', 'reviewMosqueClaim',
+    'createServiceRequest', 'assignWorker', 'startWork', 'markWorkDone',
+    'completeService', 'cancelServiceRequest', 'initiateDonation',
+    'confirmDonation', 'payoutContractor', 'getMosqueLedger', 'health',
+  ];
+
+  const EXPECTED_TRIGGERS = [
+    'beforeSave:_User', 'afterSave:_User', 'beforeSave:Mosques',
+    'beforeSave:ServiceRequests', 'beforeSave:Transactions',
+    'afterSave:ServiceRequests',
+  ];
+
+  await t.test('النسختان تسجّلان الدوال والمُشغّلات نفسها', () => {
+    for (const entry of ['modular', 'bundle']) {
+      const api = loadCloud(entry);
+      assert.deepEqual(Object.keys(api.functions).sort(), [...EXPECTED_FUNCTIONS].sort(),
+        `دوال النسخة ${entry} لا تطابق المتوقَّع`);
+      assert.deepEqual(Object.keys(api.triggers).sort(), [...EXPECTED_TRIGGERS].sort(),
+        `مُشغّلات النسخة ${entry} لا تطابق المتوقَّع`);
+    }
+  });
+
+  await t.test('النسخة المدمجة بلا require ولا module.exports', () => {
+    const bundle = fs.readFileSync(path.join(CLOUD, 'main.bundle.js'), 'utf8');
+    assert.equal(/\brequire\(/.test(bundle), false);
+    assert.equal(/\bmodule\.exports\b/.test(bundle), false);
+  });
+
+  await t.test('health يعكس تهيئة بوابة الدفع', async () => {
+    const api = loadCloud('modular');
+    const { ok } = await api.call('health');
+    assert.equal(ok.ok, true);
+    assert.equal(typeof ok.paymentsConfigured, 'boolean');
+  });
+});
+```
+
 ---
 
 ## 10. خطة التشغيل
@@ -3247,6 +3915,7 @@ data/*.xlsx
 ```bash
 npm install
 cp .env.example .env      # املأ مفاتيح Back4app
+npm test                  # اختبارات دوال السحابة — بلا خادم ولا مفاتيح
 ```
 
 ### 1. تجهيز البيانات

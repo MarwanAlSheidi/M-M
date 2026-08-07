@@ -1,0 +1,256 @@
+/**
+ * بديل مصغَّر لـ Parse — يكفي لتحميل دوال السحابة وتشغيلها على مخزن في الذاكرة.
+ *
+ * الغرض تغطية المنطق المالي بلا خادم حقيقي. ما يُحاكى هنا هو ما تستعمله الدوال
+ * فعلاً لا أكثر؛ أي استعمال جديد في `cloud/` يلزمه توسيع هذا الملف.
+ *
+ * قيد مقصود: `save` لا تُشغّل المُشغّلات تلقائياً. المُشغّلات تُختبر باستدعائها
+ * مباشرة عبر `api.trigger(...)`، وإلا لزم محاكاة دورة حياة Parse كاملة.
+ */
+
+const path = require('path');
+
+const CLOUD = path.join(__dirname, '..', '..', 'cloud');
+
+/** مسارا نقطة الدخول: المجزّأة والمدمجة. الاختبارات نفسها تُشغَّل على الاثنين. */
+const ENTRIES = {
+  modular: path.join(CLOUD, 'main.js'),
+  bundle: path.join(CLOUD, 'main.bundle.js'),
+};
+
+class ParseError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
+Object.assign(ParseError, {
+  INVALID_SESSION_TOKEN: 209,
+  VALIDATION_ERROR: 142,
+  OBJECT_NOT_FOUND: 101,
+  OPERATION_FORBIDDEN: 119,
+  DUPLICATE_VALUE: 137,
+  OTHER_CAUSE: -1,
+});
+
+function createMock() {
+  const functions = {}; // اسم الدالة → معالجها
+  const triggers = {}; // "beforeSave:Mosques" → معالجه
+  const store = {}; // اسم الفئة → كائنات
+  const gateway = { status: 'unpaid', amountBaisa: 0, sessions: 0 };
+  let seq = 0;
+
+  const nextId = (className) => `${className}_${++seq}`;
+
+  class MockObject {
+    constructor(className) {
+      this.className = className;
+      this.attributes = {};
+      this._dirty = new Set();
+      this._new = true;
+      this._acl = null;
+    }
+
+    set(key, value) {
+      this.attributes[key] = value;
+      this._dirty.add(key);
+      return this;
+    }
+
+    get(key) {
+      return this.attributes[key];
+    }
+
+    increment(key, by = 1) {
+      this.attributes[key] = (this.attributes[key] || 0) + by;
+      this._dirty.add(key);
+      return this;
+    }
+
+    isNew() {
+      return this._new;
+    }
+
+    dirty(key) {
+      return key === undefined ? this._dirty.size > 0 : this._dirty.has(key);
+    }
+
+    getACL() {
+      return this._acl;
+    }
+
+    setACL(acl) {
+      this._acl = acl;
+      return this;
+    }
+
+    toJSON() {
+      return { objectId: this.id, ...this.attributes };
+    }
+
+    async fetch() {
+      return this;
+    }
+
+    async save() {
+      if (this._new) {
+        this.id = nextId(this.className);
+        this.attributes.createdAt = this.attributes.createdAt || new Date();
+        (store[this.className] = store[this.className] || []).push(this);
+        this._new = false;
+      }
+      this._dirty.clear();
+      return this;
+    }
+  }
+
+  const matches = (object, key, expected) => {
+    const actual = object.get(key);
+    if (key === 'objectId') return object.id === expected;
+    if (expected && expected.id) return actual && actual.id === expected.id;
+    return actual === expected;
+  };
+
+  class MockQuery {
+    constructor(target) {
+      this.className = typeof target === 'string' ? target : '_User';
+      this._equal = [];
+      this._greater = [];
+      this._contained = [];
+    }
+
+    equalTo(key, value) { this._equal.push([key, value]); return this; }
+    greaterThan(key, value) { this._greater.push([key, value]); return this; }
+    containedIn(key, values) { this._contained.push([key, values]); return this; }
+    limit() { return this; }
+    select() { return this; }
+    include() { return this; }
+    descending() { return this; }
+    ascending() { return this; }
+    withinKilometers() { return this; }
+
+    _rows() {
+      return (store[this.className] || []).filter((object) =>
+        this._equal.every(([k, v]) => matches(object, k, v)) &&
+        this._greater.every(([k, v]) => object.get(k) > v) &&
+        this._contained.every(([k, values]) => values.includes(object.get(k))));
+    }
+
+    async find() { return this._rows(); }
+    async first() { return this._rows()[0]; }
+    async count() { return this._rows().length; }
+
+    async get(objectId) {
+      const hit = (store[this.className] || []).find((o) => o.id === objectId);
+      if (!hit) throw new ParseError(ParseError.OBJECT_NOT_FOUND, 'Object not found.');
+      return hit;
+    }
+  }
+
+  class MockACL {
+    constructor() { this._read = new Set(); this._write = new Set(); this._public = { read: false, write: false }; }
+    setReadAccess(id, allowed) { allowed ? this._read.add(id) : this._read.delete(id); }
+    setWriteAccess(id, allowed) { allowed ? this._write.add(id) : this._write.delete(id); }
+    getReadAccess(id) { return this._read.has(id); }
+    getWriteAccess(id) { return this._write.has(id); }
+    setPublicReadAccess(allowed) { this._public.read = allowed; }
+    setPublicWriteAccess(allowed) { this._public.write = allowed; }
+    getPublicReadAccess() { return this._public.read; }
+    getPublicWriteAccess() { return this._public.write; }
+  }
+
+  const triggerKey = (target, type) =>
+    `${type}:${typeof target === 'string' ? target : '_User'}`;
+
+  global.Parse = {
+    Error: ParseError,
+    Cloud: {
+      define: (name, handler) => { functions[name] = handler; },
+      beforeSave: (target, handler) => { triggers[triggerKey(target, 'beforeSave')] = handler; },
+      afterSave: (target, handler) => { triggers[triggerKey(target, 'afterSave')] = handler; },
+      httpRequest: async ({ method }) => (method === 'POST'
+        ? { data: { data: { session_id: `sess_${++gateway.sessions}` } } }
+        : {
+          data: {
+            data: {
+              payment_status: gateway.status,
+              total_amount: gateway.amountBaisa,
+              invoice: 'inv_test',
+            },
+          },
+        }),
+    },
+    Query: MockQuery,
+    Object: Object.assign(function ParseObject() {}, {
+      extend: (className) => class extends MockObject {
+        constructor() { super(className); }
+      },
+    }),
+    ACL: MockACL,
+    User: function User() {},
+    Installation: function Installation() {},
+    GeoPoint: class GeoPoint {},
+    Push: { send: async () => {} },
+  };
+
+  return {
+    functions,
+    triggers,
+    store,
+    gateway,
+    ParseError,
+
+    /** كائن مخزَّن جاهز — يتخطّى `save` ليمكن ضبط `createdAt` في الماضي. */
+    make(className, attributes = {}, createdAt = new Date()) {
+      const object = new MockObject(className);
+      Object.assign(object.attributes, attributes, { createdAt });
+      object.id = nextId(className);
+      object._new = false;
+      object._dirty.clear();
+      (store[className] = store[className] || []).push(object);
+      return object;
+    },
+
+    /** مستخدم كما تراه دوال السحابة: الدور يُقرأ عبر `get` لا من الحقول. */
+    asUser(id, role = 'donor') {
+      return { id, get: (key) => (key === 'role' ? role : undefined) };
+    },
+
+    /** استدعاء دالة سحابة؛ يعيد `{ ok }` أو `{ error }` بدل الرمي. */
+    async call(name, params = {}, { user = null, master = false } = {}) {
+      if (!this.functions[name]) throw new Error(`دالة غير مسجّلة: ${name}`);
+      try {
+        return { ok: await this.functions[name]({ params, user, master }) };
+      } catch (error) {
+        return { error };
+      }
+    },
+
+    /** استدعاء مُشغّل مباشرةً — `save` في هذا البديل لا تُشغّلها تلقائياً. */
+    async trigger(key, request) {
+      if (!this.triggers[key]) throw new Error(`مُشغّل غير مسجّل: ${key}`);
+      return this.triggers[key](request);
+    },
+  };
+}
+
+/**
+ * يثبّت البديل ثم يحمّل كود السحابة من الصفر.
+ * التحميل بعد التثبيت لازم: الوحدات تقرأ `Parse` وتسجّل معالجاتها عند التحميل.
+ */
+function loadCloud(entry = 'modular') {
+  process.env.THAWANI_SECRET_KEY = 'sk_test';
+  process.env.THAWANI_PUBLISHABLE_KEY = 'pk_test';
+
+  const file = ENTRIES[entry];
+  if (!file) throw new Error(`نقطة دخول غير معروفة: ${entry}`);
+
+  const api = createMock();
+  for (const loaded of Object.keys(require.cache)) {
+    if (loaded.startsWith(CLOUD)) delete require.cache[loaded];
+  }
+  require(file);
+  return api;
+}
+
+module.exports = { loadCloud, ENTRIES, CLOUD };
