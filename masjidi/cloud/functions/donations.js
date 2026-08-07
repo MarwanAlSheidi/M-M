@@ -4,6 +4,7 @@ const { pushToUsers } = require('../lib/push');
 const payments = require('../lib/payments');
 const { STATUS } = require('./requests');
 const audit = require('../lib/audit');
+const crypto = require('crypto');
 
 /**
  * ⚠️ ثلاثة أخطاء جوهرية في النسخة الأصلية من fundRequest تم إصلاحها هنا:
@@ -192,6 +193,68 @@ async function captureDonation(transaction, verification) {
 
   return { status: 'captured', fundedAmount: serviceRequest.get('fundedAmount') };
 }
+
+/**
+ * مقارنة السرّ بزمن ثابت — المقارنة بـ`===` تُسرّب طول البادئة المطابقة.
+ */
+function secretMatches(provided, expected) {
+  if (!expected || typeof provided !== 'string') return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * نقطة نهاية البوابة.
+ *
+ * تُستدعى من ثواني لا من مستخدم، فلا جلسة معها — التوثيق بسرّ مشترك يُضبط في
+ * `PAYMENT_WEBHOOK_SECRET` ويُسجَّل في لوحة البوابة.
+ *
+ * **جسم الطلب لا يُصدَّق إطلاقاً.** كل ما يُؤخذ منه هو معرّف المعاملة، ثم تُسأل
+ * البوابة عن حالتها الحقيقية. من يعرف السرّ يستطيع أن يطلب إعادة الفحص، لا أن
+ * يُقرّر أن الدفع تمّ.
+ *
+ * أفضلُ من المهمة الدورية لأن القيد يتمّ لحظة الدفع لا بعد ساعة، والمهمة تبقى
+ * شبكة أمان لما يضيع من الطلبات.
+ */
+Parse.Cloud.define('paymentWebhook', async (request) => {
+  const expected = process.env.PAYMENT_WEBHOOK_SECRET;
+  if (!expected) E.forbidden('نقطة نهاية البوابة غير مهيأة.');
+  if (!secretMatches(request.params.secret, expected)) E.forbidden('توثيق غير صالح.');
+
+  // ثواني تُعيد معرّف المعاملة في client_reference_id كما أُرسل عند إنشاء الجلسة
+  const transactionId = request.params.clientReferenceId || request.params.client_reference_id;
+  if (!transactionId) E.invalid('معرّف المعاملة مطلوب.');
+
+  const transaction = await new Parse.Query('Transactions')
+    .get(String(transactionId), { useMasterKey: true })
+    .catch(() => E.notFound('المعاملة غير موجودة.'));
+
+  if (transaction.get('status') === 'captured') {
+    return { status: 'captured', message: 'سبق قيد هذه المعاملة.' };
+  }
+  if (transaction.get('status') !== 'pending') {
+    return { status: transaction.get('status'), message: 'حالة المعاملة لا تسمح بالقيد.' };
+  }
+
+  const verification = await payments.verifySession(transaction.get('paymentSessionId'));
+
+  if (!verification.paid) {
+    if (!verification.terminal) return { status: 'pending' };
+    transaction.set('status', 'failed');
+    await transaction.save(null, { useMasterKey: true });
+    return { status: 'failed' };
+  }
+
+  if (Math.abs(verification.amountOmr - transaction.get('amount')) > 0.001) {
+    transaction.set('status', 'mismatch');
+    await transaction.save(null, { useMasterKey: true });
+    E.invalid('المبلغ المدفوع لا يطابق المبلغ المسجّل.');
+  }
+
+  return captureDonation(transaction, verification);
+});
 
 /**
  * صرف المستحقات للشركة بعد اعتماد الإمام. مشرف فقط.

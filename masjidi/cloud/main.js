@@ -9,6 +9,7 @@ require('./triggers');
 require('./functions/mosques');
 require('./functions/requests');
 require('./functions/donations');
+require('./functions/maintenance');
 
 Parse.Cloud.define('health', async () => ({
   ok: true,

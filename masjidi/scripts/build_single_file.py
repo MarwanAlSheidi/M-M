@@ -15,6 +15,7 @@ ORDER = [
     ("functions/mosques.js", "دوال المساجد"),
     ("functions/requests.js", "دوال طلبات الصيانة"),
     ("functions/donations.js", "دوال التبرعات والصرف"),
+    ("functions/maintenance.js", "الصيانة الدورية"),
 ]
 
 REPLACEMENTS = {
@@ -23,7 +24,10 @@ REPLACEMENTS = {
     "lib/audit.js": [(r"module\.exports = \{[^}]*\};", "const audit = { record, ACTIONS };")],
 }
 
-DROP = re.compile(r"^\s*(const .*= require\(|module\.exports\s*=\s*\{\s*(ROLES|pushToUsers|STATUS)).*$")
+# يُحذف الاستيراد النسبي وحده (`./` و`../`): الملفات صارت واحداً فلا معنى له.
+# استيراد وحدات Node مثل `crypto` يبقى — حذفه كان يترك مرجعاً غير معرّف في المدمج.
+DROP = re.compile(
+    r"^\s*(const .*= require\([\"']\.|module\.exports\s*=\s*\{\s*(ROLES|pushToUsers|STATUS)).*$")
 
 
 def clean(path: Path, rel: str) -> str:

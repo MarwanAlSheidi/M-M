@@ -21,6 +21,7 @@ CLOUD_FILES = [
     "cloud/functions/mosques.js",
     "cloud/functions/requests.js",
     "cloud/functions/donations.js",
+    "cloud/functions/maintenance.js",
 ]
 
 TEST_FILES = [

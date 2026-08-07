@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ مكتوب، ❌ لم يُشغّل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ❌ لم يبدأ |
-| الاختبارات | ⚠️ 64 حالة على بديل Parse (`npm test`) — لا اختبار تكامل على خادم حقيقي |
+| الاختبارات | ⚠️ 76 حالة على بديل Parse (`npm test`) — لا اختبار تكامل على خادم حقيقي |
 
 ---
 
@@ -114,7 +114,8 @@ cloud/
   functions/
     mosques.js         البحث، القرب الجغرافي، طلب ملكية المسجد
     requests.js        دورة حياة طلب الصيانة
-    donations.js       التبرع، التأكيد، الصرف، السجل المالي، المهمة الدورية
+    donations.js       التبرع، التأكيد، الصرف، السجل المالي، webhook البوابة
+    maintenance.js     المهام الدورية — تقليم سجل التدقيق
 scripts/
   clean_mosques.py     Excel → JSON نظيف
   seed_mosques.js      استيراد إلى Parse (idempotent)
@@ -290,10 +291,8 @@ const remaining = serviceRequest.get('estimatedCost') - (serviceRequest.get('fun
   Parse في الذاكرة (`tests/helpers/parse-mock.js`)، وهو يرصد أخطاء المنطق لا
   أخطاء المنصّة: الفهارس، والصلاحيات كما يطبّقها الخادم فعلاً، وذرّية
   `increment` تحت التزامن — كلها خارج تغطيته. يلزم `parse-server` محلي.
-- **لا يوجد webhook للبوابة.** `confirmDonation` تقبل الاستدعاء بـ Master Key
-  فربطه ممكن، لكن لا نقطة نهاية مُنفَّذة بعد. المهمة الدورية
-  `reviewPendingDonations` تسدّ الفجوة بفحص دوري بدل الدفع الفوري، فيتأخر قيد
-  المبلغ إلى موعد التشغيل التالي.
+- **سرّ الـwebhook يُدار يدوياً.** لا تدوير للمفتاح ولا تحقق من توقيع البوابة
+  نفسها (`HMAC`) — السرّ المشترك أضعف من التوقيع لكنه ما تدعمه ثواني حالياً.
 - **لا يوجد استرداد (refund)** لحالات إلغاء الطلب بعد التمويل، ولا للتمويل
   الزائد إن أفلت من الحجز.
 - **حقول معرّفة ولا تُكتب بعد:** `skills` و`favoriteMosqueId` و`crNumber` و
@@ -303,8 +302,8 @@ const remaining = serviceRequest.get('estimatedCost') - (serviceRequest.get('fun
 - **`externalId_unique` اسم يَعِد بما لا يُنفّذه** — التعريف `{externalId: 1}`
   فهرس عادي، وواجهة مخطط Parse لا تعبّر عن التفرّد. تفادي التكرار عند الاستيراد
   يقوم على استعلام‑ثم‑كتابة وحده.
-- **سجل التدقيق لا يُنظَّف.** `AuditLog` ينمو بلا حد، وباقة Back4app المجانية
-  250 ميغابايت. يلزم تقليم أو أرشفة قبل الحجم الحرج.
+- **التقليم يحذف ولا يؤرشف.** `pruneAuditLog` يُسقط ما تجاوز 180 يوماً بلا نسخة
+  خارجية. إن لزم الاحتفاظ الأطول للمساءلة، فالتصدير قبل الحذف مسؤولية خارجية.
 
 ---
 
@@ -319,7 +318,9 @@ const remaining = serviceRequest.get('estimatedCost') - (serviceRequest.get('fun
 | `completedJobs` و`avgRating` معرّفان ولا يُكتبان | `completeService` يُحدّث العدد والمتوسط التراكمي للمنفّذ |
 | `Number(estimatedCost) \|\| 0` يبتلع NaN فيصير مدخل فاسد طلباً تطوّعياً | تحقق صريح بـ`Number.isFinite` ورفض غير الرقمي |
 | لا سجل لتغييرات الحالة، فلا جواب عن "من ألغى هذا الطلب ومتى؟" | فئة `AuditLog` و`lib/audit.js`، والقيد من الدوال لا من `afterSave` — المُشغّل لا يرى الفاعل لأن الحفظ بـ Master Key. القيد لا يُسقط العملية التي يوثّقها، ويُعرَض عبر `getMosqueAuditTrail` بالدور لا بالهوية |
-| متبرّع يدفع ثم يُغلق التطبيق فيبقى مالُه غير مقيَّد | مهمة `reviewPendingDonations` تسأل البوابة عن كل معاملة معلّقة تجاوزت مهلة الحجز، وتُقيّد المدفوع عبر `captureDonation` نفسها التي تستعملها الدالة |
+| متبرّع يدفع ثم يُغلق التطبيق فيبقى مالُه غير مقيَّد | `paymentWebhook` يُقيّد لحظة الدفع، ومهمة `reviewPendingDonations` شبكة أمان لما يضيع منه. كلاهما يمرّ بـ`captureDonation` نفسها |
+| المولّد يحذف كل سطر `require` بما فيها وحدات Node، فيبقى مرجع غير معرّف في المدمج | الحذف صار مقصوراً على الاستيراد النسبي (`./` و`../`) |
+| `AuditLog` ينمو بلا حد على باقة 250 ميغابايت | مهمة `pruneAuditLog` تحذف ما تجاوز 180 يوماً، وبحدّ أدنى 30 يوماً مهما طُلب |
 
 ---
 
@@ -527,6 +528,7 @@ require('./triggers');
 require('./functions/mosques');
 require('./functions/requests');
 require('./functions/donations');
+require('./functions/maintenance');
 
 Parse.Cloud.define('health', async () => ({
   ok: true,
@@ -1439,6 +1441,7 @@ const { pushToUsers } = require('../lib/push');
 const payments = require('../lib/payments');
 const { STATUS } = require('./requests');
 const audit = require('../lib/audit');
+const crypto = require('crypto');
 
 /**
  * ⚠️ ثلاثة أخطاء جوهرية في النسخة الأصلية من fundRequest تم إصلاحها هنا:
@@ -1627,6 +1630,68 @@ async function captureDonation(transaction, verification) {
 
   return { status: 'captured', fundedAmount: serviceRequest.get('fundedAmount') };
 }
+
+/**
+ * مقارنة السرّ بزمن ثابت — المقارنة بـ`===` تُسرّب طول البادئة المطابقة.
+ */
+function secretMatches(provided, expected) {
+  if (!expected || typeof provided !== 'string') return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * نقطة نهاية البوابة.
+ *
+ * تُستدعى من ثواني لا من مستخدم، فلا جلسة معها — التوثيق بسرّ مشترك يُضبط في
+ * `PAYMENT_WEBHOOK_SECRET` ويُسجَّل في لوحة البوابة.
+ *
+ * **جسم الطلب لا يُصدَّق إطلاقاً.** كل ما يُؤخذ منه هو معرّف المعاملة، ثم تُسأل
+ * البوابة عن حالتها الحقيقية. من يعرف السرّ يستطيع أن يطلب إعادة الفحص، لا أن
+ * يُقرّر أن الدفع تمّ.
+ *
+ * أفضلُ من المهمة الدورية لأن القيد يتمّ لحظة الدفع لا بعد ساعة، والمهمة تبقى
+ * شبكة أمان لما يضيع من الطلبات.
+ */
+Parse.Cloud.define('paymentWebhook', async (request) => {
+  const expected = process.env.PAYMENT_WEBHOOK_SECRET;
+  if (!expected) E.forbidden('نقطة نهاية البوابة غير مهيأة.');
+  if (!secretMatches(request.params.secret, expected)) E.forbidden('توثيق غير صالح.');
+
+  // ثواني تُعيد معرّف المعاملة في client_reference_id كما أُرسل عند إنشاء الجلسة
+  const transactionId = request.params.clientReferenceId || request.params.client_reference_id;
+  if (!transactionId) E.invalid('معرّف المعاملة مطلوب.');
+
+  const transaction = await new Parse.Query('Transactions')
+    .get(String(transactionId), { useMasterKey: true })
+    .catch(() => E.notFound('المعاملة غير موجودة.'));
+
+  if (transaction.get('status') === 'captured') {
+    return { status: 'captured', message: 'سبق قيد هذه المعاملة.' };
+  }
+  if (transaction.get('status') !== 'pending') {
+    return { status: transaction.get('status'), message: 'حالة المعاملة لا تسمح بالقيد.' };
+  }
+
+  const verification = await payments.verifySession(transaction.get('paymentSessionId'));
+
+  if (!verification.paid) {
+    if (!verification.terminal) return { status: 'pending' };
+    transaction.set('status', 'failed');
+    await transaction.save(null, { useMasterKey: true });
+    return { status: 'failed' };
+  }
+
+  if (Math.abs(verification.amountOmr - transaction.get('amount')) > 0.001) {
+    transaction.set('status', 'mismatch');
+    await transaction.save(null, { useMasterKey: true });
+    E.invalid('المبلغ المدفوع لا يطابق المبلغ المسجّل.');
+  }
+
+  return captureDonation(transaction, verification);
+});
 
 /**
  * صرف المستحقات للشركة بعد اعتماد الإمام. مشرف فقط.
@@ -1818,6 +1883,46 @@ Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
     amount: entry.get('amount'),
     createdAt: entry.get('createdAt'),
   }));
+});
+```
+
+#### `cloud/functions/maintenance.js`
+
+```javascript
+/**
+ * صيانة دورية للبيانات المتراكمة.
+ */
+
+// `AuditLog` ينمو بسطر لكل تحوّل حالة وكل حركة مال، وباقة Back4app المجانية
+// 250 ميغابايت تشترك فيها بيانات 18 ألف مسجد. ستة أشهر تكفي للمساءلة أمام
+// المتبرّع، وما قبلها يُؤرشَف خارج المنصّة إن لزم.
+const AUDIT_RETENTION_DAYS = 180;
+const PRUNE_BATCH = 500;
+
+Parse.Cloud.job('pruneAuditLog', async (request) => {
+  const { params, message } = request;
+
+  const days = Math.max(Number(params.retentionDays) || AUDIT_RETENTION_DAYS, 30);
+  const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
+
+  let removed = 0;
+  for (;;) {
+    const batch = await new Parse.Query('AuditLog')
+      .lessThan('createdAt', cutoff)
+      .limit(PRUNE_BATCH)
+      .find({ useMasterKey: true });
+
+    if (batch.length === 0) break;
+    await Parse.Object.destroyAll(batch, { useMasterKey: true });
+    removed += batch.length;
+
+    message(`حُذف ${removed} سطراً حتى الآن…`);
+    if (batch.length < PRUNE_BATCH) break;
+  }
+
+  const summary = `حُذف ${removed} سطر تدقيق أقدم من ${days} يوماً.`;
+  message(summary);
+  return summary;
 });
 ```
 
@@ -2727,6 +2832,8 @@ async function loadAssignedRequest(requestId, user) {
 // دوال التبرعات والصرف   [functions/donations.js]
 // ======================================================================
 
+const crypto = require('crypto');
+
 /**
  * ⚠️ ثلاثة أخطاء جوهرية في النسخة الأصلية من fundRequest تم إصلاحها هنا:
  *
@@ -2914,6 +3021,68 @@ async function captureDonation(transaction, verification) {
 
   return { status: 'captured', fundedAmount: serviceRequest.get('fundedAmount') };
 }
+
+/**
+ * مقارنة السرّ بزمن ثابت — المقارنة بـ`===` تُسرّب طول البادئة المطابقة.
+ */
+function secretMatches(provided, expected) {
+  if (!expected || typeof provided !== 'string') return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * نقطة نهاية البوابة.
+ *
+ * تُستدعى من ثواني لا من مستخدم، فلا جلسة معها — التوثيق بسرّ مشترك يُضبط في
+ * `PAYMENT_WEBHOOK_SECRET` ويُسجَّل في لوحة البوابة.
+ *
+ * **جسم الطلب لا يُصدَّق إطلاقاً.** كل ما يُؤخذ منه هو معرّف المعاملة، ثم تُسأل
+ * البوابة عن حالتها الحقيقية. من يعرف السرّ يستطيع أن يطلب إعادة الفحص، لا أن
+ * يُقرّر أن الدفع تمّ.
+ *
+ * أفضلُ من المهمة الدورية لأن القيد يتمّ لحظة الدفع لا بعد ساعة، والمهمة تبقى
+ * شبكة أمان لما يضيع من الطلبات.
+ */
+Parse.Cloud.define('paymentWebhook', async (request) => {
+  const expected = process.env.PAYMENT_WEBHOOK_SECRET;
+  if (!expected) E.forbidden('نقطة نهاية البوابة غير مهيأة.');
+  if (!secretMatches(request.params.secret, expected)) E.forbidden('توثيق غير صالح.');
+
+  // ثواني تُعيد معرّف المعاملة في client_reference_id كما أُرسل عند إنشاء الجلسة
+  const transactionId = request.params.clientReferenceId || request.params.client_reference_id;
+  if (!transactionId) E.invalid('معرّف المعاملة مطلوب.');
+
+  const transaction = await new Parse.Query('Transactions')
+    .get(String(transactionId), { useMasterKey: true })
+    .catch(() => E.notFound('المعاملة غير موجودة.'));
+
+  if (transaction.get('status') === 'captured') {
+    return { status: 'captured', message: 'سبق قيد هذه المعاملة.' };
+  }
+  if (transaction.get('status') !== 'pending') {
+    return { status: transaction.get('status'), message: 'حالة المعاملة لا تسمح بالقيد.' };
+  }
+
+  const verification = await payments.verifySession(transaction.get('paymentSessionId'));
+
+  if (!verification.paid) {
+    if (!verification.terminal) return { status: 'pending' };
+    transaction.set('status', 'failed');
+    await transaction.save(null, { useMasterKey: true });
+    return { status: 'failed' };
+  }
+
+  if (Math.abs(verification.amountOmr - transaction.get('amount')) > 0.001) {
+    transaction.set('status', 'mismatch');
+    await transaction.save(null, { useMasterKey: true });
+    E.invalid('المبلغ المدفوع لا يطابق المبلغ المسجّل.');
+  }
+
+  return captureDonation(transaction, verification);
+});
 
 /**
  * صرف المستحقات للشركة بعد اعتماد الإمام. مشرف فقط.
@@ -3109,6 +3278,47 @@ Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
 
 
 // ======================================================================
+// الصيانة الدورية   [functions/maintenance.js]
+// ======================================================================
+
+/**
+ * صيانة دورية للبيانات المتراكمة.
+ */
+
+// `AuditLog` ينمو بسطر لكل تحوّل حالة وكل حركة مال، وباقة Back4app المجانية
+// 250 ميغابايت تشترك فيها بيانات 18 ألف مسجد. ستة أشهر تكفي للمساءلة أمام
+// المتبرّع، وما قبلها يُؤرشَف خارج المنصّة إن لزم.
+const AUDIT_RETENTION_DAYS = 180;
+const PRUNE_BATCH = 500;
+
+Parse.Cloud.job('pruneAuditLog', async (request) => {
+  const { params, message } = request;
+
+  const days = Math.max(Number(params.retentionDays) || AUDIT_RETENTION_DAYS, 30);
+  const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
+
+  let removed = 0;
+  for (;;) {
+    const batch = await new Parse.Query('AuditLog')
+      .lessThan('createdAt', cutoff)
+      .limit(PRUNE_BATCH)
+      .find({ useMasterKey: true });
+
+    if (batch.length === 0) break;
+    await Parse.Object.destroyAll(batch, { useMasterKey: true });
+    removed += batch.length;
+
+    message(`حُذف ${removed} سطراً حتى الآن…`);
+    if (batch.length < PRUNE_BATCH) break;
+  }
+
+  const summary = `حُذف ${removed} سطر تدقيق أقدم من ${days} يوماً.`;
+  message(summary);
+  return summary;
+});
+
+
+// ======================================================================
 // فحص حالة الخادم
 // ======================================================================
 
@@ -3167,11 +3377,21 @@ Parse.Cloud.define('health', async () => ({
 | `completeService` | imam | معاينة واعتماد وتقييم |
 | `cancelServiceRequest` | imam | إلغاء قبل التنفيذ |
 | `initiateDonation` | متبرع | إنشاء جلسة دفع |
-| `confirmDonation` | نظام | تأكيد من البوابة وقيد المبلغ |
+| `confirmDonation` | متبرع/نظام | تأكيد من البوابة وقيد المبلغ |
+| `paymentWebhook` | البوابة | قيد لحظي — توثيق بسرّ مشترك، والجسم لا يُصدَّق |
 | `payoutContractor` | admin | تسجيل صرف المستحقات |
 | `getMosqueLedger` | الجميع | السجل المالي الشفاف |
 | `getMosqueAuditTrail` | الجميع | سجل القرارات — الدور لا هوية الفاعل |
 | `health` | الجميع | فحص حالة الخادم |
+
+### المهام الدورية
+
+تُجدوَل من لوحة Back4app (Server Settings → Background Jobs).
+
+| المهمة | التواتر المقترح | الوصف |
+|---|---|---|
+| `reviewPendingDonations` | كل ساعة | شبكة أمان خلف الـwebhook: تسأل البوابة عن كل معاملة معلّقة تجاوزت مهلة الحجز |
+| `pruneAuditLog` | أسبوعياً | حذف سطور التدقيق الأقدم من 180 يوماً |
 
 ### قواعد الأمن
 
@@ -3689,6 +3909,7 @@ ORDER = [
     ("functions/mosques.js", "دوال المساجد"),
     ("functions/requests.js", "دوال طلبات الصيانة"),
     ("functions/donations.js", "دوال التبرعات والصرف"),
+    ("functions/maintenance.js", "الصيانة الدورية"),
 ]
 
 REPLACEMENTS = {
@@ -3697,7 +3918,10 @@ REPLACEMENTS = {
     "lib/audit.js": [(r"module\.exports = \{[^}]*\};", "const audit = { record, ACTIONS };")],
 }
 
-DROP = re.compile(r"^\s*(const .*= require\(|module\.exports\s*=\s*\{\s*(ROLES|pushToUsers|STATUS)).*$")
+# يُحذف الاستيراد النسبي وحده (`./` و`../`): الملفات صارت واحداً فلا معنى له.
+# استيراد وحدات Node مثل `crypto` يبقى — حذفه كان يترك مرجعاً غير معرّف في المدمج.
+DROP = re.compile(
+    r"^\s*(const .*= require\([\"']\.|module\.exports\s*=\s*\{\s*(ROLES|pushToUsers|STATUS)).*$")
 
 
 def clean(path: Path, rel: str) -> str:
@@ -3786,6 +4010,7 @@ CLOUD_FILES = [
     "cloud/functions/mosques.js",
     "cloud/functions/requests.js",
     "cloud/functions/donations.js",
+    "cloud/functions/maintenance.js",
 ]
 
 TEST_FILES = [
@@ -3986,6 +4211,8 @@ THAWANI_SECRET_KEY=
 THAWANI_PUBLISHABLE_KEY=
 PAYMENT_SUCCESS_URL=masjidi://payment/success
 PAYMENT_CANCEL_URL=masjidi://payment/cancel
+# سرّ نقطة نهاية البوابة — يُسجَّل في لوحة ثواني ويُولَّد عشوائياً
+PAYMENT_WEBHOOK_SECRET=
 
 # منصة أيادي (مستقبلاً)
 AYADI_API_KEY=
@@ -4234,6 +4461,13 @@ function createMock() {
     Object: Object.assign(function ParseObject() {}, {
       extend: (className) => class extends MockObject {
         constructor() { super(className); }
+      },
+      destroyAll: async (objects) => {
+        for (const object of objects) {
+          const rows = store[object.className] || [];
+          const at = rows.indexOf(object);
+          if (at !== -1) rows.splice(at, 1);
+        }
       },
     }),
     ACL: MockACL,
@@ -4945,6 +5179,131 @@ test('مراجعة المعاملات المعلّقة', async (t) => {
     assert.match(messages[0], /غير مهيأة/);
   });
 });
+
+test('نقطة نهاية البوابة', async (t) => {
+  let api;
+  let mosque;
+  let transaction;
+
+  t.beforeEach(() => {
+    process.env.PAYMENT_WEBHOOK_SECRET = 'whsec_correct_value';
+    api = loadCloud('modular');
+    mosque = api.make('Mosques', { name: 'مسجد الاختبار', walletBalance: 0 });
+    const serviceRequest = api.make('ServiceRequests',
+      { mosqueId: mosque, title: 'إصلاح', estimatedCost: 500, fundedAmount: 0, status: 'pending_funding' });
+    transaction = api.make('Transactions', {
+      donorId: api.asUser('user_donor'),
+      mosqueId: mosque,
+      requestId: serviceRequest,
+      amount: 500,
+      type: 'donation',
+      status: 'pending',
+      paymentSessionId: 'sess_hook',
+    });
+  });
+
+  t.afterEach(() => { delete process.env.PAYMENT_WEBHOOK_SECRET; });
+
+  await t.test('السرّ الخاطئ يُرفض', async () => {
+    api.gateway.status = 'paid';
+    api.gateway.amountBaisa = OMR(500);
+
+    const { error } = await api.call('paymentWebhook',
+      { secret: 'whsec_wrong_value___', clientReferenceId: transaction.id });
+
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
+    assert.equal(mosque.get('walletBalance'), 0);
+  });
+
+  await t.test('السرّ الناقص يُرفض ولو كان بادئةً صحيحة', async () => {
+    const { error } = await api.call('paymentWebhook',
+      { secret: 'whsec_correct', clientReferenceId: transaction.id });
+
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
+  });
+
+  await t.test('السرّ الصحيح يُقيّد الدفع', async () => {
+    api.gateway.status = 'paid';
+    api.gateway.amountBaisa = OMR(500);
+
+    const { ok } = await api.call('paymentWebhook',
+      { secret: 'whsec_correct_value', clientReferenceId: transaction.id });
+
+    assert.equal(ok.status, 'captured');
+    assert.equal(mosque.get('walletBalance'), 500);
+  });
+
+  await t.test('جسم الطلب لا يُصدَّق — البوابة وحدها تُقرّر', async () => {
+    // البوابة تقول "غير مدفوع"، والجسم يدّعي الدفع
+    api.gateway.status = 'unpaid';
+
+    const { ok } = await api.call('paymentWebhook', {
+      secret: 'whsec_correct_value',
+      clientReferenceId: transaction.id,
+      payment_status: 'paid',
+      total_amount: 500000,
+    });
+
+    assert.equal(ok.status, 'pending');
+    assert.equal(mosque.get('walletBalance'), 0, 'قُيّد مبلغ بناءً على ادّعاء المُرسِل');
+  });
+
+  await t.test('الاستدعاء المكرَّر لا يضاعف الرصيد', async () => {
+    api.gateway.status = 'paid';
+    api.gateway.amountBaisa = OMR(500);
+    const params = { secret: 'whsec_correct_value', clientReferenceId: transaction.id };
+
+    await api.call('paymentWebhook', params);
+    const again = await api.call('paymentWebhook', params);
+
+    assert.equal(again.ok.status, 'captured');
+    assert.equal(mosque.get('walletBalance'), 500);
+  });
+
+  await t.test('بلا سرّ مضبوط تُرفض النقطة كلياً', async () => {
+    delete process.env.PAYMENT_WEBHOOK_SECRET;
+    const unconfigured = loadCloud('modular');
+
+    const { error } = await unconfigured.call('paymentWebhook',
+      { secret: 'anything', clientReferenceId: transaction.id });
+
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
+  });
+});
+
+test('تقليم سجل التدقيق', async (t) => {
+  let api;
+
+  t.beforeEach(() => { api = loadCloud('modular'); });
+
+  const entryAgedDays = (days) => api.make('AuditLog', { action: 'request_created' },
+    new Date(Date.now() - days * 24 * 3600 * 1000));
+
+  await t.test('يحذف ما تجاوز مدة الحفظ ويُبقي ما دونها', async () => {
+    entryAgedDays(200);
+    entryAgedDays(200);
+    const kept = entryAgedDays(10);
+
+    const { result } = await api.runJob('pruneAuditLog');
+
+    assert.match(result, /حُذف 2/);
+    assert.deepEqual(api.store.AuditLog, [kept]);
+  });
+
+  await t.test('مدة الحفظ لا تنزل عن 30 يوماً مهما طُلب', async () => {
+    const recent = entryAgedDays(20);
+
+    await api.runJob('pruneAuditLog', { retentionDays: 1 });
+
+    assert.deepEqual(api.store.AuditLog, [recent],
+      'مدة أقصر من 30 يوماً تمسح سجلاً ما زال لازماً للمساءلة');
+  });
+
+  await t.test('سجل فارغ لا يُخطئ', async () => {
+    const { result } = await api.runJob('pruneAuditLog');
+    assert.match(result, /حُذف 0/);
+  });
+});
 ```
 
 #### `tests/schema.test.js` — الصلاحيات وتطابق النسختين
@@ -5019,7 +5378,7 @@ test('نقاط الدخول', async (t) => {
     'getNearbyMosques', 'searchMosques', 'claimMosque', 'getMyClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'assignWorker', 'startWork', 'markWorkDone',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
-    'confirmDonation', 'payoutContractor', 'getMosqueLedger',
+    'confirmDonation', 'paymentWebhook', 'payoutContractor', 'getMosqueLedger',
     'getMosqueAuditTrail', 'health',
   ];
 
@@ -5042,14 +5401,20 @@ test('نقاط الدخول', async (t) => {
   await t.test('المهمة الدورية مسجَّلة في النسختين', () => {
     for (const entry of ['modular', 'bundle']) {
       const api = loadCloud(entry);
-      assert.deepEqual(Object.keys(api.jobs), ['reviewPendingDonations'], `النسخة ${entry}`);
+      assert.deepEqual(Object.keys(api.jobs).sort(),
+        ['pruneAuditLog', 'reviewPendingDonations'], `النسخة ${entry}`);
     }
   });
 
-  await t.test('النسخة المدمجة بلا require ولا module.exports', () => {
+  await t.test('النسخة المدمجة بلا استيراد نسبي ولا تصدير', () => {
     const bundle = fs.readFileSync(path.join(CLOUD, 'main.bundle.js'), 'utf8');
-    assert.equal(/\brequire\(/.test(bundle), false);
+
+    // الاستيراد النسبي بلا معنى في ملف واحد، والتصدير كذلك
+    assert.equal(/require\(['"]\./.test(bundle), false);
     assert.equal(/\bmodule\.exports\b/.test(bundle), false);
+
+    // أما وحدات Node فتبقى: حذفها كان يترك مرجعاً غير معرّف
+    assert.equal(/require\(['"]crypto['"]\)/.test(bundle), true);
   });
 
   await t.test('health يعكس تهيئة بوابة الدفع', async () => {

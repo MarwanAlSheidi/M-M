@@ -165,3 +165,128 @@ test('مراجعة المعاملات المعلّقة', async (t) => {
     assert.match(messages[0], /غير مهيأة/);
   });
 });
+
+test('نقطة نهاية البوابة', async (t) => {
+  let api;
+  let mosque;
+  let transaction;
+
+  t.beforeEach(() => {
+    process.env.PAYMENT_WEBHOOK_SECRET = 'whsec_correct_value';
+    api = loadCloud('modular');
+    mosque = api.make('Mosques', { name: 'مسجد الاختبار', walletBalance: 0 });
+    const serviceRequest = api.make('ServiceRequests',
+      { mosqueId: mosque, title: 'إصلاح', estimatedCost: 500, fundedAmount: 0, status: 'pending_funding' });
+    transaction = api.make('Transactions', {
+      donorId: api.asUser('user_donor'),
+      mosqueId: mosque,
+      requestId: serviceRequest,
+      amount: 500,
+      type: 'donation',
+      status: 'pending',
+      paymentSessionId: 'sess_hook',
+    });
+  });
+
+  t.afterEach(() => { delete process.env.PAYMENT_WEBHOOK_SECRET; });
+
+  await t.test('السرّ الخاطئ يُرفض', async () => {
+    api.gateway.status = 'paid';
+    api.gateway.amountBaisa = OMR(500);
+
+    const { error } = await api.call('paymentWebhook',
+      { secret: 'whsec_wrong_value___', clientReferenceId: transaction.id });
+
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
+    assert.equal(mosque.get('walletBalance'), 0);
+  });
+
+  await t.test('السرّ الناقص يُرفض ولو كان بادئةً صحيحة', async () => {
+    const { error } = await api.call('paymentWebhook',
+      { secret: 'whsec_correct', clientReferenceId: transaction.id });
+
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
+  });
+
+  await t.test('السرّ الصحيح يُقيّد الدفع', async () => {
+    api.gateway.status = 'paid';
+    api.gateway.amountBaisa = OMR(500);
+
+    const { ok } = await api.call('paymentWebhook',
+      { secret: 'whsec_correct_value', clientReferenceId: transaction.id });
+
+    assert.equal(ok.status, 'captured');
+    assert.equal(mosque.get('walletBalance'), 500);
+  });
+
+  await t.test('جسم الطلب لا يُصدَّق — البوابة وحدها تُقرّر', async () => {
+    // البوابة تقول "غير مدفوع"، والجسم يدّعي الدفع
+    api.gateway.status = 'unpaid';
+
+    const { ok } = await api.call('paymentWebhook', {
+      secret: 'whsec_correct_value',
+      clientReferenceId: transaction.id,
+      payment_status: 'paid',
+      total_amount: 500000,
+    });
+
+    assert.equal(ok.status, 'pending');
+    assert.equal(mosque.get('walletBalance'), 0, 'قُيّد مبلغ بناءً على ادّعاء المُرسِل');
+  });
+
+  await t.test('الاستدعاء المكرَّر لا يضاعف الرصيد', async () => {
+    api.gateway.status = 'paid';
+    api.gateway.amountBaisa = OMR(500);
+    const params = { secret: 'whsec_correct_value', clientReferenceId: transaction.id };
+
+    await api.call('paymentWebhook', params);
+    const again = await api.call('paymentWebhook', params);
+
+    assert.equal(again.ok.status, 'captured');
+    assert.equal(mosque.get('walletBalance'), 500);
+  });
+
+  await t.test('بلا سرّ مضبوط تُرفض النقطة كلياً', async () => {
+    delete process.env.PAYMENT_WEBHOOK_SECRET;
+    const unconfigured = loadCloud('modular');
+
+    const { error } = await unconfigured.call('paymentWebhook',
+      { secret: 'anything', clientReferenceId: transaction.id });
+
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
+  });
+});
+
+test('تقليم سجل التدقيق', async (t) => {
+  let api;
+
+  t.beforeEach(() => { api = loadCloud('modular'); });
+
+  const entryAgedDays = (days) => api.make('AuditLog', { action: 'request_created' },
+    new Date(Date.now() - days * 24 * 3600 * 1000));
+
+  await t.test('يحذف ما تجاوز مدة الحفظ ويُبقي ما دونها', async () => {
+    entryAgedDays(200);
+    entryAgedDays(200);
+    const kept = entryAgedDays(10);
+
+    const { result } = await api.runJob('pruneAuditLog');
+
+    assert.match(result, /حُذف 2/);
+    assert.deepEqual(api.store.AuditLog, [kept]);
+  });
+
+  await t.test('مدة الحفظ لا تنزل عن 30 يوماً مهما طُلب', async () => {
+    const recent = entryAgedDays(20);
+
+    await api.runJob('pruneAuditLog', { retentionDays: 1 });
+
+    assert.deepEqual(api.store.AuditLog, [recent],
+      'مدة أقصر من 30 يوماً تمسح سجلاً ما زال لازماً للمساءلة');
+  });
+
+  await t.test('سجل فارغ لا يُخطئ', async () => {
+    const { result } = await api.runJob('pruneAuditLog');
+    assert.match(result, /حُذف 0/);
+  });
+});

@@ -196,6 +196,13 @@ function createMock() {
       extend: (className) => class extends MockObject {
         constructor() { super(className); }
       },
+      destroyAll: async (objects) => {
+        for (const object of objects) {
+          const rows = store[object.className] || [];
+          const at = rows.indexOf(object);
+          if (at !== -1) rows.splice(at, 1);
+        }
+      },
     }),
     ACL: MockACL,
     User: function User() {},

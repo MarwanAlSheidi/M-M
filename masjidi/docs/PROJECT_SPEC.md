@@ -82,11 +82,21 @@
 | `completeService` | imam | معاينة واعتماد وتقييم |
 | `cancelServiceRequest` | imam | إلغاء قبل التنفيذ |
 | `initiateDonation` | متبرع | إنشاء جلسة دفع |
-| `confirmDonation` | نظام | تأكيد من البوابة وقيد المبلغ |
+| `confirmDonation` | متبرع/نظام | تأكيد من البوابة وقيد المبلغ |
+| `paymentWebhook` | البوابة | قيد لحظي — توثيق بسرّ مشترك، والجسم لا يُصدَّق |
 | `payoutContractor` | admin | تسجيل صرف المستحقات |
 | `getMosqueLedger` | الجميع | السجل المالي الشفاف |
 | `getMosqueAuditTrail` | الجميع | سجل القرارات — الدور لا هوية الفاعل |
 | `health` | الجميع | فحص حالة الخادم |
+
+### المهام الدورية
+
+تُجدوَل من لوحة Back4app (Server Settings → Background Jobs).
+
+| المهمة | التواتر المقترح | الوصف |
+|---|---|---|
+| `reviewPendingDonations` | كل ساعة | شبكة أمان خلف الـwebhook: تسأل البوابة عن كل معاملة معلّقة تجاوزت مهلة الحجز |
+| `pruneAuditLog` | أسبوعياً | حذف سطور التدقيق الأقدم من 180 يوماً |
 
 ## 7. قواعد الأمن
 

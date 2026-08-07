@@ -895,6 +895,8 @@ async function loadAssignedRequest(requestId, user) {
 // دوال التبرعات والصرف   [functions/donations.js]
 // ======================================================================
 
+const crypto = require('crypto');
+
 /**
  * ⚠️ ثلاثة أخطاء جوهرية في النسخة الأصلية من fundRequest تم إصلاحها هنا:
  *
@@ -1082,6 +1084,68 @@ async function captureDonation(transaction, verification) {
 
   return { status: 'captured', fundedAmount: serviceRequest.get('fundedAmount') };
 }
+
+/**
+ * مقارنة السرّ بزمن ثابت — المقارنة بـ`===` تُسرّب طول البادئة المطابقة.
+ */
+function secretMatches(provided, expected) {
+  if (!expected || typeof provided !== 'string') return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * نقطة نهاية البوابة.
+ *
+ * تُستدعى من ثواني لا من مستخدم، فلا جلسة معها — التوثيق بسرّ مشترك يُضبط في
+ * `PAYMENT_WEBHOOK_SECRET` ويُسجَّل في لوحة البوابة.
+ *
+ * **جسم الطلب لا يُصدَّق إطلاقاً.** كل ما يُؤخذ منه هو معرّف المعاملة، ثم تُسأل
+ * البوابة عن حالتها الحقيقية. من يعرف السرّ يستطيع أن يطلب إعادة الفحص، لا أن
+ * يُقرّر أن الدفع تمّ.
+ *
+ * أفضلُ من المهمة الدورية لأن القيد يتمّ لحظة الدفع لا بعد ساعة، والمهمة تبقى
+ * شبكة أمان لما يضيع من الطلبات.
+ */
+Parse.Cloud.define('paymentWebhook', async (request) => {
+  const expected = process.env.PAYMENT_WEBHOOK_SECRET;
+  if (!expected) E.forbidden('نقطة نهاية البوابة غير مهيأة.');
+  if (!secretMatches(request.params.secret, expected)) E.forbidden('توثيق غير صالح.');
+
+  // ثواني تُعيد معرّف المعاملة في client_reference_id كما أُرسل عند إنشاء الجلسة
+  const transactionId = request.params.clientReferenceId || request.params.client_reference_id;
+  if (!transactionId) E.invalid('معرّف المعاملة مطلوب.');
+
+  const transaction = await new Parse.Query('Transactions')
+    .get(String(transactionId), { useMasterKey: true })
+    .catch(() => E.notFound('المعاملة غير موجودة.'));
+
+  if (transaction.get('status') === 'captured') {
+    return { status: 'captured', message: 'سبق قيد هذه المعاملة.' };
+  }
+  if (transaction.get('status') !== 'pending') {
+    return { status: transaction.get('status'), message: 'حالة المعاملة لا تسمح بالقيد.' };
+  }
+
+  const verification = await payments.verifySession(transaction.get('paymentSessionId'));
+
+  if (!verification.paid) {
+    if (!verification.terminal) return { status: 'pending' };
+    transaction.set('status', 'failed');
+    await transaction.save(null, { useMasterKey: true });
+    return { status: 'failed' };
+  }
+
+  if (Math.abs(verification.amountOmr - transaction.get('amount')) > 0.001) {
+    transaction.set('status', 'mismatch');
+    await transaction.save(null, { useMasterKey: true });
+    E.invalid('المبلغ المدفوع لا يطابق المبلغ المسجّل.');
+  }
+
+  return captureDonation(transaction, verification);
+});
 
 /**
  * صرف المستحقات للشركة بعد اعتماد الإمام. مشرف فقط.
@@ -1273,6 +1337,47 @@ Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
     amount: entry.get('amount'),
     createdAt: entry.get('createdAt'),
   }));
+});
+
+
+// ======================================================================
+// الصيانة الدورية   [functions/maintenance.js]
+// ======================================================================
+
+/**
+ * صيانة دورية للبيانات المتراكمة.
+ */
+
+// `AuditLog` ينمو بسطر لكل تحوّل حالة وكل حركة مال، وباقة Back4app المجانية
+// 250 ميغابايت تشترك فيها بيانات 18 ألف مسجد. ستة أشهر تكفي للمساءلة أمام
+// المتبرّع، وما قبلها يُؤرشَف خارج المنصّة إن لزم.
+const AUDIT_RETENTION_DAYS = 180;
+const PRUNE_BATCH = 500;
+
+Parse.Cloud.job('pruneAuditLog', async (request) => {
+  const { params, message } = request;
+
+  const days = Math.max(Number(params.retentionDays) || AUDIT_RETENTION_DAYS, 30);
+  const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
+
+  let removed = 0;
+  for (;;) {
+    const batch = await new Parse.Query('AuditLog')
+      .lessThan('createdAt', cutoff)
+      .limit(PRUNE_BATCH)
+      .find({ useMasterKey: true });
+
+    if (batch.length === 0) break;
+    await Parse.Object.destroyAll(batch, { useMasterKey: true });
+    removed += batch.length;
+
+    message(`حُذف ${removed} سطراً حتى الآن…`);
+    if (batch.length < PRUNE_BATCH) break;
+  }
+
+  const summary = `حُذف ${removed} سطر تدقيق أقدم من ${days} يوماً.`;
+  message(summary);
+  return summary;
 });
 
 

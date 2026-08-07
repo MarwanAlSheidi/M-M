@@ -67,7 +67,7 @@ test('نقاط الدخول', async (t) => {
     'getNearbyMosques', 'searchMosques', 'claimMosque', 'getMyClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'assignWorker', 'startWork', 'markWorkDone',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
-    'confirmDonation', 'payoutContractor', 'getMosqueLedger',
+    'confirmDonation', 'paymentWebhook', 'payoutContractor', 'getMosqueLedger',
     'getMosqueAuditTrail', 'health',
   ];
 
@@ -90,14 +90,20 @@ test('نقاط الدخول', async (t) => {
   await t.test('المهمة الدورية مسجَّلة في النسختين', () => {
     for (const entry of ['modular', 'bundle']) {
       const api = loadCloud(entry);
-      assert.deepEqual(Object.keys(api.jobs), ['reviewPendingDonations'], `النسخة ${entry}`);
+      assert.deepEqual(Object.keys(api.jobs).sort(),
+        ['pruneAuditLog', 'reviewPendingDonations'], `النسخة ${entry}`);
     }
   });
 
-  await t.test('النسخة المدمجة بلا require ولا module.exports', () => {
+  await t.test('النسخة المدمجة بلا استيراد نسبي ولا تصدير', () => {
     const bundle = fs.readFileSync(path.join(CLOUD, 'main.bundle.js'), 'utf8');
-    assert.equal(/\brequire\(/.test(bundle), false);
+
+    // الاستيراد النسبي بلا معنى في ملف واحد، والتصدير كذلك
+    assert.equal(/require\(['"]\./.test(bundle), false);
     assert.equal(/\bmodule\.exports\b/.test(bundle), false);
+
+    // أما وحدات Node فتبقى: حذفها كان يترك مرجعاً غير معرّف
+    assert.equal(/require\(['"]crypto['"]\)/.test(bundle), true);
   });
 
   await t.test('health يعكس تهيئة بوابة الدفع', async () => {
