@@ -81,6 +81,36 @@ Parse.Cloud.define('claimMosque', async (request) => {
   return { message: 'تم استلام طلبك، سيُراجع خلال أيام عمل.', claimId: claim.id };
 });
 
+/**
+ * طلبات الملكية الخاصة بالإمام المستدعي.
+ * `MosqueClaims` مقفلة على Master Key، فبلا هذه الدالة لا يعرف الإمام أبداً
+ * إن كان طلبه قد اعتُمد أو رُفض.
+ */
+Parse.Cloud.define('getMyClaims', async (request) => {
+  const imam = requireRole(request, 'imam');
+
+  const claims = await new Parse.Query('MosqueClaims')
+    .equalTo('imamId', imam)
+    .include('mosqueId')
+    .descending('createdAt')
+    .limit(20)
+    .find({ useMasterKey: true });
+
+  return claims.map((claim) => {
+    const mosque = claim.get('mosqueId');
+    return {
+      id: claim.id,
+      status: claim.get('status'),
+      evidenceNote: claim.get('evidenceNote'),
+      createdAt: claim.get('createdAt'),
+      reviewedAt: claim.get('reviewedAt'),
+      mosqueId: mosque ? mosque.id : null,
+      mosqueName: mosque ? mosque.get('name') : null,
+      wilayat: mosque ? mosque.get('wilayat') : null,
+    };
+  });
+});
+
 /** اعتماد أو رفض طلب الملكية (مشرف فقط). */
 Parse.Cloud.define('reviewMosqueClaim', async (request) => {
   const admin = requireRole(request, 'admin');

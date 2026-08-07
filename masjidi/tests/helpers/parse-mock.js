@@ -37,8 +37,15 @@ function createMock() {
   const functions = {}; // اسم الدالة → معالجها
   const triggers = {}; // "beforeSave:Mosques" → معالجه
   const store = {}; // اسم الفئة → كائنات
+  const pushes = []; // { users, payload } لكل إشعار أُرسل
   const gateway = { status: 'unpaid', amountBaisa: 0, sessions: 0 };
   let seq = 0;
+
+  /** أسماء الفئات المدمجة تصل كدوال لا كنصوص. */
+  const classNameOf = (target) => {
+    if (typeof target === 'string') return target;
+    return target && target.name === 'Installation' ? '_Installation' : '_User';
+  };
 
   const nextId = (className) => `${className}_${++seq}`;
 
@@ -113,7 +120,7 @@ function createMock() {
 
   class MockQuery {
     constructor(target) {
-      this.className = typeof target === 'string' ? target : '_User';
+      this.className = classNameOf(target);
       this._equal = [];
       this._greater = [];
       this._contained = [];
@@ -159,8 +166,7 @@ function createMock() {
     getPublicWriteAccess() { return this._public.write; }
   }
 
-  const triggerKey = (target, type) =>
-    `${type}:${typeof target === 'string' ? target : '_User'}`;
+  const triggerKey = (target, type) => `${type}:${classNameOf(target)}`;
 
   global.Parse = {
     Error: ParseError,
@@ -190,13 +196,23 @@ function createMock() {
     User: function User() {},
     Installation: function Installation() {},
     GeoPoint: class GeoPoint {},
-    Push: { send: async () => {} },
+    // يُلتقط منه المستخدمون المستهدفون: push.js يستعلم على _Installation
+    // بشرط containedIn('user', users)، وهو ما يهمّ التحقق منه.
+    Push: {
+      send: async ({ where, data }) => {
+        const users = (where && where._contained
+          .filter(([key]) => key === 'user')
+          .flatMap(([, values]) => values)) || [];
+        pushes.push({ users, payload: data });
+      },
+    },
   };
 
   return {
     functions,
     triggers,
     store,
+    pushes,
     gateway,
     ParseError,
 

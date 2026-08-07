@@ -13,8 +13,15 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
 
   // الترقية إلى admin أو اعتماد الشركات يتم عبر Master Key فقط
   if (!request.master) {
-    if (user.dirty('role') && role === 'admin') {
-      throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'غير مسموح.');
+    if (user.dirty('role')) {
+      if (role === 'admin') {
+        throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'غير مسموح.');
+      }
+      // الدور يُختار عند التسجيل ويُثبَّت بعده. تركُه مفتوحاً يعني أن متبرعاً
+      // يصبح إماماً أو شركةً متى شاء، فلا يصلح الدور أساساً لأي تفويض لاحق.
+      if (!user.isNew()) {
+        throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'تغيير الدور يتم من الإدارة.');
+      }
     }
     if (user.dirty('isVerifiedContractor')) {
       throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'اعتماد الشركات يتم من الإدارة.');

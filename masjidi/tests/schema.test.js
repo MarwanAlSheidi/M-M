@@ -57,7 +57,7 @@ test('المخطط', async (t) => {
 
 test('نقاط الدخول', async (t) => {
   const EXPECTED_FUNCTIONS = [
-    'getNearbyMosques', 'searchMosques', 'claimMosque', 'reviewMosqueClaim',
+    'getNearbyMosques', 'searchMosques', 'claimMosque', 'getMyClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'assignWorker', 'startWork', 'markWorkDone',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
     'confirmDonation', 'payoutContractor', 'getMosqueLedger', 'health',

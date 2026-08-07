@@ -270,8 +270,15 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
 
   // الترقية إلى admin أو اعتماد الشركات يتم عبر Master Key فقط
   if (!request.master) {
-    if (user.dirty('role') && role === 'admin') {
-      throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'غير مسموح.');
+    if (user.dirty('role')) {
+      if (role === 'admin') {
+        throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'غير مسموح.');
+      }
+      // الدور يُختار عند التسجيل ويُثبَّت بعده. تركُه مفتوحاً يعني أن متبرعاً
+      // يصبح إماماً أو شركةً متى شاء، فلا يصلح الدور أساساً لأي تفويض لاحق.
+      if (!user.isNew()) {
+        throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'تغيير الدور يتم من الإدارة.');
+      }
     }
     if (user.dirty('isVerifiedContractor')) {
       throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'اعتماد الشركات يتم من الإدارة.');
@@ -433,6 +440,36 @@ Parse.Cloud.define('claimMosque', async (request) => {
   return { message: 'تم استلام طلبك، سيُراجع خلال أيام عمل.', claimId: claim.id };
 });
 
+/**
+ * طلبات الملكية الخاصة بالإمام المستدعي.
+ * `MosqueClaims` مقفلة على Master Key، فبلا هذه الدالة لا يعرف الإمام أبداً
+ * إن كان طلبه قد اعتُمد أو رُفض.
+ */
+Parse.Cloud.define('getMyClaims', async (request) => {
+  const imam = requireRole(request, 'imam');
+
+  const claims = await new Parse.Query('MosqueClaims')
+    .equalTo('imamId', imam)
+    .include('mosqueId')
+    .descending('createdAt')
+    .limit(20)
+    .find({ useMasterKey: true });
+
+  return claims.map((claim) => {
+    const mosque = claim.get('mosqueId');
+    return {
+      id: claim.id,
+      status: claim.get('status'),
+      evidenceNote: claim.get('evidenceNote'),
+      createdAt: claim.get('createdAt'),
+      reviewedAt: claim.get('reviewedAt'),
+      mosqueId: mosque ? mosque.id : null,
+      mosqueName: mosque ? mosque.get('name') : null,
+      wilayat: mosque ? mosque.get('wilayat') : null,
+    };
+  });
+});
+
 /** اعتماد أو رفض طلب الملكية (مشرف فقط). */
 Parse.Cloud.define('reviewMosqueClaim', async (request) => {
   const admin = requireRole(request, 'admin');
@@ -491,9 +528,10 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
   if (!title || String(title).trim().length < 3) E.invalid('العنوان مطلوب (3 أحرف فأكثر).');
   if (!description || String(description).trim().length < 10) E.invalid('الوصف مطلوب (10 أحرف فأكثر).');
 
-  const cost = Number(estimatedCost) || 0;
-  if (cost < 0 || cost > MAX_ESTIMATE_OMR) {
-    E.invalid(`التكلفة التقديرية يجب أن تكون بين 0 و ${MAX_ESTIMATE_OMR} ريال.`);
+  // `Number(x) || 0` كان يبتلع NaN فيحوّل مدخلاً فاسداً إلى طلب تطوّعي بصمت
+  const cost = estimatedCost === undefined || estimatedCost === null ? 0 : Number(estimatedCost);
+  if (!Number.isFinite(cost) || cost < 0 || cost > MAX_ESTIMATE_OMR) {
+    E.invalid(`التكلفة التقديرية يجب أن تكون رقماً بين 0 و ${MAX_ESTIMATE_OMR} ريال.`);
   }
 
   // منع إغراق النظام: حد أقصى للطلبات المفتوحة لكل مسجد
@@ -631,6 +669,8 @@ Parse.Cloud.define('completeService', async (request) => {
   serviceRequest.set('volunteerHours', Math.min(Number(volunteerHours) || 0, 24));
   await serviceRequest.save(null, { useMasterKey: true });
 
+  await recordWorkerRating(serviceRequest, score);
+
   // TODO: صرف المستحقات للشركة يتم عبر دالة payout منفصلة بعد الاعتماد (functions/donations.js)
   // TODO: تسجيل ساعات التطوّع في منصة "أيادي" — يحتاج اتفاقية وAPI key رسمي.
 
@@ -644,10 +684,15 @@ Parse.Cloud.define('cancelServiceRequest', async (request) => {
     .get(request.params.requestId, { useMasterKey: true })
     .catch(() => E.notFound('الطلب غير موجود.'));
 
-  await mosqueForImam(imam, serviceRequest.get('mosqueId').id);
+  const mosque = await mosqueForImam(imam, serviceRequest.get('mosqueId').id);
+  const status = serviceRequest.get('status');
 
-  if ([STATUS.COMPLETED, STATUS.CANCELLED].includes(serviceRequest.get('status'))) {
+  if ([STATUS.COMPLETED, STATUS.CANCELLED].includes(status)) {
     E.invalid('الطلب مغلق بالفعل.');
+  }
+  // العمل بدأ فعلاً: إلغاؤه يُضيّع جهد المنفّذ ويُسقط حقّه في المعاينة
+  if ([STATUS.IN_PROGRESS, STATUS.PENDING_APPROVAL].includes(status)) {
+    E.forbidden('بدأ التنفيذ — عاين العمل واعتمده، أو تواصل مع المنفّذ.');
   }
   if ((serviceRequest.get('fundedAmount') || 0) > 0) {
     E.forbidden('لا يمكن إلغاء طلب استلم تبرعات — تواصل مع الإدارة لإعادة توجيه المبلغ.');
@@ -656,8 +701,41 @@ Parse.Cloud.define('cancelServiceRequest', async (request) => {
   serviceRequest.set('status', STATUS.CANCELLED);
   serviceRequest.set('cancelledAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
+
+  // المنفّذ المكلَّف قد يكون في طريقه إلى المسجد — يجب أن يعلم
+  const worker = serviceRequest.get('assignedVolunteerId')
+    || serviceRequest.get('assignedContractorId');
+  if (worker) {
+    await pushToUsers(worker, {
+      alert: `أُلغي طلب "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
+      requestId: serviceRequest.id,
+    });
+  }
+
   return { status: STATUS.CANCELLED };
 });
+
+/**
+ * تحديث سجل المنفّذ عند اعتماد العمل.
+ *
+ * `completedJobs` و`avgRating` كانا معرّفين في المخطط ولا يُكتبان أبداً، فتقييم
+ * المنفّذين معطّل فعلياً. المتوسط يُحسب تراكمياً من العدد السابق فلا نحتفظ بكل
+ * التقييمات. قراءة‑ثم‑كتابة هنا مقبولة: اعتمادان متزامنان للمنفّذ نفسه نادران
+ * وأثرهما تقييم منحرف قليلاً لا مال ضائع — بخلاف `walletBalance`.
+ */
+async function recordWorkerRating(serviceRequest, score) {
+  const pointer = serviceRequest.get('assignedContractorId')
+    || serviceRequest.get('assignedVolunteerId');
+  if (!pointer) return;
+
+  const worker = await fetchPointer(pointer, '_User');
+  const done = worker.get('completedJobs') || 0;
+  const average = worker.get('avgRating');
+
+  worker.set('avgRating', average == null ? score : ((average * done) + score) / (done + 1));
+  worker.increment('completedJobs', 1);
+  await worker.save(null, { useMasterKey: true });
+}
 
 async function loadAssignedRequest(requestId, user) {
   if (!requestId) E.invalid('معرّف الطلب مطلوب.');
@@ -868,7 +946,23 @@ Parse.Cloud.define('payoutContractor', async (request) => {
   const mosque = serviceRequest.get('mosqueId');
   const value = Number(amount);
   if (!Number.isFinite(value) || value <= 0) E.invalid('المبلغ غير صحيح.');
-  if (value > (mosque.get('walletBalance') || 0)) E.invalid('رصيد المسجد لا يكفي.');
+
+  // الخصم أولاً بعملية ذرّية ثم التحقق. فحصُ الرصيد قبل الخصم لا يمنع صرفين
+  // متزامنين من اجتيازه معاً، و`increment` ذرّي لكن القراءة التي تسبقه ليست كذلك.
+  mosque.increment('walletBalance', -value);
+  await mosque.save(null, { useMasterKey: true });
+  await mosque.fetch({ useMasterKey: true });
+
+  if ((mosque.get('walletBalance') || 0) < 0) {
+    mosque.increment('walletBalance', value); // تعويض: إعادة ما خُصم
+    await mosque.save(null, { useMasterKey: true });
+    E.invalid('رصيد المسجد لا يكفي.');
+  }
+
+  // يُعلَّم الطلب مصروفاً فور تأمين المبلغ، قبل قيد المعاملة، تضييقاً لنافذة
+  // الصرف المزدوج. الإغلاق التام يحتاج قيداً على مستوى قاعدة البيانات.
+  serviceRequest.set('isPaidOut', true);
+  await serviceRequest.save(null, { useMasterKey: true });
 
   const Transaction = Parse.Object.extend('Transactions');
   const payout = new Transaction();
@@ -881,12 +975,6 @@ Parse.Cloud.define('payoutContractor', async (request) => {
   payout.set('paymentGatewayRef', String(bankRef || ''));
   payout.set('approvedBy', admin);
   await payout.save(null, { useMasterKey: true });
-
-  mosque.increment('walletBalance', -value);
-  await mosque.save(null, { useMasterKey: true });
-
-  serviceRequest.set('isPaidOut', true);
-  await serviceRequest.save(null, { useMasterKey: true });
 
   return { message: 'تم تسجيل الصرف.', transactionId: payout.id };
 });

@@ -42,6 +42,18 @@ test('المُشغّلات', async (t) => {
       (error) => error.code === api.ParseError.OPERATION_FORBIDDEN);
   });
 
+  await t.test('الدور يُختار عند التسجيل ثم يُثبَّت', async () => {
+    const signup = newUser({ role: 'imam' });
+    await api.trigger('beforeSave:_User', { object: signup, master: false });
+    assert.equal(signup.get('role'), 'imam', 'الاختيار عند التسجيل مسموح');
+
+    const existing = api.make('_User', { role: 'donor' });
+    existing.set('role', 'imam'); // متبرّع يرقّي نفسه إماماً لاحقاً
+    await assert.rejects(
+      () => api.trigger('beforeSave:_User', { object: existing, master: false }),
+      (error) => error.code === api.ParseError.OPERATION_FORBIDDEN);
+  });
+
   await t.test('الدور المجهول يُرفض', async () => {
     const user = newUser({ role: 'superuser' });
     await assert.rejects(

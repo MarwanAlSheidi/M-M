@@ -195,7 +195,23 @@ Parse.Cloud.define('payoutContractor', async (request) => {
   const mosque = serviceRequest.get('mosqueId');
   const value = Number(amount);
   if (!Number.isFinite(value) || value <= 0) E.invalid('المبلغ غير صحيح.');
-  if (value > (mosque.get('walletBalance') || 0)) E.invalid('رصيد المسجد لا يكفي.');
+
+  // الخصم أولاً بعملية ذرّية ثم التحقق. فحصُ الرصيد قبل الخصم لا يمنع صرفين
+  // متزامنين من اجتيازه معاً، و`increment` ذرّي لكن القراءة التي تسبقه ليست كذلك.
+  mosque.increment('walletBalance', -value);
+  await mosque.save(null, { useMasterKey: true });
+  await mosque.fetch({ useMasterKey: true });
+
+  if ((mosque.get('walletBalance') || 0) < 0) {
+    mosque.increment('walletBalance', value); // تعويض: إعادة ما خُصم
+    await mosque.save(null, { useMasterKey: true });
+    E.invalid('رصيد المسجد لا يكفي.');
+  }
+
+  // يُعلَّم الطلب مصروفاً فور تأمين المبلغ، قبل قيد المعاملة، تضييقاً لنافذة
+  // الصرف المزدوج. الإغلاق التام يحتاج قيداً على مستوى قاعدة البيانات.
+  serviceRequest.set('isPaidOut', true);
+  await serviceRequest.save(null, { useMasterKey: true });
 
   const Transaction = Parse.Object.extend('Transactions');
   const payout = new Transaction();
@@ -208,12 +224,6 @@ Parse.Cloud.define('payoutContractor', async (request) => {
   payout.set('paymentGatewayRef', String(bankRef || ''));
   payout.set('approvedBy', admin);
   await payout.save(null, { useMasterKey: true });
-
-  mosque.increment('walletBalance', -value);
-  await mosque.save(null, { useMasterKey: true });
-
-  serviceRequest.set('isPaidOut', true);
-  await serviceRequest.save(null, { useMasterKey: true });
 
   return { message: 'تم تسجيل الصرف.', transactionId: payout.id };
 });
