@@ -28,6 +28,7 @@
 ```
 cloud/
   main.js              نقطة الدخول — يُحمّل البقية
+  main.bundle.js       الملفات أدناه مدمجة للصق في لوحة Back4app — مولّد، لا يُعدّل
   triggers.js          beforeSave/afterSave: التحقق والحماية
   schema.json          الفئات والحقول والفهارس والصلاحيات
   lib/
@@ -43,6 +44,8 @@ scripts/
   clean_mosques.py     Excel → JSON نظيف
   seed_mosques.js      استيراد إلى Parse (idempotent)
   apply_schema.js      تطبيق schema.json
+  build_single_file.py توليد cloud/main.bundle.js من ملفات cloud/
+  build_single_doc.py  توليد MASJIDI.md من المستودع كله
 data/
   mosques.json         18,214 سجلاً جاهزاً
   cleaning_report.json تقرير جودة البيانات
