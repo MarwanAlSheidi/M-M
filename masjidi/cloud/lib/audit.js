@@ -18,6 +18,8 @@
 
 const ACTIONS = {
   REQUEST_CREATED: 'request_created',
+  INTEREST_EXPRESSED: 'interest_expressed',
+  INTEREST_WITHDRAWN: 'interest_withdrawn',
   WORKER_ASSIGNED: 'worker_assigned',
   WORK_STARTED: 'work_started',
   WORK_DONE: 'work_done',

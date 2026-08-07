@@ -49,6 +49,13 @@ test('المخطط', async (t) => {
     }
   });
 
+  await t.test('TaskInterests مقفلة — القائمة تمرّ بدالة تتحقق من ملكية المسجد', () => {
+    const clp = classOf('TaskInterests').classLevelPermissions;
+    for (const action of ['find', 'get', 'create', 'update', 'delete']) {
+      assert.deepEqual(clp[action], {}, `TaskInterests.${action} مفتوح`);
+    }
+  });
+
   await t.test('AuditLog مقفل تماماً — يُقرأ عبر دالة السحابة وحدها', () => {
     const clp = classOf('AuditLog').classLevelPermissions;
     for (const action of ['find', 'get', 'create', 'update', 'delete']) {
@@ -65,7 +72,8 @@ test('المخطط', async (t) => {
 test('نقاط الدخول', async (t) => {
   const EXPECTED_FUNCTIONS = [
     'getNearbyMosques', 'searchMosques', 'claimMosque', 'getMyClaims', 'reviewMosqueClaim',
-    'createServiceRequest', 'assignWorker', 'startWork', 'markWorkDone',
+    'createServiceRequest', 'expressInterest', 'withdrawInterest',
+    'getRequestInterests', 'assignWorker', 'startWork', 'markWorkDone',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
     'confirmDonation', 'paymentWebhook', 'payoutContractor', 'getMosqueLedger',
     'getMosqueAuditTrail', 'health',

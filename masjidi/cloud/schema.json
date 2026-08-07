@@ -116,6 +116,23 @@
       }
     },
     {
+      "className": "TaskInterests",
+      "_comment": "اهتمام متطوّع بطلب مفتوح. لا يُسند الطلب — الإمام يختار عبر assignWorker.",
+      "fields": {
+        "requestId": { "type": "Pointer", "targetClass": "ServiceRequests", "required": true },
+        "volunteerId": { "type": "Pointer", "targetClass": "_User", "required": true },
+        "note": { "type": "String" },
+        "status": { "type": "String", "defaultValue": "active" }
+      },
+      "indexes": {
+        "by_request": { "requestId": 1, "status": 1 },
+        "by_volunteer": { "volunteerId": 1, "createdAt": -1 }
+      },
+      "classLevelPermissions": {
+        "find": {}, "get": {}, "create": {}, "update": {}, "delete": {}, "addField": {}
+      }
+    },
+    {
       "className": "AuditLog",
       "_comment": "سجل التدقيق. مقفل على Master Key ويُقرأ عبر getMosqueAuditTrail وحدها، فلا تُكشف هوية الفاعل.",
       "fields": {

@@ -146,3 +146,91 @@ test('طلبات ملكية المسجد', async (t) => {
     assert.equal(ok.length, 0);
   });
 });
+
+test('اهتمام المتطوّعين', async (t) => {
+  let api;
+  let imam;
+  let volunteer;
+  let mosque;
+  let openRequest;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    imam = api.asUser('user_imam', 'imam');
+    volunteer = api.make('_User', { role: 'volunteer', fullName: 'سالم', skills: ['كهرباء'], completedJobs: 3, avgRating: 4.5 });
+    mosque = api.make('Mosques', { name: 'مسجد الاختبار', isClaimed: true, imamId: imam });
+    openRequest = api.make('ServiceRequests',
+      { mosqueId: mosque, title: 'تصليح إنارة', estimatedCost: 0, status: 'open_for_volunteers' });
+  });
+
+  await t.test('المتطوّع يُسجّل اهتمامه بلا أن يُسند الطلب لنفسه', async () => {
+    const { ok } = await api.call('expressInterest',
+      { requestId: openRequest.id, note: 'أستطيع الجمعة' }, { user: volunteer });
+
+    assert.ok(ok.interestId);
+    assert.equal(openRequest.get('status'), 'open_for_volunteers',
+      'الاهتمام لا يُغيّر الحالة — الإمام هو من يعيّن');
+    assert.equal(openRequest.get('assignedVolunteerId'), undefined);
+    assert.equal(api.pushes.at(-1).users[0].id, imam.id, 'يجب إشعار الإمام');
+  });
+
+  await t.test('لا يُسجَّل اهتمامان لنفس المتطوّع', async () => {
+    await api.call('expressInterest', { requestId: openRequest.id }, { user: volunteer });
+    const again = await api.call('expressInterest', { requestId: openRequest.id }, { user: volunteer });
+
+    assert.equal(again.error.code, api.ParseError.DUPLICATE_VALUE);
+  });
+
+  await t.test('الطلب المموّل لا يستقبل اهتماماً', async () => {
+    const funded = api.make('ServiceRequests',
+      { mosqueId: mosque, title: 'ترميم', estimatedCost: 500, status: 'pending_funding' });
+
+    const { error } = await api.call('expressInterest', { requestId: funded.id }, { user: volunteer });
+    assert.equal(error.code, api.ParseError.VALIDATION_ERROR);
+  });
+
+  await t.test('الإمام يرى المهتمّين بمهاراتهم وتقييمهم لا بهواتفهم', async () => {
+    await api.call('expressInterest',
+      { requestId: openRequest.id, note: 'أستطيع الجمعة' }, { user: volunteer });
+
+    const { ok } = await api.call('getRequestInterests', { requestId: openRequest.id }, { user: imam });
+
+    assert.equal(ok.length, 1);
+    assert.equal(ok[0].fullName, 'سالم');
+    assert.deepEqual(ok[0].skills, ['كهرباء']);
+    assert.equal(ok[0].avgRating, 4.5);
+    assert.equal(ok[0].note, 'أستطيع الجمعة');
+    assert.equal(ok[0].phone, undefined, 'الهاتف لا يُكشف قبل التكليف');
+  });
+
+  await t.test('إمام مسجد آخر لا يرى المهتمّين', async () => {
+    await api.call('expressInterest', { requestId: openRequest.id }, { user: volunteer });
+    const stranger = api.asUser('other_imam', 'imam');
+
+    const { error } = await api.call('getRequestInterests',
+      { requestId: openRequest.id }, { user: stranger });
+
+    assert.ok(error, 'كُشفت قائمة مهتمّين لمسجد غير مسجّل باسمه');
+  });
+
+  await t.test('السحب يُخرج المتطوّع من القائمة', async () => {
+    await api.call('expressInterest', { requestId: openRequest.id }, { user: volunteer });
+    await api.call('withdrawInterest', { requestId: openRequest.id }, { user: volunteer });
+
+    const { ok } = await api.call('getRequestInterests', { requestId: openRequest.id }, { user: imam });
+    assert.equal(ok.length, 0);
+  });
+
+  await t.test('التكليف يُقفل الاهتمامات المعلّقة', async () => {
+    const other = api.make('_User', { role: 'volunteer', fullName: 'خالد' });
+
+    await api.call('expressInterest', { requestId: openRequest.id }, { user: volunteer });
+    await api.call('expressInterest', { requestId: openRequest.id }, { user: other });
+
+    await api.call('assignWorker',
+      { requestId: openRequest.id, workerId: volunteer.id }, { user: imam });
+
+    const remaining = api.store.TaskInterests.filter((i) => i.get('status') === 'active');
+    assert.equal(remaining.length, 0, 'من لم يُختَر يبقى معروضاً كأنه بالانتظار');
+  });
+});

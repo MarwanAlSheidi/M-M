@@ -196,6 +196,10 @@ function createMock() {
       extend: (className) => class extends MockObject {
         constructor() { super(className); }
       },
+      saveAll: async (objects) => {
+        for (const object of objects) await object.save();
+        return objects;
+      },
       destroyAll: async (objects) => {
         for (const object of objects) {
           const rows = store[object.className] || [];

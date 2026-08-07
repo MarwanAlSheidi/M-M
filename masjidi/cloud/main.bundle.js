@@ -277,6 +277,8 @@ const payments = { isConfigured, createCheckoutSession, verifySession };
 
 const ACTIONS = {
   REQUEST_CREATED: 'request_created',
+  INTEREST_EXPRESSED: 'interest_expressed',
+  INTEREST_WITHDRAWN: 'interest_withdrawn',
   WORKER_ASSIGNED: 'worker_assigned',
   WORK_STARTED: 'work_started',
   WORK_DONE: 'work_done',
@@ -657,6 +659,131 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
   return serviceRequest.toJSON();
 });
 
+const MAX_INTEREST_NOTE = 300;
+
+/**
+ * المتطوّع يُسجّل اهتمامه بطلب مفتوح.
+ *
+ * لا يُسند الطلب ولا يُغيّر حالته: الإمام يبقى صاحب القرار عبر `assignWorker`.
+ * بدون هذا المسار يرى المتطوّع الفرصة القريبة ولا يملك وسيلة للتعبير عنها
+ * أصلاً — وهي أكبر فجوة في مسار التطوّع العيني، وهو المسار القابل للإطلاق.
+ */
+Parse.Cloud.define('expressInterest', async (request) => {
+  const volunteer = requireRole(request, 'volunteer');
+  const { requestId, note } = request.params;
+  if (!requestId) E.invalid('معرّف الطلب مطلوب.');
+
+  const serviceRequest = await new Parse.Query('ServiceRequests')
+    .get(requestId, { useMasterKey: true })
+    .catch(() => E.notFound('الطلب غير موجود.'));
+
+  if (serviceRequest.get('status') !== STATUS.OPEN_FOR_VOLUNTEERS) {
+    E.invalid('هذا الطلب لا يستقبل المتطوّعين حالياً.');
+  }
+
+  const existing = await new Parse.Query('TaskInterests')
+    .equalTo('requestId', serviceRequest)
+    .equalTo('volunteerId', volunteer)
+    .equalTo('status', 'active')
+    .first({ useMasterKey: true });
+  if (existing) E.duplicate('سبق أن سجّلت اهتمامك بهذا الطلب.');
+
+  const Interest = Parse.Object.extend('TaskInterests');
+  const interest = new Interest();
+  interest.set('requestId', serviceRequest);
+  interest.set('volunteerId', volunteer);
+  interest.set('status', 'active');
+  interest.set('note', String(note || '').trim().slice(0, MAX_INTEREST_NOTE));
+  await interest.save(null, { useMasterKey: true });
+
+  const mosque = await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
+
+  await audit.record({
+    action: audit.ACTIONS.INTEREST_EXPRESSED,
+    target: interest,
+    mosque,
+    actor: volunteer,
+  });
+
+  const imam = mosque.get('imamId');
+  if (imam) {
+    await pushToUsers(imam, {
+      alert: `متطوّع مهتمّ بـ "${serviceRequest.get('title')}" — اختر المنفّذ من قائمة المهتمّين.`,
+      requestId: serviceRequest.id,
+    });
+  }
+
+  return { interestId: interest.id, message: 'سُجّل اهتمامك، والإمام يختار المنفّذ.' };
+});
+
+/** سحب الاهتمام قبل الاختيار. */
+Parse.Cloud.define('withdrawInterest', async (request) => {
+  const volunteer = requireRole(request, 'volunteer');
+  const { requestId } = request.params;
+  if (!requestId) E.invalid('معرّف الطلب مطلوب.');
+
+  const serviceRequest = new Parse.Object('ServiceRequests');
+  serviceRequest.id = requestId;
+
+  const interest = await new Parse.Query('TaskInterests')
+    .equalTo('requestId', serviceRequest)
+    .equalTo('volunteerId', volunteer)
+    .equalTo('status', 'active')
+    .first({ useMasterKey: true });
+  if (!interest) E.notFound('لا يوجد اهتمام مسجّل لك بهذا الطلب.');
+
+  interest.set('status', 'withdrawn');
+  await interest.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.INTEREST_WITHDRAWN,
+    target: interest,
+    actor: volunteer,
+  });
+
+  return { status: 'withdrawn' };
+});
+
+/**
+ * قائمة المهتمّين بطلب — للإمام صاحب المسجد وحده.
+ *
+ * تُعاد المهارات والتقييم ليختار الإمام عن بيّنة. لا يُعاد رقم الهاتف: التواصل
+ * يبدأ بعد التكليف عبر الإشعار، فلا داعي لكشفه لكل من سجّل اهتماماً.
+ */
+Parse.Cloud.define('getRequestInterests', async (request) => {
+  const imam = requireRole(request, 'imam');
+  const { requestId } = request.params;
+  if (!requestId) E.invalid('معرّف الطلب مطلوب.');
+
+  const serviceRequest = await new Parse.Query('ServiceRequests')
+    .get(requestId, { useMasterKey: true })
+    .catch(() => E.notFound('الطلب غير موجود.'));
+
+  await mosqueForImam(imam, serviceRequest.get('mosqueId').id);
+
+  const interests = await new Parse.Query('TaskInterests')
+    .equalTo('requestId', serviceRequest)
+    .equalTo('status', 'active')
+    .include('volunteerId')
+    .ascending('createdAt')
+    .limit(50)
+    .find({ useMasterKey: true });
+
+  return interests.map((interest) => {
+    const volunteer = interest.get('volunteerId');
+    return {
+      interestId: interest.id,
+      volunteerId: volunteer ? volunteer.id : null,
+      fullName: volunteer ? volunteer.get('fullName') : null,
+      skills: (volunteer && volunteer.get('skills')) || [],
+      completedJobs: (volunteer && volunteer.get('completedJobs')) || 0,
+      avgRating: volunteer ? volunteer.get('avgRating') : null,
+      note: interest.get('note'),
+      createdAt: interest.get('createdAt'),
+    };
+  });
+});
+
 /** تعيين منفّذ: متطوع أو شركة. الإمام هو من يعيّن. */
 Parse.Cloud.define('assignWorker', async (request) => {
   const imam = requireRole(request, 'imam');
@@ -703,6 +830,8 @@ Parse.Cloud.define('assignWorker', async (request) => {
     toStatus: STATUS.ASSIGNED,
   });
 
+  await closeInterests(serviceRequest);
+
   await pushToUsers(worker, {
     alert: `تم تكليفك بـ "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
     requestId: serviceRequest.id,
@@ -710,6 +839,21 @@ Parse.Cloud.define('assignWorker', async (request) => {
 
   return serviceRequest.toJSON();
 });
+
+/**
+ * إقفال الاهتمامات المعلّقة بعد اختيار المنفّذ.
+ * تركُها `active` يُبقي القائمة تعرض من لم يُختَر كأنه ما زال بالانتظار.
+ */
+async function closeInterests(serviceRequest) {
+  const open = await new Parse.Query('TaskInterests')
+    .equalTo('requestId', serviceRequest)
+    .equalTo('status', 'active')
+    .limit(100)
+    .find({ useMasterKey: true });
+
+  for (const interest of open) interest.set('status', 'closed');
+  if (open.length > 0) await Parse.Object.saveAll(open, { useMasterKey: true });
+}
 
 /** المنفّذ يبدأ العمل. */
 Parse.Cloud.define('startWork', async (request) => {
