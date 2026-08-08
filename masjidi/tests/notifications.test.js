@@ -26,7 +26,7 @@ test('صندوق الوارد', async (t) => {
   const openRequest = () => api.make('ServiceRequests',
     { mosqueId: mosque, title: 'تصليح إنارة', estimatedCost: 0, status: 'open_for_volunteers' });
 
-  const inbox = (user) => api.store.Notifications || [];
+  const inbox = () => api.store.Notifications || [];
 
   await t.test('الاهتمام يترك أثراً في وارد الإمام لا في الهواء', async () => {
     await api.call('expressInterest', { requestId: openRequest().id }, { user: volunteer });

@@ -10,7 +10,7 @@
  * `npm test` على جهاز لا يملكها.
  */
 
-const { execFileSync, spawn } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const net = require('node:net');
 const os = require('node:os');
@@ -81,7 +81,7 @@ function rootFallbackUser() {
   }
 }
 
-function makeRunner(binDir, asUser, dataRoot) {
+function makeRunner(binDir, asUser) {
   return (tool, args) => {
     const command = `${path.join(binDir, tool)} ${args.map((a) => `'${a}'`).join(' ')}`;
     if (asUser) {
@@ -106,7 +106,7 @@ async function startStack() {
   if (asUser) execFileSync('chown', ['-R', `${asUser}:${asUser}`, root]);
 
   const dataDir = path.join(root, 'data');
-  const run = makeRunner(binDir, asUser, root);
+  const run = makeRunner(binDir, asUser);
   const pgPort = await freePort();
 
   run('initdb', ['-D', dataDir, '-U', 'postgres', '--auth=trust', '-E', 'UTF8']);

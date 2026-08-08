@@ -1,0 +1,11 @@
+{
+  "root": true,
+  "env": { "node": true, "es2022": true },
+  "parserOptions": { "ecmaVersion": 2022, "sourceType": "script" },
+  "extends": "eslint:recommended",
+  "globals": { "Parse": "readonly" },
+  "ignorePatterns": ["cloud/main.bundle.js", "app/dist", "node_modules"],
+  "rules": {
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
+  }
+}

@@ -79,6 +79,10 @@ function useOnline() {
 export default function App() {
   const [user, setUser] = useState(api.currentUser());
   const [tab, setTab] = useState('home');
+  // ضغطة التبويب تُعيد التحميل ولو كان نشطاً أصلاً: الشاشات تجلب بياناتها عند
+  // الظهور مرّة واحدة، فمن فتح التطبيق قبل نشر طلبٍ يبقى يرى قائمةً فارغة بلا
+  // أي وسيلة لتحديثها. `key` متغيّر يُعيد تركيب الشاشة فتجلب من جديد.
+  const [visit, setVisit] = useState(0);
   const online = useOnline();
   const unread = useUnread(user ? tab : null);
 
@@ -119,12 +123,12 @@ export default function App() {
       )}
 
       <main>
-        <Screen onLogOut={signOut} />
+        <Screen key={`${active[0]}-${visit}`} onLogOut={signOut} />
       </main>
 
       <nav className="tabs">
         {tabs.map(([key, label]) => (
-          <button key={key} onClick={() => setTab(key)}
+          <button key={key} onClick={() => { setTab(key); setVisit((n) => n + 1); }}
             aria-current={active[0] === key ? 'page' : undefined}>
             {label}
             {key === 'alerts' && unread > 0 && (

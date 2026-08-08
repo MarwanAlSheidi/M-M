@@ -11,7 +11,8 @@
     "test": "node --test tests/*.test.js",
     "lint": "eslint cloud scripts tests --ext .js",
     "test:integration": "node --test tests/integration/*.test.js",
-    "seed:verify": "node scripts/seed_mosques.js --verify"
+    "seed:verify": "node scripts/seed_mosques.js --verify",
+    "test:e2e": "node --test --test-timeout=180000 tests/e2e/*.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -21,7 +22,8 @@
     "eslint": "^8.57.0",
     "express": "^4.21.2",
     "parse-server": "^9.10.0",
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "playwright": "^1.62.1"
   },
   "engines": {
     "node": ">=18"

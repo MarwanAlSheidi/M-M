@@ -1,5 +1,5 @@
 const E = require('../lib/errors');
-const { requireUser, requireRole, mosqueForImam, fetchPointer } = require('../lib/auth');
+const { requireRole, mosqueForImam, fetchPointer } = require('../lib/auth');
 const { pushToUsers, pushToNearbyVolunteers } = require('../lib/push');
 const audit = require('../lib/audit');
 

@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل محلياً على 400 مسجداً. ❌ لم يُشغّل على الاستيراد الكامل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسار التطوّع، القرب، خريطة جوجل (بمفتاح اختياري)، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 170 حالة على بديل Parse (`npm test`) + 34 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`). ❌ لا اختبار متصفّح آلي |
+| الاختبارات | ✅ 170 حالة على بديل Parse (`npm test`) + 34 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + رحلة كاملة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -86,7 +86,9 @@
 10. **`equalTo` على حقل مصفوفة غير محمول** — يعمل على MongoDB ويرمي على محوّل
     PostgreSQL. استخدم `containsAll`؛ تعبّر عن الشرط نفسه وتعمل على الاثنين.
 11. **لا تعديل على `data/mosques.json` يدوياً** — عدّل السكربت وأعد توليده.
-12. الكود بالإنجليزية، التعليقات ورسائل المستخدم بالعربية الفصحى.
+12. **الشاشة تجلب بياناتها عند تركيبها**، و`App.jsx` يُعيد تركيبها مع كل ضغطة
+    تبويب. فلا تحتفظ بحالةٍ في الشاشة تتوقّع بقاءها بين الضغطات.
+13. الكود بالإنجليزية، التعليقات ورسائل المستخدم بالعربية الفصحى.
 
 ### القيود المهمة
 
@@ -157,6 +159,9 @@ tests/
     search.test.js     البحث المفهرس على بيانات الوزارة — يرصد فروق المحوّل
     limits.test.js     الحدود وسحب التكليف
     inbox.test.js      صندوق الوارد بصفر Installation مسجَّل
+  e2e/                 متصفّح حقيقي فوق خادم حقيقي — `npm run test:e2e`
+    harness.js         يبني الواجهة على منفذ الاختبار، ويقدّمها، ويفتح Chromium
+    journey.test.js    الرحلة كاملة: التسجيل، الطلب، الاهتمام، السحب، التنبيهات
 data/
   mosques.json         18,214 سجلاً جاهزاً
   cleaning_report.json تقرير جودة البيانات
@@ -164,7 +169,7 @@ app/
   src/api.js           الطبقة الوحيدة التي تلمس Parse — بلا Master Key
   src/maps.js          تحميل خرائط جوجل عند الحاجة — والتطبيق يعمل بدونها
   src/screens.jsx      الشاشات
-  src/App.jsx          التبويبات حسب الدور ومؤشّر الاتصال
+  src/App.jsx          التبويبات حسب الدور، ومؤشّر الاتصال، وتحديث الشاشة بضغط تبويبها
   scripts/             توليد الأيقونات وفحص التثبيت — `npm run verify:pwa`
 docs/
   PROJECT_SPEC.md      المواصفات الأصلية
@@ -592,6 +597,54 @@ if (user.dirty('isVerifiedContractor')) {
 
 ---
 
+### 🟠 جولة ثالثة عشرة — ما كشفه أوّل متصفّح آليّ
+
+أُضيف `npm run test:e2e`: يُشغّل الخادم الحقيقي نفسه (بمِرقاة التكامل)، يبني
+الواجهة موجَّهةً إلى منفذه، يقدّمها من خادمٍ ساكن، ثم يقود Chromium خلال
+الرحلة كاملة — التسجيل، الطلب، الاهتمام، التكليف، السحب، إعادة التكليف،
+الإبلاغ، التنبيهات، الاعتماد، وانقطاع الاتصال.
+
+**وكشف في أوّل تشغيلٍ ما لا يراه خادمٌ ولا اختبارُ وحدة:**
+
+الشاشات تجلب بياناتها عند الظهور مرّة واحدة، **وضغط التبويب النشط لا يُعيد
+الجلب**. فمن فتح التطبيق قبل أن يُنشر طلبٌ يبقى يرى «لا توجد فرص مفتوحة الآن»
+إلى أن يُغلق التطبيق ويفتحه — ولا زرّ تحديث في أي شاشة.
+
+لم يظهر هذا في تحقّقي اليدوي السابق لأن ترتيب الخطوات هناك كان يُسجّل المتطوّع
+**بعد** نشر الطلب، فيجد القائمة محمّلةً من أوّل مرّة. الاختبار الآليّ سجّل
+الثلاثة أوّلاً — كما يقع في الواقع — فبان العطل.
+
+العلاج في `App.jsx`: مفتاحٌ متغيّر على الشاشة يزيد مع كل ضغطة تبويب، فتُعاد
+تركيبها وتجلب من جديد. وهو سلوك التطبيقات المعتاد: ضغطُ التبويب الذي أنت فيه
+يُحدّثه.
+
+**وما لا يُعدّ عطلاً:** أوّل تقرير أظهر «جارٍ تحديد موقعك…» عالقةً، فظننتها
+انتظاراً بلا مهلة. `currentPosition` لها مهلة عشر ثوانٍ أصلاً، والمصادفة أن
+مهلة المتصفّح في الاختبار كانت عشراً كذلك فالتُقطت الشاشة في اللحظة نفسها.
+رُفعت مهلة الاختبار فوقها حتى لا تصف اللقطةُ انتظاراً لم ينتهِ بعد.
+
+**التشخيص نفسه احتاج علاجاً:** «Timeout waiting for button» لا تقول شيئاً —
+أهي شاشة خطأ، أم قائمة فارغة، أم زرٌّ باسمٍ آخر؟ صار كل عطلٍ يُلحق بنصّه ما
+تعرضه الشاشة فعلاً، فبان السبب من أوّل قراءة.
+
+---
+
+### 🟡 `npm run lint` لم يعمل قطّ
+
+السكربت موجود في `package.json` منذ البداية، ولا ملفّ إعدادٍ لـESLint في
+المستودع. فكان يفشل بـ«ESLint couldn't find a configuration file» في كل مرّة —
+أي أن أحداً لم يشغّله، وأن من يقرأ `package.json` يظنّ الشيفرة مفحوصة.
+
+أُضيف `.eslintrc.json` بقواعد الأخطاء وحدها (`eslint:recommended`) لا الأسلوب:
+الغرض رصد الشيفرة الميتة والمتغيّر غير المعرَّف، لا فرض تنسيق. و`Parse` معرَّف
+عالمياً لأن الخادم يحقنه عند التحميل، و`main.bundle.js` مستثنى لأنه مولَّد.
+
+كشف أربع حالات شيفرةٍ ميتة، أُصلحت جميعاً: `requireUser` مستورَدة بلا استعمال
+في `requests.js`، و`spawn` ووسيط `dataRoot` في مِرقاة التكامل، ووسيطٌ زائد في
+اختبار الوارد.
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB.** `npm run test:integration`
@@ -613,11 +666,9 @@ if (user.dirty('isVerifiedContractor')) {
 - **التفرّد الحقيقي على `externalId` يبقى يدوياً.** مخطط Parse لا يعبّر عنه،
   فأضِف فهرساً فريداً من لوحة Back4app. حتى ذلك الحين الحماية كشفٌ بعد الوقوع
   (`seed_mosques.js --verify`) لا منعٌ قبله.
-- **لا اختبار متصفّح في المستودع.** الرحلة كاملة عبر واجهة حقيقية جُرّبت
-  بـPlaywright — التسجيل، الطلب، الاهتمام، التكليف، السحب، الصور، التنبيهات —
-  لكن السكربت بقي خارج المستودع: إضافته تعني اعتماد Playwright وتشغيل خادم
-  معاينة في الاختبار. `npm run verify:pwa` يغطّي التثبيت والعمل بلا إنترنت
-  وحدهما. **الواجهة تحت التحقّق اليدوي لا الآلي.**
+- **رفع الصور خارج تغطية المتصفّح.** `npm run test:e2e` يقود الرحلة كاملة،
+  لكن مسار `Parse.File` (اختيار صورة، رفعها، عرضها قبل الاعتماد) يحتاج ملفاً
+  حقيقياً وتخزيناً مهيّأً. يُغطّيه `validatePhotos` في اختبارات الوحدة وحده.
 - **الفهرسان المكانيّان (`geo`, `volunteer_geo`) لم يُطبَّقا محلياً** — يحتاجان
   MongoDB أو PostGIS. القرب يعمل بدونهما على `geo_box`، فهما تحسينٌ لا شرط.
 - **كلفة الاستيراد على باقة Back4app المجانية.** قِيس محلياً: SDK يجمع عشرين
@@ -1830,7 +1881,7 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
 
 ```javascript
 const E = require('../lib/errors');
-const { requireUser, requireRole, mosqueForImam, fetchPointer } = require('../lib/auth');
+const { requireRole, mosqueForImam, fetchPointer } = require('../lib/auth');
 const { pushToUsers, pushToNearbyVolunteers } = require('../lib/push');
 const audit = require('../lib/audit');
 
@@ -6709,7 +6760,8 @@ app/dist/
     "test": "node --test tests/*.test.js",
     "lint": "eslint cloud scripts tests --ext .js",
     "test:integration": "node --test tests/integration/*.test.js",
-    "seed:verify": "node scripts/seed_mosques.js --verify"
+    "seed:verify": "node scripts/seed_mosques.js --verify",
+    "test:e2e": "node --test --test-timeout=180000 tests/e2e/*.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -6719,7 +6771,8 @@ app/dist/
     "eslint": "^8.57.0",
     "express": "^4.21.2",
     "parse-server": "^9.10.0",
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "playwright": "^1.62.1"
   },
   "engines": {
     "node": ">=18"
@@ -8797,7 +8850,7 @@ test('نقاط الدخول', async (t) => {
  * `npm test` على جهاز لا يملكها.
  */
 
-const { execFileSync, spawn } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const net = require('node:net');
 const os = require('node:os');
@@ -8868,7 +8921,7 @@ function rootFallbackUser() {
   }
 }
 
-function makeRunner(binDir, asUser, dataRoot) {
+function makeRunner(binDir, asUser) {
   return (tool, args) => {
     const command = `${path.join(binDir, tool)} ${args.map((a) => `'${a}'`).join(' ')}`;
     if (asUser) {
@@ -8893,7 +8946,7 @@ async function startStack() {
   if (asUser) execFileSync('chown', ['-R', `${asUser}:${asUser}`, root]);
 
   const dataDir = path.join(root, 'data');
-  const run = makeRunner(binDir, asUser, root);
+  const run = makeRunner(binDir, asUser);
   const pgPort = await freePort();
 
   run('initdb', ['-D', dataDir, '-U', 'postgres', '--auth=trust', '-E', 'UTF8']);
