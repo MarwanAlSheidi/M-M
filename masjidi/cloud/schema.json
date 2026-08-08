@@ -176,6 +176,7 @@
         "companyName": { "type": "String" },
         "crNumber": { "type": "String" },
         "completedJobs": { "type": "Number", "defaultValue": 0 },
+        "abandonedJobs": { "type": "Number", "defaultValue": 0 },
         "avgRating": { "type": "Number" }
       },
       "indexes": {

@@ -21,6 +21,7 @@ const ACTIONS = {
   INTEREST_EXPRESSED: 'interest_expressed',
   INTEREST_WITHDRAWN: 'interest_withdrawn',
   WORKER_ASSIGNED: 'worker_assigned',
+  ASSIGNMENT_RELEASED: 'assignment_released',
   WORK_STARTED: 'work_started',
   WORK_DONE: 'work_done',
   REQUEST_COMPLETED: 'request_completed',

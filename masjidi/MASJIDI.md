@@ -56,11 +56,11 @@
 |---|---|
 | تنظيف بيانات المساجد | ✅ منجز — `scripts/clean_mosques.py` |
 | مخطط قاعدة البيانات | ✅ معرّف — `cloud/schema.json` |
-| دوال السحابة | ✅ مكتوبة، ❌ غير مُختبرة على خادم حقيقي |
-| سكربت الاستيراد | ✅ مكتوب، ❌ لم يُشغّل |
+| دوال السحابة | ✅ مكتوبة ومُشغَّلة على `parse-server` حقيقي فوق PostgreSQL. ❌ لم تُجرَّب على MongoDB (وهو ما يعمل عليه Back4app) |
+| سكربت الاستيراد | ✅ شُغّل محلياً على 400 مسجداً. ❌ لم يُشغّل على الاستيراد الكامل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسار التطوّع، القرب، خريطة جوجل (بمفتاح اختياري)، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 134 حالة على بديل Parse (`npm test`) + 7 اختبارات تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
+| الاختبارات | ✅ 149 حالة على بديل Parse (`npm test`) + 7 اختبارات تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
 
 ---
 
@@ -121,7 +121,7 @@ cloud/
     geo.js             القرب بصندوق إحاطة وهافرساين — بلا فهرس مكاني
   functions/
     mosques.js         البحث بالكلمات المفهرسة، القرب الجغرافي، طلب ملكية المسجد
-    requests.js        دورة حياة الطلب، واهتمام المتطوّعين
+    requests.js        دورة حياة الطلب، اهتمام المتطوّعين، سحب التكليف والحدود
     donations.js       التبرع، التأكيد، الصرف، السجل المالي، webhook البوابة
     users.js           اعتماد الشركات، الملف الشخصي، المسجد المفضّل
     maintenance.js     المهام الدورية — تقليم سجل التدقيق
@@ -135,7 +135,7 @@ tests/
   helpers/parse-mock.js بديل Parse مصغَّر — مخزن في الذاكرة، بلا خادم
   donations.test.js    المسار المالي: التأكيد والحجز
   triggers.test.js     حماية الأدوار وإقفال الحساب على صاحبه
-  requests.test.js     دورة حياة الطلب، الإلغاء، التقييم، الصرف
+  requests.test.js     دورة الطلب، الإلغاء، التقييم، الصرف، الحدود وسحب التكليف
   audit.test.js        سجل التدقيق والمهمة الدورية
   users.test.js        اعتماد الشركات، الاسترداد، البحث، الملف الشخصي
   schema.test.js       الصلاحيات، وتطابق النسختين المجزّأة والمدمجة
@@ -414,6 +414,49 @@ if (user.dirty('isVerifiedContractor')) {
 
 ---
 
+### 🟠 جولة تاسعة — التكليف طريقٌ بلا رجعة
+
+كان البند الأخير في «للأسئلة المفتوحة»: لا منطق لمنع سوء الاستخدام المتكرر.
+ثلاث فجوات متّصلة:
+
+**١. لا رجعة من `assigned`.** منفّذٌ لا يحضر يترك الطلب معلّقاً بلا أجل. ليس
+أمام الإمام إلا `cancelServiceRequest` — فيسقط سجلّ الطلب والحاجة قائمة، ثم
+يُنشئ طلباً جديداً يبدأ من الصفر بلا أثر لما جرى. والمنفّذ لا يُقيَّد عليه شيء
+فيكرّرها على مسجد آخر.
+
+`releaseAssignment` تُعيد الطلب إلى ما كان (`funded` إن كان بتكلفة،
+`open_for_volunteers` إن كان تطوّعاً عينياً)، وتُفرغ التكليف، وتُقيّد الغياب في
+`abandonedJobs`. القيد يُعرض للإمام في قائمة المهتمّين ولا يمنع الاختيار: الغياب
+مرّةً له أسبابه، والمنع الآلي يُقصي متطوّعاً بلا مراجعة.
+
+**تُفتح للطرفين قصداً.** المنفّذ يسحب عن نفسه بلا أن يُقيَّد عليه. إتاحة
+الانسحاب المُعلن وجعله بلا كلفة هو خير ما يُقلّل التغيّب — إغلاقه لا يجعل
+المتخلّف يحضر، بل يجعله يصمت. وبعد `startWork` لا سحب: للمنفّذ حينها جهدٌ مبذول
+وحقٌّ في المعاينة، وهو قيد `cancelServiceRequest` نفسه.
+
+والمسحوب منه لا يُعيد التسجيل في الطلب نفسه (اهتمامه يُوسم `released`)، وإلا
+دارت الحلقة: تكليف ثم غياب ثم تسجيل من جديد والإمام يرى اسمه كأن شيئاً لم يكن.
+اهتمامات الآخرين تبقى `closed` — الطلب عاد مفتوحاً فليسجّلوا إن شاؤوا، ولا
+يُحيا اهتمامٌ قد يكون صاحبه انصرف عنه.
+
+**٢. لا حدّ للاهتمامات.** الاهتمام لا يحجز الطلب، فمتطوّع واحد كان يسجّله في كل
+طلب مفتوح فيتصدّر قوائم الأئمة جميعاً وهو لا ينوي تنفيذ إلا واحد. الحدّ عشرة
+اهتمامات مفتوحة، والسحب يُفرّغ مكاناً.
+
+**٣. لا حدّ للتكليفات المتزامنة.** وهذا أخطر لأن التكليف يحجز فعلاً: عشرة مساجد
+تظنّ أن لها منفّذاً والمنفّذ واحد لا يسع إلا مسجداً. الحدّ ثلاثة أعمال في
+`assigned` أو `in_progress`؛ المنجَز والملغى لا يُحسبان.
+
+الأرقام (10 و3) تقديرية لا محسوبة — تُراجَع بعد أول موسم تشغيل حقيقي.
+
+**ما كشفه الخادم الحقيقي:** لا شيء في الكود — لكن سكربت التحقّق كان يمرّر
+حالتين زائفتين. `user.fetch({ useMasterKey: true })` على كائن الجلسة **يمسح
+رمزها منه**، فصارت الاستدعاءات التالية تفشل بـ«يجب تسجيل الدخول أولاً». ومساعد
+`fails()` كان يقبل أي خطأ، فعدّ انقطاع الجلسة نجاحاً للقيد المقصود. القاعدة:
+اختبارُ رفضٍ لا يتحقّق من سبب الرفض ليس اختباراً.
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB.** `npm run test:integration`
@@ -640,6 +683,7 @@ if (user.dirty('isVerifiedContractor')) {
         "companyName": { "type": "String" },
         "crNumber": { "type": "String" },
         "completedJobs": { "type": "Number", "defaultValue": 0 },
+        "abandonedJobs": { "type": "Number", "defaultValue": 0 },
         "avgRating": { "type": "Number" }
       },
       "indexes": {
@@ -1103,6 +1147,7 @@ const ACTIONS = {
   INTEREST_EXPRESSED: 'interest_expressed',
   INTEREST_WITHDRAWN: 'interest_withdrawn',
   WORKER_ASSIGNED: 'worker_assigned',
+  ASSIGNMENT_RELEASED: 'assignment_released',
   WORK_STARTED: 'work_started',
   WORK_DONE: 'work_done',
   REQUEST_COMPLETED: 'request_completed',
@@ -1598,6 +1643,22 @@ const STATUS = {
 
 const MAX_ESTIMATE_OMR = 5000;
 
+/**
+ * حدود تمنع إغراق المنصّة.
+ *
+ * الاهتمام لا يحجز الطلب، فمتطوّع واحد قد يسجّل اهتمامه بكل طلب مفتوح فيتصدّر
+ * قوائم الأئمة جميعاً وهو لا ينوي تنفيذ إلا واحد. والتكليف يحجز فعلاً: ثلاثة
+ * مساجد تظنّ أن لها منفّذاً والمنفّذ واحد لا يسع إلا مسجداً.
+ *
+ * الأرقام تقديرية لا محسوبة — تُراجَع بعد أول موسم تشغيل حقيقي.
+ */
+const MAX_ACTIVE_INTERESTS = 10;
+const MAX_ACTIVE_ASSIGNMENTS = 3;
+
+/** حقل التكليف بحسب الدور — المتطوّع والشركة لا يشتركان في حقل واحد. */
+const assignmentField = (role) =>
+  (role === 'contractor' ? 'assignedContractorId' : 'assignedVolunteerId');
+
 Parse.Cloud.define('createServiceRequest', async (request) => {
   const imam = requireRole(request, 'imam');
   const mosque = await mosqueForImam(imam, request.params.mosqueId);
@@ -1728,6 +1789,23 @@ Parse.Cloud.define('expressInterest', async (request) => {
     .first({ useMasterKey: true });
   if (existing) E.duplicate('سبق أن سجّلت اهتمامك بهذا الطلب.');
 
+  // سُحب منه هذا الطلب من قبل: بلا هذا الشرط يعيد التسجيل فوراً فتدور الحلقة
+  // تكليفٌ ثم غياب ثم تكليف، والإمام يرى اسمه في القائمة كأن شيئاً لم يكن.
+  const released = await new Parse.Query('TaskInterests')
+    .equalTo('requestId', serviceRequest)
+    .equalTo('volunteerId', volunteer)
+    .equalTo('status', 'released')
+    .first({ useMasterKey: true });
+  if (released) E.forbidden('سُحب منك هذا الطلب سابقاً، فلا يمكن التسجيل فيه من جديد.');
+
+  const active = await new Parse.Query('TaskInterests')
+    .equalTo('volunteerId', volunteer)
+    .equalTo('status', 'active')
+    .count({ useMasterKey: true });
+  if (active >= MAX_ACTIVE_INTERESTS) {
+    E.forbidden(`لديك ${active} اهتماماً مفتوحاً — اسحب بعضها قبل تسجيل اهتمام جديد.`);
+  }
+
   const Interest = Parse.Object.extend('TaskInterests');
   const interest = new Interest();
   interest.set('requestId', serviceRequest);
@@ -1844,6 +1922,9 @@ Parse.Cloud.define('getRequestInterests', async (request) => {
       fullName: volunteer ? volunteer.get('fullName') : null,
       skills: (volunteer && volunteer.get('skills')) || [],
       completedJobs: (volunteer && volunteer.get('completedJobs')) || 0,
+      // يُعرض ليختار الإمام عن بيّنة — لا يمنع الاختيار تلقائياً: الغياب مرّةً
+      // له أسبابه، والمنع الآلي يُقصي متطوّعاً بلا مراجعة
+      abandonedJobs: (volunteer && volunteer.get('abandonedJobs')) || 0,
       avgRating: volunteer ? volunteer.get('avgRating') : null,
       note: interest.get('note'),
       createdAt: interest.get('createdAt'),
@@ -1873,14 +1954,26 @@ Parse.Cloud.define('assignWorker', async (request) => {
     .catch(() => E.notFound('المستخدم غير موجود.'));
 
   const role = worker.get('role');
+  if (role !== 'volunteer' && role !== 'contractor') {
+    E.invalid('المستخدم ليس متطوعاً ولا شركة خدمات.');
+  }
+
+  // التكليف يحجز المنفّذ فعلياً — لا يُكلَّف بما لا يسع. يُحسب قبل أي `set`
+  // فلا يبقى الكائن في الذاكرة محمّلاً بتكليفٍ رُفض.
+  const openAssignments = await new Parse.Query('ServiceRequests')
+    .equalTo(assignmentField(role), worker)
+    .containedIn('status', [STATUS.ASSIGNED, STATUS.IN_PROGRESS])
+    .count({ useMasterKey: true });
+  if (openAssignments >= MAX_ACTIVE_ASSIGNMENTS) {
+    E.forbidden(`لدى هذا المنفّذ ${openAssignments} أعمال لم تُنجَز بعد — اختر غيره.`);
+  }
+
   if (role === 'volunteer') {
     if (serviceRequest.get('estimatedCost') > 0) E.invalid('الطلبات المموّلة تُسند إلى شركة معتمدة.');
     serviceRequest.set('assignedVolunteerId', worker);
-  } else if (role === 'contractor') {
+  } else {
     if (!worker.get('isVerifiedContractor')) E.forbidden('هذه الشركة غير معتمدة بعد.');
     serviceRequest.set('assignedContractorId', worker);
-  } else {
-    E.invalid('المستخدم ليس متطوعاً ولا شركة خدمات.');
   }
 
   const previousStatus = serviceRequest.get('status');
@@ -1921,6 +2014,98 @@ async function closeInterests(serviceRequest) {
   for (const interest of open) interest.set('status', 'closed');
   if (open.length > 0) await Parse.Object.saveAll(open, { useMasterKey: true });
 }
+
+/**
+ * سحب التكليف وإعادة الطلب إلى المتاح.
+ *
+ * كان التكليف طريقاً بلا رجعة: منفّذٌ لا يحضر يترك الطلب معلّقاً في `assigned`
+ * بلا أجل، وليس أمام الإمام إلا إلغاء الطلب كلّه — فيسقط سجلّه والحاجة قائمة،
+ * ثم يُنشئ طلباً جديداً يبدأ من الصفر. والمنفّذ لا يُقيَّد عليه شيء فيكرّرها.
+ *
+ * تُفتح للطرفين قصداً: الإمام حين لا يحضر المنفّذ، والمنفّذ حين يتبيّن له أنه
+ * لا يستطيع. جعل الانسحاب المُعلن متاحاً وبلا عقوبة هو خير ما يُقلّل التغيّب —
+ * إغلاقه لا يجعل المتخلّف يحضر، بل يجعله يصمت.
+ */
+Parse.Cloud.define('releaseAssignment', async (request) => {
+  const user = requireRole(request, 'imam', 'volunteer', 'contractor');
+  const { requestId, reason } = request.params;
+  if (!requestId) E.invalid('معرّف الطلب مطلوب.');
+
+  const serviceRequest = await new Parse.Query('ServiceRequests')
+    .get(requestId, { useMasterKey: true })
+    .catch(() => E.notFound('الطلب غير موجود.'));
+
+  // بعد `startWork` يصير للمنفّذ جهدٌ مبذول وحقٌّ في المعاينة — كقيد الإلغاء
+  if (serviceRequest.get('status') !== STATUS.ASSIGNED) {
+    E.invalid('لا يُسحب التكليف إلا قبل بدء التنفيذ.');
+  }
+
+  const pointer = serviceRequest.get('assignedVolunteerId')
+    || serviceRequest.get('assignedContractorId');
+  if (!pointer) E.invalid('لا يوجد منفّذ مكلَّف بهذا الطلب.');
+
+  const byImam = user.get('role') === 'imam';
+  const mosque = byImam
+    ? await mosqueForImam(user, serviceRequest.get('mosqueId').id)
+    : await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
+  if (!byImam && pointer.id !== user.id) E.forbidden('هذا الطلب غير مُسند إليك.');
+
+  // الغياب وحده يُقيَّد على المنفّذ؛ الانسحاب المُعلن لا يُعاقَب عليه
+  const noShow = byImam && reason === 'no_show';
+
+  // الرجوع إلى ما كان: طلبٌ بتكلفة مرّ بالتمويل، وطلب التطوّع العيني لا مال فيه
+  const backTo = (serviceRequest.get('estimatedCost') || 0) > 0
+    ? STATUS.FUNDED
+    : STATUS.OPEN_FOR_VOLUNTEERS;
+
+  serviceRequest.set('status', backTo);
+  serviceRequest.unset('assignedVolunteerId');
+  serviceRequest.unset('assignedContractorId');
+  serviceRequest.unset('assignedAt');
+  await serviceRequest.save(null, { useMasterKey: true });
+
+  const worker = await fetchPointer(pointer, '_User');
+  if (noShow) {
+    worker.increment('abandonedJobs', 1);
+    await worker.save(null, { useMasterKey: true });
+  }
+
+  // اهتمام هذا المنفّذ بالذات يُوسم `released` فلا يعود يسجّله على الطلب نفسه.
+  // اهتمامات الآخرين تبقى `closed` كما أقفلها التكليف: الطلب عاد مفتوحاً
+  // فليسجّلوا من جديد إن شاؤوا، ولا يُحيا اهتمامٌ قد يكون صاحبه انصرف عنه.
+  const interest = await new Parse.Query('TaskInterests')
+    .equalTo('requestId', serviceRequest)
+    .equalTo('volunteerId', pointer)
+    .first({ useMasterKey: true });
+  if (interest) {
+    interest.set('status', 'released');
+    await interest.save(null, { useMasterKey: true });
+  }
+
+  await audit.record({
+    action: audit.ACTIONS.ASSIGNMENT_RELEASED,
+    target: serviceRequest,
+    mosque,
+    actor: user,
+    fromStatus: STATUS.ASSIGNED,
+    toStatus: backTo,
+  });
+
+  // يُبلَّغ الطرف الآخر وحده: من طلب السحب يعلمه
+  if (byImam) {
+    await pushToUsers(worker, {
+      alert: `سُحب تكليفك بـ "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
+      requestId: serviceRequest.id,
+    });
+  } else if (mosque.get('imamId')) {
+    await pushToUsers(mosque.get('imamId'), {
+      alert: `اعتذر المنفّذ عن "${serviceRequest.get('title')}" — الطلب متاح من جديد.`,
+      requestId: serviceRequest.id,
+    });
+  }
+
+  return { status: backTo, noShowRecorded: noShow };
+});
 
 /** المنفّذ يبدأ العمل. */
 Parse.Cloud.define('startWork', async (request) => {
@@ -3140,6 +3325,7 @@ const ACTIONS = {
   INTEREST_EXPRESSED: 'interest_expressed',
   INTEREST_WITHDRAWN: 'interest_withdrawn',
   WORKER_ASSIGNED: 'worker_assigned',
+  ASSIGNMENT_RELEASED: 'assignment_released',
   WORK_STARTED: 'work_started',
   WORK_DONE: 'work_done',
   REQUEST_COMPLETED: 'request_completed',
@@ -3735,6 +3921,22 @@ const STATUS = {
 
 const MAX_ESTIMATE_OMR = 5000;
 
+/**
+ * حدود تمنع إغراق المنصّة.
+ *
+ * الاهتمام لا يحجز الطلب، فمتطوّع واحد قد يسجّل اهتمامه بكل طلب مفتوح فيتصدّر
+ * قوائم الأئمة جميعاً وهو لا ينوي تنفيذ إلا واحد. والتكليف يحجز فعلاً: ثلاثة
+ * مساجد تظنّ أن لها منفّذاً والمنفّذ واحد لا يسع إلا مسجداً.
+ *
+ * الأرقام تقديرية لا محسوبة — تُراجَع بعد أول موسم تشغيل حقيقي.
+ */
+const MAX_ACTIVE_INTERESTS = 10;
+const MAX_ACTIVE_ASSIGNMENTS = 3;
+
+/** حقل التكليف بحسب الدور — المتطوّع والشركة لا يشتركان في حقل واحد. */
+const assignmentField = (role) =>
+  (role === 'contractor' ? 'assignedContractorId' : 'assignedVolunteerId');
+
 Parse.Cloud.define('createServiceRequest', async (request) => {
   const imam = requireRole(request, 'imam');
   const mosque = await mosqueForImam(imam, request.params.mosqueId);
@@ -3865,6 +4067,23 @@ Parse.Cloud.define('expressInterest', async (request) => {
     .first({ useMasterKey: true });
   if (existing) E.duplicate('سبق أن سجّلت اهتمامك بهذا الطلب.');
 
+  // سُحب منه هذا الطلب من قبل: بلا هذا الشرط يعيد التسجيل فوراً فتدور الحلقة
+  // تكليفٌ ثم غياب ثم تكليف، والإمام يرى اسمه في القائمة كأن شيئاً لم يكن.
+  const released = await new Parse.Query('TaskInterests')
+    .equalTo('requestId', serviceRequest)
+    .equalTo('volunteerId', volunteer)
+    .equalTo('status', 'released')
+    .first({ useMasterKey: true });
+  if (released) E.forbidden('سُحب منك هذا الطلب سابقاً، فلا يمكن التسجيل فيه من جديد.');
+
+  const active = await new Parse.Query('TaskInterests')
+    .equalTo('volunteerId', volunteer)
+    .equalTo('status', 'active')
+    .count({ useMasterKey: true });
+  if (active >= MAX_ACTIVE_INTERESTS) {
+    E.forbidden(`لديك ${active} اهتماماً مفتوحاً — اسحب بعضها قبل تسجيل اهتمام جديد.`);
+  }
+
   const Interest = Parse.Object.extend('TaskInterests');
   const interest = new Interest();
   interest.set('requestId', serviceRequest);
@@ -3981,6 +4200,9 @@ Parse.Cloud.define('getRequestInterests', async (request) => {
       fullName: volunteer ? volunteer.get('fullName') : null,
       skills: (volunteer && volunteer.get('skills')) || [],
       completedJobs: (volunteer && volunteer.get('completedJobs')) || 0,
+      // يُعرض ليختار الإمام عن بيّنة — لا يمنع الاختيار تلقائياً: الغياب مرّةً
+      // له أسبابه، والمنع الآلي يُقصي متطوّعاً بلا مراجعة
+      abandonedJobs: (volunteer && volunteer.get('abandonedJobs')) || 0,
       avgRating: volunteer ? volunteer.get('avgRating') : null,
       note: interest.get('note'),
       createdAt: interest.get('createdAt'),
@@ -4010,14 +4232,26 @@ Parse.Cloud.define('assignWorker', async (request) => {
     .catch(() => E.notFound('المستخدم غير موجود.'));
 
   const role = worker.get('role');
+  if (role !== 'volunteer' && role !== 'contractor') {
+    E.invalid('المستخدم ليس متطوعاً ولا شركة خدمات.');
+  }
+
+  // التكليف يحجز المنفّذ فعلياً — لا يُكلَّف بما لا يسع. يُحسب قبل أي `set`
+  // فلا يبقى الكائن في الذاكرة محمّلاً بتكليفٍ رُفض.
+  const openAssignments = await new Parse.Query('ServiceRequests')
+    .equalTo(assignmentField(role), worker)
+    .containedIn('status', [STATUS.ASSIGNED, STATUS.IN_PROGRESS])
+    .count({ useMasterKey: true });
+  if (openAssignments >= MAX_ACTIVE_ASSIGNMENTS) {
+    E.forbidden(`لدى هذا المنفّذ ${openAssignments} أعمال لم تُنجَز بعد — اختر غيره.`);
+  }
+
   if (role === 'volunteer') {
     if (serviceRequest.get('estimatedCost') > 0) E.invalid('الطلبات المموّلة تُسند إلى شركة معتمدة.');
     serviceRequest.set('assignedVolunteerId', worker);
-  } else if (role === 'contractor') {
+  } else {
     if (!worker.get('isVerifiedContractor')) E.forbidden('هذه الشركة غير معتمدة بعد.');
     serviceRequest.set('assignedContractorId', worker);
-  } else {
-    E.invalid('المستخدم ليس متطوعاً ولا شركة خدمات.');
   }
 
   const previousStatus = serviceRequest.get('status');
@@ -4058,6 +4292,98 @@ async function closeInterests(serviceRequest) {
   for (const interest of open) interest.set('status', 'closed');
   if (open.length > 0) await Parse.Object.saveAll(open, { useMasterKey: true });
 }
+
+/**
+ * سحب التكليف وإعادة الطلب إلى المتاح.
+ *
+ * كان التكليف طريقاً بلا رجعة: منفّذٌ لا يحضر يترك الطلب معلّقاً في `assigned`
+ * بلا أجل، وليس أمام الإمام إلا إلغاء الطلب كلّه — فيسقط سجلّه والحاجة قائمة،
+ * ثم يُنشئ طلباً جديداً يبدأ من الصفر. والمنفّذ لا يُقيَّد عليه شيء فيكرّرها.
+ *
+ * تُفتح للطرفين قصداً: الإمام حين لا يحضر المنفّذ، والمنفّذ حين يتبيّن له أنه
+ * لا يستطيع. جعل الانسحاب المُعلن متاحاً وبلا عقوبة هو خير ما يُقلّل التغيّب —
+ * إغلاقه لا يجعل المتخلّف يحضر، بل يجعله يصمت.
+ */
+Parse.Cloud.define('releaseAssignment', async (request) => {
+  const user = requireRole(request, 'imam', 'volunteer', 'contractor');
+  const { requestId, reason } = request.params;
+  if (!requestId) E.invalid('معرّف الطلب مطلوب.');
+
+  const serviceRequest = await new Parse.Query('ServiceRequests')
+    .get(requestId, { useMasterKey: true })
+    .catch(() => E.notFound('الطلب غير موجود.'));
+
+  // بعد `startWork` يصير للمنفّذ جهدٌ مبذول وحقٌّ في المعاينة — كقيد الإلغاء
+  if (serviceRequest.get('status') !== STATUS.ASSIGNED) {
+    E.invalid('لا يُسحب التكليف إلا قبل بدء التنفيذ.');
+  }
+
+  const pointer = serviceRequest.get('assignedVolunteerId')
+    || serviceRequest.get('assignedContractorId');
+  if (!pointer) E.invalid('لا يوجد منفّذ مكلَّف بهذا الطلب.');
+
+  const byImam = user.get('role') === 'imam';
+  const mosque = byImam
+    ? await mosqueForImam(user, serviceRequest.get('mosqueId').id)
+    : await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
+  if (!byImam && pointer.id !== user.id) E.forbidden('هذا الطلب غير مُسند إليك.');
+
+  // الغياب وحده يُقيَّد على المنفّذ؛ الانسحاب المُعلن لا يُعاقَب عليه
+  const noShow = byImam && reason === 'no_show';
+
+  // الرجوع إلى ما كان: طلبٌ بتكلفة مرّ بالتمويل، وطلب التطوّع العيني لا مال فيه
+  const backTo = (serviceRequest.get('estimatedCost') || 0) > 0
+    ? STATUS.FUNDED
+    : STATUS.OPEN_FOR_VOLUNTEERS;
+
+  serviceRequest.set('status', backTo);
+  serviceRequest.unset('assignedVolunteerId');
+  serviceRequest.unset('assignedContractorId');
+  serviceRequest.unset('assignedAt');
+  await serviceRequest.save(null, { useMasterKey: true });
+
+  const worker = await fetchPointer(pointer, '_User');
+  if (noShow) {
+    worker.increment('abandonedJobs', 1);
+    await worker.save(null, { useMasterKey: true });
+  }
+
+  // اهتمام هذا المنفّذ بالذات يُوسم `released` فلا يعود يسجّله على الطلب نفسه.
+  // اهتمامات الآخرين تبقى `closed` كما أقفلها التكليف: الطلب عاد مفتوحاً
+  // فليسجّلوا من جديد إن شاؤوا، ولا يُحيا اهتمامٌ قد يكون صاحبه انصرف عنه.
+  const interest = await new Parse.Query('TaskInterests')
+    .equalTo('requestId', serviceRequest)
+    .equalTo('volunteerId', pointer)
+    .first({ useMasterKey: true });
+  if (interest) {
+    interest.set('status', 'released');
+    await interest.save(null, { useMasterKey: true });
+  }
+
+  await audit.record({
+    action: audit.ACTIONS.ASSIGNMENT_RELEASED,
+    target: serviceRequest,
+    mosque,
+    actor: user,
+    fromStatus: STATUS.ASSIGNED,
+    toStatus: backTo,
+  });
+
+  // يُبلَّغ الطرف الآخر وحده: من طلب السحب يعلمه
+  if (byImam) {
+    await pushToUsers(worker, {
+      alert: `سُحب تكليفك بـ "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
+      requestId: serviceRequest.id,
+    });
+  } else if (mosque.get('imamId')) {
+    await pushToUsers(mosque.get('imamId'), {
+      alert: `اعتذر المنفّذ عن "${serviceRequest.get('title')}" — الطلب متاح من جديد.`,
+      requestId: serviceRequest.id,
+    });
+  }
+
+  return { status: backTo, noShowRecorded: noShow };
+});
 
 /** المنفّذ يبدأ العمل. */
 Parse.Cloud.define('startWork', async (request) => {
@@ -6986,6 +7312,198 @@ test('مساجد الإمام', async (t) => {
     assert.equal(ok.length, 0);
   });
 });
+
+/**
+ * منع سوء الاستخدام: الحدود، وسحب التكليف.
+ *
+ * كان التكليف طريقاً بلا رجعة ولا حدّ لعدده — البند المفتوح الأخير في
+ * `CLAUDE.md`: «لا يوجد منطق لمنع سوء الاستخدام المتكرر».
+ */
+test('حدود المنصّة وسحب التكليف', async (t) => {
+  let api;
+  let imam;
+  let volunteer;
+  let mosque;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    imam = api.asUser('user_imam', 'imam');
+    volunteer = api.make('_User', { role: 'volunteer', fullName: 'سالم' });
+    mosque = api.make('Mosques', { name: 'مسجد الاختبار', isClaimed: true, imamId: imam });
+  });
+
+  const openRequest = (extra = {}) => api.make('ServiceRequests',
+    { mosqueId: mosque, title: 'تصليح إنارة', estimatedCost: 0, status: 'open_for_volunteers', ...extra });
+
+  const assignedTo = (worker, extra = {}) => api.make('ServiceRequests',
+    { mosqueId: mosque, title: 'عمل مكلَّف', estimatedCost: 0, status: 'assigned',
+      assignedVolunteerId: worker, ...extra });
+
+  await t.test('الاهتمامات المفتوحة محدودة', async () => {
+    for (let i = 0; i < 10; i += 1) {
+      const { error } = await api.call('expressInterest',
+        { requestId: openRequest().id }, { user: volunteer });
+      assert.equal(error, undefined, `رُفض الاهتمام رقم ${i + 1} قبل بلوغ الحدّ`);
+    }
+
+    const { error } = await api.call('expressInterest',
+      { requestId: openRequest().id }, { user: volunteer });
+
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN,
+      'متطوّع واحد كان يتصدّر قوائم كل الأئمة بلا حدّ');
+  });
+
+  await t.test('السحب يُفرّغ مكاناً لاهتمام جديد', async () => {
+    const first = openRequest();
+    for (let i = 0; i < 9; i += 1) {
+      await api.call('expressInterest', { requestId: openRequest().id }, { user: volunteer });
+    }
+    await api.call('expressInterest', { requestId: first.id }, { user: volunteer });
+    await api.call('withdrawInterest', { requestId: first.id }, { user: volunteer });
+
+    const { error } = await api.call('expressInterest',
+      { requestId: openRequest().id }, { user: volunteer });
+    assert.equal(error, undefined, 'المسحوب ما زال محسوباً على الحدّ');
+  });
+
+  await t.test('لا يُكلَّف من عنده ثلاثة أعمال لم تُنجَز', async () => {
+    assignedTo(volunteer);
+    assignedTo(volunteer);
+    assignedTo(volunteer, { status: 'in_progress' });
+
+    const { error } = await api.call('assignWorker',
+      { requestId: openRequest().id, workerId: volunteer.id }, { user: imam });
+
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN,
+      'ثلاثة مساجد تظنّ أن لها منفّذاً والمنفّذ واحد');
+  });
+
+  await t.test('العمل المنجَز لا يُحسب على الحدّ', async () => {
+    assignedTo(volunteer, { status: 'completed' });
+    assignedTo(volunteer, { status: 'completed' });
+    assignedTo(volunteer, { status: 'cancelled' });
+
+    const { error } = await api.call('assignWorker',
+      { requestId: openRequest().id, workerId: volunteer.id }, { user: imam });
+
+    assert.equal(error, undefined, 'المنجَز أُحصي كأنه معلّق فأُقصي منفّذ نشط');
+  });
+
+  await t.test('الإمام يسحب التكليف فيعود الطلب إلى المتاح', async () => {
+    const serviceRequest = assignedTo(volunteer);
+
+    const { ok } = await api.call('releaseAssignment',
+      { requestId: serviceRequest.id, reason: 'no_show' }, { user: imam });
+
+    assert.equal(ok.status, 'open_for_volunteers');
+    assert.equal(serviceRequest.get('assignedVolunteerId'), undefined,
+      'بقاء التكليف يمنع تعيين غيره');
+    assert.equal(api.pushes.at(-1).users[0].id, volunteer.id, 'المنفّذ يجب أن يعلم');
+  });
+
+  await t.test('الطلب المموّل يعود إلى `funded` لا إلى التطوّع', async () => {
+    const contractor = api.make('_User',
+      { role: 'contractor', isVerifiedContractor: true, fullName: 'شركة' });
+    const serviceRequest = api.make('ServiceRequests',
+      { mosqueId: mosque, title: 'ترميم', estimatedCost: 500, fundedAmount: 500,
+        status: 'assigned', assignedContractorId: contractor });
+
+    const { ok } = await api.call('releaseAssignment',
+      { requestId: serviceRequest.id }, { user: imam });
+
+    assert.equal(ok.status, 'funded',
+      'طلبٌ مموّل عاد إلى التطوّع العيني فيُنفَّذ بلا مقابل رغم أن ماله محصَّل');
+  });
+
+  await t.test('الغياب يُقيَّد على المنفّذ والانسحاب لا يُقيَّد', async () => {
+    await api.call('releaseAssignment',
+      { requestId: assignedTo(volunteer).id, reason: 'no_show' }, { user: imam });
+    assert.equal(volunteer.get('abandonedJobs'), 1);
+
+    await api.call('releaseAssignment',
+      { requestId: assignedTo(volunteer).id }, { user: volunteer });
+    assert.equal(volunteer.get('abandonedJobs'), 1,
+      'الانسحاب المُعلن عوقب كالتغيّب، فلا يبقى للمنفّذ إلا الصمت');
+  });
+
+  await t.test('المنفّذ ينسحب بنفسه فيُشعَر الإمام', async () => {
+    const serviceRequest = assignedTo(volunteer);
+
+    const { ok } = await api.call('releaseAssignment',
+      { requestId: serviceRequest.id }, { user: volunteer });
+
+    assert.equal(ok.status, 'open_for_volunteers');
+    assert.equal(api.pushes.at(-1).users[0].id, imam.id);
+  });
+
+  await t.test('لا ينسحب من ليس مكلَّفاً', async () => {
+    const other = api.make('_User', { role: 'volunteer', fullName: 'خالد' });
+
+    const { error } = await api.call('releaseAssignment',
+      { requestId: assignedTo(volunteer).id }, { user: other });
+
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
+  });
+
+  await t.test('لا يُسحب التكليف بعد بدء التنفيذ', async () => {
+    for (const status of ['in_progress', 'pending_imam_approval', 'completed']) {
+      const { error } = await api.call('releaseAssignment',
+        { requestId: assignedTo(volunteer, { status }).id, reason: 'no_show' }, { user: imam });
+
+      assert.equal(error.code, api.ParseError.VALIDATION_ERROR,
+        `سُحب التكليف من حالة ${status} فضاع جهد المنفّذ وحقّه في المعاينة`);
+    }
+  });
+
+  await t.test('المسحوب منه لا يُعيد التسجيل في الطلب نفسه', async () => {
+    const serviceRequest = openRequest();
+    await api.call('expressInterest', { requestId: serviceRequest.id }, { user: volunteer });
+    await api.call('assignWorker',
+      { requestId: serviceRequest.id, workerId: volunteer.id }, { user: imam });
+    await api.call('releaseAssignment',
+      { requestId: serviceRequest.id, reason: 'no_show' }, { user: imam });
+
+    const { error } = await api.call('expressInterest',
+      { requestId: serviceRequest.id }, { user: volunteer });
+
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN,
+      'تدور الحلقة: تكليف ثم غياب ثم تسجيل من جديد');
+  });
+
+  await t.test('غير المسحوب منهم يسجّلون في الطلب العائد', async () => {
+    const serviceRequest = openRequest();
+    const other = api.make('_User', { role: 'volunteer', fullName: 'خالد' });
+    await api.call('expressInterest', { requestId: serviceRequest.id }, { user: other });
+    await api.call('assignWorker',
+      { requestId: serviceRequest.id, workerId: volunteer.id }, { user: imam });
+    await api.call('releaseAssignment',
+      { requestId: serviceRequest.id, reason: 'no_show' }, { user: imam });
+
+    const { error } = await api.call('expressInterest',
+      { requestId: serviceRequest.id }, { user: other });
+    assert.equal(error, undefined, 'أُقصي من لم يُسحب منه شيء');
+  });
+
+  await t.test('الإمام يرى مرّات التغيّب قبل أن يختار', async () => {
+    volunteer.set('abandonedJobs', 2);
+    const serviceRequest = openRequest();
+    await api.call('expressInterest', { requestId: serviceRequest.id }, { user: volunteer });
+
+    const { ok } = await api.call('getRequestInterests',
+      { requestId: serviceRequest.id }, { user: imam });
+
+    assert.equal(ok[0].abandonedJobs, 2, 'الإمام يختار بلا أن يعلم بتغيّبه السابق');
+  });
+
+  await t.test('إمام مسجد آخر لا يسحب تكليفاً ليس له', async () => {
+    const stranger = api.asUser('other_imam', 'imam');
+
+    const { error } = await api.call('releaseAssignment',
+      { requestId: assignedTo(volunteer).id, reason: 'no_show' }, { user: stranger });
+
+    assert.ok(error, 'سُحب تكليف من مسجد غير مسجّل باسمه');
+  });
+});
 ```
 
 #### `tests/audit.test.js` — سجل التدقيق والمهمة الدورية
@@ -7751,7 +8269,8 @@ test('نقاط الدخول', async (t) => {
   const EXPECTED_FUNCTIONS = [
     'getNearbyMosques', 'getNearbyOpportunities', 'updateMyLocation', 'searchMosques', 'claimMosque', 'getMyMosques', 'getMyClaims', 'listPendingClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'expressInterest', 'withdrawInterest',
-    'getRequestInterests', 'getMyInterests', 'assignWorker', 'startWork', 'markWorkDone',
+    'getRequestInterests', 'getMyInterests', 'assignWorker', 'releaseAssignment',
+    'startWork', 'markWorkDone',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
     'confirmDonation', 'paymentWebhook', 'payoutContractor', 'refundDonation',
     'getMosqueLedger', 'listPendingContractors', 'reviewContractor',

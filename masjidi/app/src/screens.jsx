@@ -520,7 +520,13 @@ export function MyVolunteering() {
               </div>
               <p>{row.mosqueName}</p>
               {row.status === 'assigned' && (
-                <button onClick={() => act(api.startWork, row.id)}>بدأت العمل</button>
+                <div className="row">
+                  <button onClick={() => act(api.startWork, row.id)}>بدأت العمل</button>
+                  {/* الاعتذار قبل الموعد خيرٌ من التغيّب عنه، ولا يُقيَّد على المنفّذ */}
+                  <button className="ghost" onClick={() => act(api.releaseAssignment, row.id)}>
+                    أعتذر — أعيدوه لغيري
+                  </button>
+                </div>
               )}
               {row.status === 'in_progress' && (
                 <ReportWork request={row} onDone={() => { tasks.refresh(); interests.refresh(); }} />
@@ -748,6 +754,9 @@ function RequestDetail({ request, onBack }) {
                   </div>
                   <p>مهارات: {row.skills.length ? row.skills.join('، ') : 'غير محدّدة'}</p>
                   <p>أعمال منجزة: {row.completedJobs}</p>
+                  {row.abandonedJobs > 0 && (
+                    <p className="warn">تغيّب عن {row.abandonedJobs} تكليفاً سابقاً.</p>
+                  )}
                   {row.note && <p>«{row.note}»</p>}
                   <button onClick={() => act(api.assignWorker, request.id, row.volunteerId)}>
                     كلّفه بالعمل
@@ -758,6 +767,19 @@ function RequestDetail({ request, onBack }) {
           </Listing>
           <button className="danger" onClick={() => act(api.cancelServiceRequest, request.id)}>
             إلغاء الطلب
+          </button>
+        </>
+      )}
+
+      {status === 'assigned' && (
+        <>
+          <h2>بانتظار المنفّذ</h2>
+          <p className="notice">
+            كُلِّف المنفّذ ولمّا يبدأ بعد. إن لم يحضر فاسحب التكليف ليعود الطلب
+            متاحاً لغيره — لا حاجة إلى إلغائه وإنشاء طلب جديد.
+          </p>
+          <button className="danger" onClick={() => act(api.releaseAssignment, request.id, 'no_show')}>
+            سحب التكليف — لم يحضر
           </button>
         </>
       )}

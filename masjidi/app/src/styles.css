@@ -67,6 +67,9 @@ h2:first-child { margin-top: 0; }
 .tag.off { background: #eee; color: #666; }
 .tag.dist { background: #eef3fb; color: #24457a; }
 
+/* إشارة تُنبّه الإمام قبل الاختيار بلا أن تُقصي المتطوّع — القرار له */
+p.warn { color: #7a5200; font-size: 13px; }
+
 .report { border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 6px; }
 .report input[type='file'] { border: 0; padding: 6px 0; }
 .hint { color: var(--muted); font-size: 13px; margin: 6px 0; }
