@@ -181,6 +181,7 @@ export const mapsLink = (lat, lng, label) =>
 export const listPendingContractors = () => run('listPendingContractors');
 export const reviewContractor = (contractorId, approve) =>
   run('reviewContractor', { contractorId, approve });
+export const listPendingClaims = () => run('listPendingClaims');
 export const reviewMosqueClaim = (claimId, approve) =>
   run('reviewMosqueClaim', { claimId, approve });
 

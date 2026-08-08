@@ -45,7 +45,7 @@
 
 منصة تربط أئمة المساجد في سلطنة عُمان بالمتطوعين والشركات المعتمدة والمتبرعين،
 لإدارة أعمال صيانة المساجد بشفافية. Backend على Parse Server (Back4app)،
-والتطبيق العميل React Native (لم يُبدأ بعد).
+والتطبيق العميل واجهة ويب عربية في `app/` (React + Vite، تعمل بلا إنترنت).
 
 قاعدة البيانات الأولية: **18,214 مسجداً** من البيانات المفتوحة لوزارة الأوقاف
 والشؤون الدينية (2025–2026)، منظّفة وجاهزة في `data/mosques.json`.
@@ -59,8 +59,8 @@
 | دوال السحابة | ✅ مكتوبة، ❌ غير مُختبرة على خادم حقيقي |
 | سكربت الاستيراد | ✅ مكتوب، ❌ لم يُشغّل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
-| تطبيق العميل | ⚠️ واجهة ويب عربية في `app/` تغطي مسار التطوّع والقرب وخريطة جوجل مضمّنة (بمفتاح اختياري) — لا React Native ولا PWA |
-| الاختبارات | ✅ 109 حالة على بديل Parse (`npm test`) + اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
+| تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسار التطوّع، القرب، خريطة جوجل (بمفتاح اختياري)، وPWA يعمل بلا إنترنت. ❌ لا React Native |
+| الاختبارات | ✅ 123 حالة على بديل Parse (`npm test`) + اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
 
 ---
 
@@ -145,7 +145,8 @@ app/
   src/api.js           الطبقة الوحيدة التي تلمس Parse — بلا Master Key
   src/maps.js          تحميل خرائط جوجل عند الحاجة — والتطبيق يعمل بدونها
   src/screens.jsx      الشاشات
-  src/App.jsx          التبويبات حسب الدور
+  src/App.jsx          التبويبات حسب الدور ومؤشّر الاتصال
+  scripts/             توليد الأيقونات وفحص التثبيت — `npm run verify:pwa`
 docs/
   PROJECT_SPEC.md      المواصفات الأصلية
   REVIEW.md            الأخطاء التي أُصلحت ولماذا — اقرأه قبل تعديل المنطق المالي
@@ -1404,6 +1405,39 @@ Parse.Cloud.define('getMyClaims', async (request) => {
       mosqueId: mosque ? mosque.id : null,
       mosqueName: mosque ? mosque.get('name') : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
+    };
+  });
+});
+
+/**
+ * طلبات الملكية المنتظرة — مشرف فقط.
+ *
+ * `MosqueClaims` مقفلة على Master Key، فلم يكن أمام المشرف إلا `reviewMosqueClaim`
+ * ومعه معرّف لا سبيل له إليه من التطبيق. انضمام كل إمام يتوقّف على هذه المراجعة.
+ */
+Parse.Cloud.define('listPendingClaims', async (request) => {
+  requireRole(request, 'admin');
+
+  const claims = await new Parse.Query('MosqueClaims')
+    .equalTo('status', 'pending')
+    .include('mosqueId')
+    .include('imamId')
+    .ascending('createdAt')
+    .limit(100)
+    .find({ useMasterKey: true });
+
+  return claims.map((claim) => {
+    const mosque = claim.get('mosqueId');
+    const imam = claim.get('imamId');
+    return {
+      id: claim.id,
+      evidenceNote: claim.get('evidenceNote'),
+      createdAt: claim.get('createdAt'),
+      mosqueName: mosque ? mosque.get('name') : null,
+      wilayat: mosque ? mosque.get('wilayat') : null,
+      governorate: mosque ? mosque.get('governorate') : null,
+      imamName: imam ? imam.get('fullName') : null,
+      imamPhone: imam ? imam.get('phone') : null, // المشرف يتحقّق بالاتصال
     };
   });
 });
@@ -3420,6 +3454,39 @@ Parse.Cloud.define('getMyClaims', async (request) => {
   });
 });
 
+/**
+ * طلبات الملكية المنتظرة — مشرف فقط.
+ *
+ * `MosqueClaims` مقفلة على Master Key، فلم يكن أمام المشرف إلا `reviewMosqueClaim`
+ * ومعه معرّف لا سبيل له إليه من التطبيق. انضمام كل إمام يتوقّف على هذه المراجعة.
+ */
+Parse.Cloud.define('listPendingClaims', async (request) => {
+  requireRole(request, 'admin');
+
+  const claims = await new Parse.Query('MosqueClaims')
+    .equalTo('status', 'pending')
+    .include('mosqueId')
+    .include('imamId')
+    .ascending('createdAt')
+    .limit(100)
+    .find({ useMasterKey: true });
+
+  return claims.map((claim) => {
+    const mosque = claim.get('mosqueId');
+    const imam = claim.get('imamId');
+    return {
+      id: claim.id,
+      evidenceNote: claim.get('evidenceNote'),
+      createdAt: claim.get('createdAt'),
+      mosqueName: mosque ? mosque.get('name') : null,
+      wilayat: mosque ? mosque.get('wilayat') : null,
+      governorate: mosque ? mosque.get('governorate') : null,
+      imamName: imam ? imam.get('fullName') : null,
+      imamPhone: imam ? imam.get('phone') : null, // المشرف يتحقّق بالاتصال
+    };
+  });
+});
+
 /** اعتماد أو رفض طلب الملكية (مشرف فقط). */
 Parse.Cloud.define('reviewMosqueClaim', async (request) => {
   const admin = requireRole(request, 'admin');
@@ -4703,6 +4770,7 @@ Parse.Cloud.define('health', async () => ({
 | `searchMosques` | الجميع | بحث نصّي مع تطبيع عربي |
 | `claimMosque` | imam | طلب ملكية مسجد |
 | `getMyClaims` | imam | حالة طلبات الملكية الخاصة به |
+| `listPendingClaims` | admin | طلبات الملكية المنتظرة مع بيانات الإمام |
 | `reviewMosqueClaim` | admin | اعتماد/رفض الطلب |
 | `createServiceRequest` | imam | إنشاء طلب صيانة |
 | `expressInterest` | volunteer | تسجيل الاهتمام بطلب مفتوح |
@@ -5584,6 +5652,7 @@ node_modules/
 data/*.xlsx
 logs/
 dist/
+app/dist/
 ```
 
 ### `package.json`
@@ -7164,6 +7233,49 @@ test('القرب الجغرافي', async (t) => {
     assert.deepEqual(notified, ['قريب'], 'أُشعر البعيد أيضاً');
   });
 });
+
+test('مراجعة طلبات الملكية', async (t) => {
+  let api;
+  let admin;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    admin = api.asUser('user_admin', 'admin');
+  });
+
+  const pendingClaim = () => {
+    const mosque = api.make('Mosques', { name: 'جامع الوادي', wilayat: 'نزوى', governorate: 'الداخلية' });
+    const imam = api.make('_User', { role: 'imam', fullName: 'الشيخ حمد', phone: '9911xxxx' });
+    return api.make('MosqueClaims',
+      { mosqueId: mosque, imamId: imam, status: 'pending', evidenceNote: 'إفادة' });
+  };
+
+  // بلا هذه الدالة لم يكن أمام المشرف إلا معرّف طلب لا سبيل له إليه من التطبيق
+  await t.test('المشرف يرى الطلبات المنتظرة ببيانات الإمام', async () => {
+    pendingClaim();
+
+    const { ok } = await api.call('listPendingClaims', {}, { user: admin });
+
+    assert.equal(ok.length, 1);
+    assert.equal(ok[0].mosqueName, 'جامع الوادي');
+    assert.equal(ok[0].imamName, 'الشيخ حمد');
+    assert.equal(ok[0].imamPhone, '9911xxxx', 'المشرف يتحقّق بالاتصال');
+  });
+
+  await t.test('المُراجَع لا يظهر في المنتظرة', async () => {
+    const claim = pendingClaim();
+    await api.call('reviewMosqueClaim', { claimId: claim.id, approve: true }, { user: admin });
+
+    const { ok } = await api.call('listPendingClaims', {}, { user: admin });
+    assert.equal(ok.length, 0);
+  });
+
+  await t.test('الإمام لا يرى طلبات غيره من هنا', async () => {
+    pendingClaim();
+    const { error } = await api.call('listPendingClaims', {}, { user: api.asUser('u', 'imam') });
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
+  });
+});
 ```
 
 #### `tests/schema.test.js` — الصلاحيات وتطابق النسختين
@@ -7242,7 +7354,7 @@ test('المخطط', async (t) => {
 
 test('نقاط الدخول', async (t) => {
   const EXPECTED_FUNCTIONS = [
-    'getNearbyMosques', 'getNearbyOpportunities', 'updateMyLocation', 'searchMosques', 'claimMosque', 'getMyClaims', 'reviewMosqueClaim',
+    'getNearbyMosques', 'getNearbyOpportunities', 'updateMyLocation', 'searchMosques', 'claimMosque', 'getMyClaims', 'listPendingClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'expressInterest', 'withdrawInterest',
     'getRequestInterests', 'getMyInterests', 'assignWorker', 'startWork', 'markWorkDone',
     'completeService', 'cancelServiceRequest', 'initiateDonation',

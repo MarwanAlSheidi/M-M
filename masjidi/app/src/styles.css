@@ -67,6 +67,15 @@ h2:first-child { margin-top: 0; }
 .tag.off { background: #eee; color: #666; }
 .tag.dist { background: #eef3fb; color: #24457a; }
 
+.offline {
+  background: #fdf0d5;
+  color: #7a5200;
+  border-bottom: 1px solid #efd9a8;
+  padding: 8px 18px;
+  font-size: 14px;
+  text-align: center;
+}
+
 .mapwrap { margin-bottom: 12px; }
 .mapviews { margin-bottom: 8px; }
 .mapviews button { padding: 6px 14px; font-size: 13px; }

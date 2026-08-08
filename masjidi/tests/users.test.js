@@ -321,3 +321,46 @@ test('القرب الجغرافي', async (t) => {
     assert.deepEqual(notified, ['قريب'], 'أُشعر البعيد أيضاً');
   });
 });
+
+test('مراجعة طلبات الملكية', async (t) => {
+  let api;
+  let admin;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    admin = api.asUser('user_admin', 'admin');
+  });
+
+  const pendingClaim = () => {
+    const mosque = api.make('Mosques', { name: 'جامع الوادي', wilayat: 'نزوى', governorate: 'الداخلية' });
+    const imam = api.make('_User', { role: 'imam', fullName: 'الشيخ حمد', phone: '9911xxxx' });
+    return api.make('MosqueClaims',
+      { mosqueId: mosque, imamId: imam, status: 'pending', evidenceNote: 'إفادة' });
+  };
+
+  // بلا هذه الدالة لم يكن أمام المشرف إلا معرّف طلب لا سبيل له إليه من التطبيق
+  await t.test('المشرف يرى الطلبات المنتظرة ببيانات الإمام', async () => {
+    pendingClaim();
+
+    const { ok } = await api.call('listPendingClaims', {}, { user: admin });
+
+    assert.equal(ok.length, 1);
+    assert.equal(ok[0].mosqueName, 'جامع الوادي');
+    assert.equal(ok[0].imamName, 'الشيخ حمد');
+    assert.equal(ok[0].imamPhone, '9911xxxx', 'المشرف يتحقّق بالاتصال');
+  });
+
+  await t.test('المُراجَع لا يظهر في المنتظرة', async () => {
+    const claim = pendingClaim();
+    await api.call('reviewMosqueClaim', { claimId: claim.id, approve: true }, { user: admin });
+
+    const { ok } = await api.call('listPendingClaims', {}, { user: admin });
+    assert.equal(ok.length, 0);
+  });
+
+  await t.test('الإمام لا يرى طلبات غيره من هنا', async () => {
+    pendingClaim();
+    const { error } = await api.call('listPendingClaims', {}, { user: api.asUser('u', 'imam') });
+    assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
+  });
+});

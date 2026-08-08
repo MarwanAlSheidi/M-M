@@ -83,6 +83,7 @@
 | `searchMosques` | الجميع | بحث نصّي مع تطبيع عربي |
 | `claimMosque` | imam | طلب ملكية مسجد |
 | `getMyClaims` | imam | حالة طلبات الملكية الخاصة به |
+| `listPendingClaims` | admin | طلبات الملكية المنتظرة مع بيانات الإمام |
 | `reviewMosqueClaim` | admin | اعتماد/رفض الطلب |
 | `createServiceRequest` | imam | إنشاء طلب صيانة |
 | `expressInterest` | volunteer | تسجيل الاهتمام بطلب مفتوح |

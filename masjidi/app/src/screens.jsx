@@ -774,23 +774,50 @@ export function ClaimMosque() {
 /* ————— الإدارة ————— */
 
 export function AdminHome() {
+  const claims = useList(api.listPendingClaims);
   const contractors = useList(api.listPendingContractors);
   const [error, setError] = useState('');
 
-  async function review(contractorId, approve) {
+  async function act(action, list, ...args) {
     setError('');
     try {
-      await api.reviewContractor(contractorId, approve);
-      contractors.refresh();
+      await action(...args);
+      list.refresh();
     } catch (caught) {
       setError(api.messageOf(caught));
     }
   }
 
+  const review = (contractorId, approve) =>
+    act(api.reviewContractor, contractors, contractorId, approve);
+
   return (
     <>
-      <h2>شركات بانتظار الاعتماد</h2>
+      <h2>طلبات ملكية المساجد</h2>
       {error && <div className="error">{error}</div>}
+      <Listing state={claims} empty="لا طلبات ملكية منتظرة.">
+        <div>
+          {claims.rows.map((row) => (
+            <article className="card" key={row.id}>
+              <h3>{row.mosqueName}</h3>
+              <p>{row.wilayat} — {row.governorate}</p>
+              <p>الطالب: {row.imamName || 'بلا اسم'}{row.imamPhone ? ` · ${row.imamPhone}` : ''}</p>
+              {row.evidenceNote && <p>«{row.evidenceNote}»</p>}
+              <div className="row">
+                <button onClick={() => act(api.reviewMosqueClaim, claims, row.id, true)}>
+                  اعتماد الملكية
+                </button>
+                <button className="ghost"
+                  onClick={() => act(api.reviewMosqueClaim, claims, row.id, false)}>
+                  رفض
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </Listing>
+
+      <h2>شركات بانتظار الاعتماد</h2>
       <Listing state={contractors} empty="لا توجد شركات منتظرة.">
         <div>
           {contractors.rows.map((row) => (

@@ -214,6 +214,39 @@ Parse.Cloud.define('getMyClaims', async (request) => {
   });
 });
 
+/**
+ * طلبات الملكية المنتظرة — مشرف فقط.
+ *
+ * `MosqueClaims` مقفلة على Master Key، فلم يكن أمام المشرف إلا `reviewMosqueClaim`
+ * ومعه معرّف لا سبيل له إليه من التطبيق. انضمام كل إمام يتوقّف على هذه المراجعة.
+ */
+Parse.Cloud.define('listPendingClaims', async (request) => {
+  requireRole(request, 'admin');
+
+  const claims = await new Parse.Query('MosqueClaims')
+    .equalTo('status', 'pending')
+    .include('mosqueId')
+    .include('imamId')
+    .ascending('createdAt')
+    .limit(100)
+    .find({ useMasterKey: true });
+
+  return claims.map((claim) => {
+    const mosque = claim.get('mosqueId');
+    const imam = claim.get('imamId');
+    return {
+      id: claim.id,
+      evidenceNote: claim.get('evidenceNote'),
+      createdAt: claim.get('createdAt'),
+      mosqueName: mosque ? mosque.get('name') : null,
+      wilayat: mosque ? mosque.get('wilayat') : null,
+      governorate: mosque ? mosque.get('governorate') : null,
+      imamName: imam ? imam.get('fullName') : null,
+      imamPhone: imam ? imam.get('phone') : null, // المشرف يتحقّق بالاتصال
+    };
+  });
+});
+
 /** اعتماد أو رفض طلب الملكية (مشرف فقط). */
 Parse.Cloud.define('reviewMosqueClaim', async (request) => {
   const admin = requireRole(request, 'admin');
