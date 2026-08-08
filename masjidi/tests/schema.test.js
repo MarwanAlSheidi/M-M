@@ -126,6 +126,33 @@ test('نقاط الدخول', async (t) => {
     assert.equal(/require\(['"]crypto['"]\)/.test(bundle), true);
   });
 
+  /**
+   * المواصفات وثيقةٌ يقرؤها من ينشر ويصون، وفيها جدول المهام الدورية الذي
+   * يجدولها المُشغّل. حين انحرفت، بقيت `pruneNotifications` خارجها — فلا
+   * تُجدوَل، ويمتلئ صندوق الوارد بلا سبب ظاهر.
+   */
+  await t.test('جدولا المواصفات يطابقان ما بُني', async () => {
+    const spec = fs.readFileSync(
+      path.join(CLOUD, '..', 'docs', 'PROJECT_SPEC.md'), 'utf8');
+
+    const section = (from, to) => {
+      const start = spec.indexOf(from);
+      const end = to ? spec.indexOf(to, start) : spec.length;
+      return spec.slice(start, end === -1 ? spec.length : end);
+    };
+    const named = (text) => new Set(
+      [...text.matchAll(/^\| `([a-zA-Z]+)` \|/gm)].map((hit) => hit[1]));
+
+    const api = loadCloud('modular');
+    const documented = named(section('## 6. دوال السحابة', '### المهام الدورية'));
+    assert.deepEqual([...documented].sort(), Object.keys(api.functions).sort(),
+      'جدول دوال السحابة في المواصفات لا يطابق المُسجَّل فعلاً');
+
+    const jobs = named(section('### المهام الدورية', '## 7'));
+    assert.deepEqual([...jobs].sort(), Object.keys(api.jobs).sort(),
+      'جدول المهام الدورية لا يطابق المُسجَّل — ما غاب عنه لا يُجدوَل فيتراكم');
+  });
+
   await t.test('health يعكس تهيئة بوابة الدفع', async () => {
     const api = loadCloud('modular');
     const { ok } = await api.call('health');

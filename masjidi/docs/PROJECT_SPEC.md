@@ -89,11 +89,13 @@
 | `createServiceRequest` | imam | إنشاء طلب صيانة |
 | `expressInterest` | volunteer | تسجيل الاهتمام بطلب مفتوح |
 | `withdrawInterest` | volunteer | سحب الاهتمام قبل الاختيار |
+| `getMyInterests` | volunteer | اهتماماته وحالة كلٍّ منها |
 | `getRequestInterests` | imam | قائمة المهتمّين بمهاراتهم وتقييمهم |
 | `assignWorker` | imam | تعيين متطوع أو شركة |
 | `startWork` | المنفّذ | بدء التنفيذ |
 | `markWorkDone` | المنفّذ | إبلاغ بالإنجاز + صور |
 | `completeService` | imam | معاينة واعتماد وتقييم |
+| `releaseAssignment` | imam/المنفّذ | سحب التكليف وإعادة الطلب متاحاً — الغياب يُقيَّد، والانسحاب المُعلن لا |
 | `cancelServiceRequest` | imam | إلغاء قبل التنفيذ |
 | `initiateDonation` | متبرع | إنشاء جلسة دفع |
 | `confirmDonation` | متبرع/نظام | تأكيد من البوابة وقيد المبلغ |
@@ -103,7 +105,10 @@
 | `listPendingContractors` | admin | الشركات المنتظرة اعتماداً بسجلّها التجاري |
 | `reviewContractor` | admin | اعتماد شركة أو سحب اعتمادها |
 | `getMyProfile` | الجميع | الملف الشخصي كما يعرضه التطبيق |
+| `updateMyProfile` | الجميع | المهارات والمحافظة والهاتف — لصاحب الحساب وحده |
 | `setFavoriteMosque` | الجميع | ضبط المسجد المفضّل |
+| `getMyNotifications` | الجميع | صندوق الوارد وعدد غير المقروء |
+| `markNotificationsRead` | الجميع | تعليم الوارد مقروءاً |
 | `getMosqueLedger` | الجميع | السجل المالي الشفاف |
 | `getMosqueAuditTrail` | الجميع | سجل القرارات — الدور لا هوية الفاعل |
 | `health` | الجميع | فحص حالة الخادم |
@@ -116,6 +121,7 @@
 |---|---|---|
 | `reviewPendingDonations` | كل ساعة | شبكة أمان خلف الـwebhook: تسأل البوابة عن كل معاملة معلّقة تجاوزت مهلة الحجز |
 | `pruneAuditLog` | أسبوعياً | حذف سطور التدقيق الأقدم من 180 يوماً |
+| `pruneNotifications` | أسبوعياً | حذف الوارد الأقدم من 90 يوماً — ينمو أسرع من سجل التدقيق |
 
 ## 7. قواعد الأمن
 

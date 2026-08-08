@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 184 حالة على بديل Parse (`npm test`) + 48 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 19 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 185 حالة على بديل Parse (`npm test`) + 48 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 19 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -695,6 +695,33 @@ if (user.dirty('isVerifiedContractor')) {
 ومعه **رابط الطريق في قائمة المهامّ**: الإحداثيات كانت في القاعدة ولا تصل إلى
 المنفّذ. أُضيفت القرية إلى `getNearbyOpportunities` و`getMyClaims`
 و`listPendingClaims` وإلى قراءة الطلبات في العميل.
+
+---
+
+### 🔴 مهامٌ دوريّة بُنيت ولا يجدولها أحد
+
+فحصٌ منهجي رابع: المواصفات الأصلية مقابل ما بُني. خمس دوال زادت عليها
+(`releaseAssignment`، `getMyInterests`، `updateMyProfile`، `getMyNotifications`،
+`markNotificationsRead`) — وهذا انحرافُ توثيقٍ يُصحَّح.
+
+**لكن الأخطر مهمّةٌ دورية:** `pruneNotifications` بُنيت مع صندوق الوارد ولم
+تدخل جدول المهام في المواصفات. **و`docs/DEPLOY.md` لم يكن يذكر جدولة المهام
+إطلاقاً** — لا هذه ولا `pruneAuditLog` التي سبقتها.
+
+فالنتيجة على خادمٍ حقيقي: المُشغّل ينشر، ولا يجدول شيئاً لأن لا شيء يطلب منه
+ذلك، فينمو سجل التدقيق بلا حدّ **وينمو صندوق الوارد أسرع منه** (سطرٌ لكل مستهدَف
+لا لكل حدث) حتى تمتلئ قاعدةٌ حدّها 250 ميغابايت — ولا يظهر السبب إلا بالبحث.
+
+المهامّ كُتبت واختُبرت وقُلّمت بحدٍّ أدنى للاحتفاظ… ولا تعمل أبداً لأن أحداً لم
+يُخبر المُشغّل بتشغيلها. **كودٌ صحيح لا يُستدعى ليس حمايةً.**
+
+**العلاج:** قسمٌ مرقّم في `DEPLOY.md` يجدولها ويقول ماذا يقع إن أُهملت، وجدول
+المواصفات يُحدَّث — **واختبارٌ يقارن جدولَي المواصفات (الدوال والمهام) بالمُسجَّل
+فعلاً**، فينحرف الاثنان معاً أو لا ينحرف أيّهما. جرّبته بحذف السطر: يسقط ويسمّي
+السبب.
+
+**الدرس:** التوثيق التشغيلي جزءٌ من المنتج لا وصفٌ له. وما يعتمد على قراءة
+إنسانٍ له يحتاج حارساً كأي كود.
 
 ---
 
@@ -6212,11 +6239,13 @@ Parse.Cloud.define('health', async () => ({
 | `createServiceRequest` | imam | إنشاء طلب صيانة |
 | `expressInterest` | volunteer | تسجيل الاهتمام بطلب مفتوح |
 | `withdrawInterest` | volunteer | سحب الاهتمام قبل الاختيار |
+| `getMyInterests` | volunteer | اهتماماته وحالة كلٍّ منها |
 | `getRequestInterests` | imam | قائمة المهتمّين بمهاراتهم وتقييمهم |
 | `assignWorker` | imam | تعيين متطوع أو شركة |
 | `startWork` | المنفّذ | بدء التنفيذ |
 | `markWorkDone` | المنفّذ | إبلاغ بالإنجاز + صور |
 | `completeService` | imam | معاينة واعتماد وتقييم |
+| `releaseAssignment` | imam/المنفّذ | سحب التكليف وإعادة الطلب متاحاً — الغياب يُقيَّد، والانسحاب المُعلن لا |
 | `cancelServiceRequest` | imam | إلغاء قبل التنفيذ |
 | `initiateDonation` | متبرع | إنشاء جلسة دفع |
 | `confirmDonation` | متبرع/نظام | تأكيد من البوابة وقيد المبلغ |
@@ -6226,7 +6255,10 @@ Parse.Cloud.define('health', async () => ({
 | `listPendingContractors` | admin | الشركات المنتظرة اعتماداً بسجلّها التجاري |
 | `reviewContractor` | admin | اعتماد شركة أو سحب اعتمادها |
 | `getMyProfile` | الجميع | الملف الشخصي كما يعرضه التطبيق |
+| `updateMyProfile` | الجميع | المهارات والمحافظة والهاتف — لصاحب الحساب وحده |
 | `setFavoriteMosque` | الجميع | ضبط المسجد المفضّل |
+| `getMyNotifications` | الجميع | صندوق الوارد وعدد غير المقروء |
+| `markNotificationsRead` | الجميع | تعليم الوارد مقروءاً |
 | `getMosqueLedger` | الجميع | السجل المالي الشفاف |
 | `getMosqueAuditTrail` | الجميع | سجل القرارات — الدور لا هوية الفاعل |
 | `health` | الجميع | فحص حالة الخادم |
@@ -6239,6 +6271,7 @@ Parse.Cloud.define('health', async () => ({
 |---|---|---|
 | `reviewPendingDonations` | كل ساعة | شبكة أمان خلف الـwebhook: تسأل البوابة عن كل معاملة معلّقة تجاوزت مهلة الحجز |
 | `pruneAuditLog` | أسبوعياً | حذف سطور التدقيق الأقدم من 180 يوماً |
+| `pruneNotifications` | أسبوعياً | حذف الوارد الأقدم من 90 يوماً — ينمو أسرع من سجل التدقيق |
 
 ### قواعد الأمن
 
@@ -9366,6 +9399,33 @@ test('نقاط الدخول', async (t) => {
 
     // أما وحدات Node فتبقى: حذفها كان يترك مرجعاً غير معرّف
     assert.equal(/require\(['"]crypto['"]\)/.test(bundle), true);
+  });
+
+  /**
+   * المواصفات وثيقةٌ يقرؤها من ينشر ويصون، وفيها جدول المهام الدورية الذي
+   * يجدولها المُشغّل. حين انحرفت، بقيت `pruneNotifications` خارجها — فلا
+   * تُجدوَل، ويمتلئ صندوق الوارد بلا سبب ظاهر.
+   */
+  await t.test('جدولا المواصفات يطابقان ما بُني', async () => {
+    const spec = fs.readFileSync(
+      path.join(CLOUD, '..', 'docs', 'PROJECT_SPEC.md'), 'utf8');
+
+    const section = (from, to) => {
+      const start = spec.indexOf(from);
+      const end = to ? spec.indexOf(to, start) : spec.length;
+      return spec.slice(start, end === -1 ? spec.length : end);
+    };
+    const named = (text) => new Set(
+      [...text.matchAll(/^\| `([a-zA-Z]+)` \|/gm)].map((hit) => hit[1]));
+
+    const api = loadCloud('modular');
+    const documented = named(section('## 6. دوال السحابة', '### المهام الدورية'));
+    assert.deepEqual([...documented].sort(), Object.keys(api.functions).sort(),
+      'جدول دوال السحابة في المواصفات لا يطابق المُسجَّل فعلاً');
+
+    const jobs = named(section('### المهام الدورية', '## 7'));
+    assert.deepEqual([...jobs].sort(), Object.keys(api.jobs).sort(),
+      'جدول المهام الدورية لا يطابق المُسجَّل — ما غاب عنه لا يُجدوَل فيتراكم');
   });
 
   await t.test('health يعكس تهيئة بوابة الدفع', async () => {
