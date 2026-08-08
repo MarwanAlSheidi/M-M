@@ -307,6 +307,37 @@ function MosqueMap({ center, mosques, onPick }) {
 const DistanceTag = ({ km }) => <span className="tag dist">{api.formatDistance(km)}</span>;
 
 /** المساجد حول المستخدم — «موقع المسجد هو ما يربط المصلّي بمسجده». */
+/**
+ * سجلّ المسجد — ما جرى فيه من صيانة.
+ *
+ * مفتوحٌ لكل مستخدم مصادَق قصداً: المصلّي له أن يعرف ما جرى لمسجده، وهذه هي
+ * الشفافية التي قامت عليها المنصّة. والفاعل يُذكر بصفته لا باسمه.
+ */
+export function MosqueTrail({ mosqueId, mosqueName }) {
+  const state = useList(() => api.getMosqueAuditTrail(mosqueId), [mosqueId]);
+
+  return (
+    <>
+      <h2>سجلّ {mosqueName || 'المسجد'}</h2>
+      <Listing state={state} empty="لا حركة مسجّلة على هذا المسجد بعد.">
+        <div>
+          {state.rows.map((entry, at) => (
+            <article className="card" key={`${entry.createdAt}-${at}`}>
+              <p style={{ margin: 0 }}>
+                {api.AUDIT_LABEL[entry.action] || entry.action}
+              </p>
+              <p className="when">
+                {new Date(entry.createdAt).toLocaleString('ar')}
+                {entry.actorRole ? ` · ${api.ACTOR_LABEL[entry.actorRole] || entry.actorRole}` : ''}
+              </p>
+            </article>
+          ))}
+        </div>
+      </Listing>
+    </>
+  );
+}
+
 export function AroundMe() {
   const location = useLocation();
   const [radius, setRadius] = useState(5);
@@ -329,7 +360,18 @@ export function AroundMe() {
   }
 
   const [selected, setSelected] = useState(null);
+  const [trail, setTrail] = useState(null);
   const [showMap, setShowMap] = useState(Boolean(MAPS_KEY));
+
+  // الشفافية لا تُشترط دوراً: من صلّى في المسجد له أن يعرف ما جرى فيه
+  if (trail) {
+    return (
+      <>
+        <button className="link" onClick={() => setTrail(null)}>→ رجوع</button>
+        <MosqueTrail mosqueId={trail.objectId} mosqueName={trail.name} />
+      </>
+    );
+  }
 
   return (
     <>
@@ -357,6 +399,7 @@ export function AroundMe() {
                 <button onClick={() => pick(selected)}>هذا مسجدي</button>
                 <a className="maplink" href={api.mapsLink(selected.lat, selected.lng, selected.name)}
                   target="_blank" rel="noreferrer">الاتجاهات</a>
+                <button className="ghost" onClick={() => setTrail(selected)}>سجلّ المسجد</button>
               </div>
             </article>
           )}
@@ -382,6 +425,7 @@ export function AroundMe() {
                   <p>{mosque.wilayat} — {mosque.village || mosque.governorate}</p>
                   <div className="row">
                     <button className="ghost" onClick={() => pick(mosque)}>هذا مسجدي</button>
+                    <button className="link" onClick={() => setTrail(mosque)}>سجلّ المسجد</button>
                     {mosque.lat != null && (
                       <a className="maplink"
                         href={api.mapsLink(mosque.lat, mosque.lng, mosque.name)}
@@ -632,11 +676,21 @@ export function MyTasks() {
 export function ImamHome() {
   // المساجد من `Mosques.imamId` لا من الطلبات: هو ما يتحقّق منه الخادم
   const mosques = useList(api.getMyMosques);
+  const [trail, setTrail] = useState(null);
   const claims = useList(api.getMyClaims);
   const [openMosque, setOpenMosque] = useState(null);
 
   if (openMosque) {
     return <MosqueRequests mosque={openMosque} onBack={() => setOpenMosque(null)} />;
+  }
+
+  if (trail) {
+    return (
+      <>
+        <button className="link" onClick={() => setTrail(null)}>→ رجوع</button>
+        <MosqueTrail mosqueId={trail.objectId} mosqueName={trail.name} />
+      </>
+    );
   }
 
   const waiting = claims.rows.filter((claim) => claim.status !== 'approved');
@@ -656,9 +710,16 @@ export function ImamHome() {
               </div>
               <Where wilayat={mosque.wilayat} village={mosque.village}
                 governorate={mosque.governorate} />
-              <button onClick={() => setOpenMosque({ mosqueId: mosque.id, mosqueName: mosque.name })}>
-                طلبات الصيانة
-              </button>
+              <div className="row">
+                <button onClick={() => setOpenMosque({ mosqueId: mosque.id, mosqueName: mosque.name })}>
+                  طلبات الصيانة
+                </button>
+                {/* الإمام يرى سجلّ مسجده كما يراه المصلّي — لا امتياز في الشفافية */}
+                <button className="ghost"
+                  onClick={() => setTrail({ objectId: mosque.id, name: mosque.name })}>
+                  سجلّ المسجد
+                </button>
+              </div>
             </article>
           ))}
         </div>

@@ -44,6 +44,36 @@ export const GOVERNORATES = [
   'جنوب الباطنة', 'شمال الشرقية', 'جنوب الشرقية', 'الظاهرة', 'الوسطى',
 ];
 
+/**
+ * سجلّ المسجد كما يُقرأ.
+ *
+ * الشفافية هي غاية المنصّة المعلنة، وسجلّ التدقيق هو أداتها — ويُعيده الخادم
+ * بأفعالٍ برمجية (`worker_assigned`) لا يفهمها أحد. والفاعل يُذكر بصفته لا
+ * باسمه قصداً: المصلّي يرى ماذا جرى لمسجده، لا من فعله.
+ */
+export const AUDIT_LABEL = {
+  request_created: 'طلب صيانة جديد',
+  interest_expressed: 'سجّل متطوّع اهتمامه',
+  interest_withdrawn: 'سحب متطوّع اهتمامه',
+  worker_assigned: 'كُلّف منفّذ بالعمل',
+  assignment_released: 'سُحب التكليف وعاد الطلب متاحاً',
+  work_started: 'بدأ العمل',
+  work_done: 'أُبلغ بإنجاز العمل',
+  request_completed: 'اعتمد الإمام العمل',
+  request_cancelled: 'أُلغي الطلب',
+  claim_reviewed: 'روجعت ملكية المسجد',
+  contractor_reviewed: 'روجع اعتماد شركة',
+  donation_captured: 'قُيّد تبرّع',
+  donation_expired: 'انتهت مهلة تبرّع',
+  donation_refunded: 'استُرد تبرّع',
+  payout_recorded: 'صُرفت مستحقات',
+};
+
+export const ACTOR_LABEL = {
+  imam: 'الإمام', volunteer: 'متطوّع', contractor: 'شركة',
+  donor: 'متبرّع', admin: 'الإدارة',
+};
+
 export const CATEGORIES = {
   electrical: 'كهرباء',
   plumbing: 'سباكة',
