@@ -189,9 +189,26 @@ test('بحث المساجد', async (t) => {
     assert.equal(ok[0].name, 'مسجد النور');
   });
 
-  await t.test('كلمة من وسط الاسم تسقط إلى المسح', async () => {
+  await t.test('كلمة من وسط الاسم تُطابَق ككلمة لا بمسح', async () => {
+    // بلا `nameTokens` كان «النور» يسقط إلى `contains` فيمسح 18 ألف وثيقة
+    api.store.Mosques.forEach((m) => m.set('nameTokens', m.get('nameNormalized').split(' ')));
+
     const { ok } = await api.call('searchMosques', { term: 'النور' }, { user });
-    assert.equal(ok.length, 2, 'لا نتيجة بالبادئة، فيلزم `contains` كخطة بديلة');
+    assert.equal(ok.length, 2);
+  });
+
+  await t.test('كلمات متعدّدة تُجمع بـAND', async () => {
+    api.store.Mosques.forEach((m) => m.set('nameTokens', m.get('nameNormalized').split(' ')));
+
+    const both = await api.call('searchMosques', { term: 'جامع النور' }, { user });
+    assert.deepEqual(both.ok.map((m) => m.name), ['جامع النور'],
+      'كلمتان معاً تُضيّقان لا تُوسّعان');
+  });
+
+  await t.test('بلا كلمات محفوظة يبقى المسح شبكة أمان', async () => {
+    // بيانات قديمة استُوردت قبل إضافة الحقل
+    const { ok } = await api.call('searchMosques', { term: 'النور' }, { user });
+    assert.equal(ok.length, 2, 'النتيجة نفسها، بمسار أبطأ');
   });
 
   // البيانات مخزَّنة مطبَّعة؛ لو لم يُطبَّع المصطلح لضاع الحقل كله

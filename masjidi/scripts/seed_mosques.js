@@ -18,6 +18,23 @@ const Parse = require('parse/node');
 const BATCH_SIZE = 200; // Parse.Object.saveAll يتعامل داخلياً بدفعات — نبقيها معتدلة
 const DATA_FILE = path.join(__dirname, '..', 'data', 'mosques.json');
 
+/**
+ * كلمات الاسم والقرية للبحث المفهرس.
+ *
+ * تُحسب هنا لا في `clean_mosques.py`: مشتقّة بالكامل من `nameNormalized`
+ * الموجود أصلاً، فحسابها عند الاستيراد يُجنّب إعادة توليد 11 ميغابايت من
+ * البيانات لأجل حقل مشتقّ. الكلمات القصيرة تُستبعد لأنها أدوات لا تُميّز.
+ */
+function tokenize(...values) {
+  const words = values
+    .filter(Boolean)
+    .flatMap((value) => String(value).split(/\s+/))
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 2);
+
+  return [...new Set(words)].slice(0, 12);
+}
+
 const args = process.argv.slice(2);
 const limit = args.includes('--limit') ? Number(args[args.indexOf('--limit') + 1]) : Infinity;
 const dryRun = args.includes('--dry-run');
@@ -82,6 +99,7 @@ async function main() {
       mosque.set('mosqueNumber', row.mosqueNumber);
       mosque.set('name', row.name);
       mosque.set('nameNormalized', row.nameNormalized);
+      mosque.set('nameTokens', tokenize(row.nameNormalized, row.village));
       mosque.set('type', row.type);
       mosque.set('typeSlug', row.typeSlug);
       mosque.set('governorate', row.governorate);

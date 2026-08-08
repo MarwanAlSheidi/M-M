@@ -122,6 +122,12 @@ function createMock() {
     const actual = object.get(key);
     if (key === 'objectId') return object.id === expected;
     if (expected && expected.id) return actual && actual.id === expected.id;
+    // `equalTo` على حقل مصفوفة يعمل على MongoDB وحده؛ محوّل PostgreSQL يرمي
+    // «invalid input syntax for type json». نرفضها هنا حتى لا يمرّ نمطٌ غير
+    // محمول في الاختبار ثم يسقط على خادم حقيقي. البديل: `containsAll`.
+    if (Array.isArray(actual)) {
+      throw new Error(`equalTo على حقل مصفوفة غير محمول (${key}) — استخدم containsAll`);
+    }
     return actual === expected;
   };
 
@@ -134,6 +140,7 @@ function createMock() {
       this._atLeast = [];
       this._atMost = [];
       this._contained = [];
+      this._containsAll = [];
       this._prefix = [];
       this._substring = [];
     }
@@ -144,6 +151,7 @@ function createMock() {
     greaterThanOrEqualTo(key, value) { this._atLeast.push([key, value]); return this; }
     lessThanOrEqualTo(key, value) { this._atMost.push([key, value]); return this; }
     containedIn(key, values) { this._contained.push([key, values]); return this; }
+    containsAll(key, values) { this._containsAll.push([key, values]); return this; }
     startsWith(key, prefix) { this._prefix.push([key, prefix]); return this; }
     contains(key, needle) { this._substring.push([key, needle]); return this; }
     limit() { return this; }
@@ -161,6 +169,10 @@ function createMock() {
         this._atLeast.every(([k, v]) => object.get(k) >= v) &&
         this._atMost.every(([k, v]) => object.get(k) <= v) &&
         this._contained.every(([k, values]) => values.includes(object.get(k))) &&
+        this._containsAll.every(([k, values]) => {
+          const actual = object.get(k);
+          return Array.isArray(actual) && values.every((v) => actual.includes(v));
+        }) &&
         this._prefix.every(([k, v]) => String(object.get(k) || '').startsWith(v)) &&
         this._substring.every(([k, v]) => String(object.get(k) || '').includes(v)));
     }

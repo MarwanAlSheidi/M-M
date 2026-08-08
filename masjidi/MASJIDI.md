@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ مكتوب، ❌ لم يُشغّل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسار التطوّع، القرب، خريطة جوجل (بمفتاح اختياري)، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 132 حالة على بديل Parse (`npm test`) + اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
+| الاختبارات | ✅ 134 حالة على بديل Parse (`npm test`) + 7 اختبارات تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
 
 ---
 
@@ -81,8 +81,10 @@
    القيمة الافتراضية عند الإنشاء فيُعلّم الحقل مُعدَّلاً. ميّز `isNew()` أولاً.
 9. **الآثار الجانبية لا تُسقط العملية** — الإشعار والتدقيق يُسجّلان الفشل
    ويبتلعانه. لا يفشل اعتماد عملٍ منجَز لأن إشعاراً لم يصل.
-10. **لا تعديل على `data/mosques.json` يدوياً** — عدّل السكربت وأعد توليده.
-11. الكود بالإنجليزية، التعليقات ورسائل المستخدم بالعربية الفصحى.
+10. **`equalTo` على حقل مصفوفة غير محمول** — يعمل على MongoDB ويرمي على محوّل
+    PostgreSQL. استخدم `containsAll`؛ تعبّر عن الشرط نفسه وتعمل على الاثنين.
+11. **لا تعديل على `data/mosques.json` يدوياً** — عدّل السكربت وأعد توليده.
+12. الكود بالإنجليزية، التعليقات ورسائل المستخدم بالعربية الفصحى.
 
 ### القيود المهمة
 
@@ -118,7 +120,7 @@ cloud/
     audit.js           سجل التدقيق — لا يرمي أبداً
     geo.js             القرب بصندوق إحاطة وهافرساين — بلا فهرس مكاني
   functions/
-    mosques.js         البحث، القرب الجغرافي، طلب ملكية المسجد
+    mosques.js         البحث بالكلمات المفهرسة، القرب الجغرافي، طلب ملكية المسجد
     requests.js        دورة حياة الطلب، واهتمام المتطوّعين
     donations.js       التبرع، التأكيد، الصرف، السجل المالي، webhook البوابة
     users.js           اعتماد الشركات، الملف الشخصي، المسجد المفضّل
@@ -386,6 +388,32 @@ if (user.dirty('isVerifiedContractor')) {
 
 ---
 
+### 🟠 جولة ثامنة — البحث بكلمة من وسط الاسم
+
+**العَرَض:** المستخدم يكتب «النور» لا «مسجد النور». البادئة المثبّتة لا تلتقطه،
+فيسقط البحث إلى `contains` الذي يولّد `$regex` غير مثبّت — مسحٌ كامل على 18 ألف
+سجل في كل ضغطة زر.
+
+**العلاج:** حقل `nameTokens` (مصفوفة) يُحسب عند الاستيراد من الاسم المطبَّع
+والقرية، مع فهرس `name_tokens`. البحث صار ثلاث مراحل: الكلمات أولاً، ثم البادئة،
+ثم `contains` كخطة أخيرة لجزء من داخل كلمة.
+
+**ما كشفه الخادم الحقيقي:** الصياغة الأولى كانت `equalTo('nameTokens', word)`
+مكرّرة لكل كلمة — وهي الصياغة الصحيحة على MongoDB (مطابقة multikey أصيلة). على
+محوّل PostgreSQL ترمي `invalid input syntax for type json` فتسقط الدالة كلها
+بخطأ 500. لم يظهر ذلك في الاختبار لأن بديل Parse كان يطابق المصفوفات في
+`equalTo` — أي أن البديل كان **يخفي** عدم المحمولية لا يكشفها.
+
+الصياغة المعتمدة `containsAll('nameTokens', words)`: تعبّر عن الشرط نفسه (AND على
+الكلمات) في استعلام واحد، تُترجم إلى `$all` على MongoDB فتخدمها الفهرسة ذاتها،
+وتعمل على المحوّلين. وبديل Parse صار **يرمي** على `equalTo` فوق حقل مصفوفة، حتى
+لا يمرّ نمطٌ غير محمول في الاختبار ثم يسقط على خادم حقيقي.
+
+**الدرس:** البديل الذي يقبل أكثر من الخادم أسوأ من البديل الذي يقبل أقل. حين
+يختلف محوّلان في دعم صيغة، فليرفضها البديل لا فليقبلها.
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB.** `npm run test:integration`
@@ -397,9 +425,13 @@ if (user.dirty('isVerifiedContractor')) {
 - **الاسترداد قيدٌ محاسبي لا تحويل.** `refundDonation` يُعيد الرصيد ويُرجع الطلب
   للتمويل، لكن إعادة المال إلى المتبرّع تتم خارج النظام كما في الصرف. ولا يعمل
   بعد صرف المستحقات — تلك تسوية يدوية.
-- **`searchMosques` ما زال يمسح عند البحث بكلمة من وسط الاسم.** البادئة المثبّتة
-  تستفيد من الفهرس وهي المسار الأول، لكن `contains` يبقى خطة بديلة لأن المستخدم
-  قد يكتب «النور» لا «مسجد النور». الحل التام فهرس نصّي.
+- **`searchMosques` يمسح في حالة واحدة باقية:** جزءٌ من داخل كلمة («لنور» في
+  «النور»). الكلمات والبادئة تغطّيان ما قبلها، و`contains` يبقى خطة أخيرة نادرة
+  الوقوع. الحل التام فهرس نصّي (`$text` على MongoDB) وهو غير معبَّر عنه في مخطط
+  Parse — يُضاف يدوياً من لوحة Back4app إن لزم.
+- **`nameTokens` تُحسب عند الاستيراد لا في المخطط.** المساجد المستوردة قبل
+  إضافة الحقل لا تحمله، فلا يلتقطها بحث الكلمات (تبقى البادئة و`contains`).
+  إعادة تشغيل `seed_mosques.js` تملؤها لأن الاستيراد idempotent.
 - **`externalId_unique` اسم يَعِد بما لا يُنفّذه** — التعريف `{externalId: 1}`
   فهرس عادي، وواجهة مخطط Parse لا تعبّر عن التفرّد. أضِف فهرساً فريداً يدوياً من
   لوحة Back4app؛ حتى ذلك الحين يقوم تفادي التكرار على استعلام‑ثم‑كتابة وحده.
@@ -440,6 +472,7 @@ if (user.dirty('isVerifiedContractor')) {
         "mosqueNumber": { "type": "String" },
         "name": { "type": "String", "required": true },
         "nameNormalized": { "type": "String" },
+        "nameTokens": { "type": "Array" },
         "type": { "type": "String" },
         "typeSlug": { "type": "String" },
         "governorate": { "type": "String", "required": true },
@@ -463,7 +496,8 @@ if (user.dirty('isVerifiedContractor')) {
         "geo": { "location": "2dsphere" },
         "geo_box": { "lat": 1, "lng": 1 },
         "gov_wilayat": { "governorate": 1, "wilayat": 1 },
-        "name_search": { "nameNormalized": 1 }
+        "name_search": { "nameNormalized": 1 },
+        "name_tokens": { "nameTokens": 1 }
       },
       "classLevelPermissions": {
         "find": { "requiresAuthentication": true },
@@ -1350,18 +1384,34 @@ Parse.Cloud.define('searchMosques', async (request) => {
     return all.map((m) => m.toJSON());
   }
 
-  // البادئة المثبّتة وحدها تستفيد من فهرس `nameNormalized`. `contains` يولّد
-  // `$regex` غير مثبّت فيمسح المجموعة كاملة (18 ألف وثيقة) — يبقى خطة بديلة
-  // لأن المستخدم قد يبحث بكلمة من وسط الاسم، لا احتمالاً أولَ.
+  const emit = (rows) => rows.map((m) => m.toJSON());
+
+  // ١) مطابقة الكلمات: `nameTokens` مصفوفة، وفهرس المصفوفة يخدم المطابقة
+  //    التامة لعنصر منها. هذا يلتقط «النور» من «مسجد النور» بلا مسح — وهي
+  //    الحالة الغالبة: المستخدم يكتب اسم المسجد لا صيغته الكاملة.
+  //    كلمات متعدّدة تُجمع بـAND عبر `containsAll`، فـ«مسجد النور» يطابق
+  //    الاسم كاملاً. لا تستبدلها بـ`equalTo` متكرّرة: محوّل PostgreSQL يرفضها
+  //    على عمود مصفوفة، و`containsAll` تُترجم إلى `$all` فتخدمها الفهرسة نفسها.
+  const words = cleaned.split(' ').filter((word) => word.length >= 2);
+  if (words.length > 0) {
+    const byTokens = scoped();
+    byTokens.containsAll('nameTokens', words);
+    const tokenHits = await byTokens.find({ useMasterKey: true });
+    if (tokenHits.length > 0) return emit(tokenHits);
+  }
+
+  // ٢) بادئة مثبّتة على `nameNormalized` — تستفيد من فهرسه، وتلتقط الكتابة
+  //    الناقصة مثل «الرحم».
   const byPrefix = scoped();
   byPrefix.startsWith('nameNormalized', cleaned);
   const prefixHits = await byPrefix.find({ useMasterKey: true });
-  if (prefixHits.length > 0) return prefixHits.map((m) => m.toJSON());
+  if (prefixHits.length > 0) return emit(prefixHits);
 
+  // ٣) آخر الحيلة: `contains` يولّد `$regex` غير مثبّت فيمسح المجموعة كاملة.
+  //    يبقى لحالة الجزء من داخل كلمة، وهي نادرة بعد المرحلتين أعلاه.
   const bySubstring = scoped();
   bySubstring.contains('nameNormalized', cleaned);
-  const results = await bySubstring.find({ useMasterKey: true });
-  return results.map((m) => m.toJSON());
+  return emit(await bySubstring.find({ useMasterKey: true }));
 });
 
 /**
@@ -3475,18 +3525,34 @@ Parse.Cloud.define('searchMosques', async (request) => {
     return all.map((m) => m.toJSON());
   }
 
-  // البادئة المثبّتة وحدها تستفيد من فهرس `nameNormalized`. `contains` يولّد
-  // `$regex` غير مثبّت فيمسح المجموعة كاملة (18 ألف وثيقة) — يبقى خطة بديلة
-  // لأن المستخدم قد يبحث بكلمة من وسط الاسم، لا احتمالاً أولَ.
+  const emit = (rows) => rows.map((m) => m.toJSON());
+
+  // ١) مطابقة الكلمات: `nameTokens` مصفوفة، وفهرس المصفوفة يخدم المطابقة
+  //    التامة لعنصر منها. هذا يلتقط «النور» من «مسجد النور» بلا مسح — وهي
+  //    الحالة الغالبة: المستخدم يكتب اسم المسجد لا صيغته الكاملة.
+  //    كلمات متعدّدة تُجمع بـAND عبر `containsAll`، فـ«مسجد النور» يطابق
+  //    الاسم كاملاً. لا تستبدلها بـ`equalTo` متكرّرة: محوّل PostgreSQL يرفضها
+  //    على عمود مصفوفة، و`containsAll` تُترجم إلى `$all` فتخدمها الفهرسة نفسها.
+  const words = cleaned.split(' ').filter((word) => word.length >= 2);
+  if (words.length > 0) {
+    const byTokens = scoped();
+    byTokens.containsAll('nameTokens', words);
+    const tokenHits = await byTokens.find({ useMasterKey: true });
+    if (tokenHits.length > 0) return emit(tokenHits);
+  }
+
+  // ٢) بادئة مثبّتة على `nameNormalized` — تستفيد من فهرسه، وتلتقط الكتابة
+  //    الناقصة مثل «الرحم».
   const byPrefix = scoped();
   byPrefix.startsWith('nameNormalized', cleaned);
   const prefixHits = await byPrefix.find({ useMasterKey: true });
-  if (prefixHits.length > 0) return prefixHits.map((m) => m.toJSON());
+  if (prefixHits.length > 0) return emit(prefixHits);
 
+  // ٣) آخر الحيلة: `contains` يولّد `$regex` غير مثبّت فيمسح المجموعة كاملة.
+  //    يبقى لحالة الجزء من داخل كلمة، وهي نادرة بعد المرحلتين أعلاه.
   const bySubstring = scoped();
   bySubstring.contains('nameNormalized', cleaned);
-  const results = await bySubstring.find({ useMasterKey: true });
-  return results.map((m) => m.toJSON());
+  return emit(await bySubstring.find({ useMasterKey: true }));
 });
 
 /**
@@ -5374,6 +5440,23 @@ const Parse = require('parse/node');
 const BATCH_SIZE = 200; // Parse.Object.saveAll يتعامل داخلياً بدفعات — نبقيها معتدلة
 const DATA_FILE = path.join(__dirname, '..', 'data', 'mosques.json');
 
+/**
+ * كلمات الاسم والقرية للبحث المفهرس.
+ *
+ * تُحسب هنا لا في `clean_mosques.py`: مشتقّة بالكامل من `nameNormalized`
+ * الموجود أصلاً، فحسابها عند الاستيراد يُجنّب إعادة توليد 11 ميغابايت من
+ * البيانات لأجل حقل مشتقّ. الكلمات القصيرة تُستبعد لأنها أدوات لا تُميّز.
+ */
+function tokenize(...values) {
+  const words = values
+    .filter(Boolean)
+    .flatMap((value) => String(value).split(/\s+/))
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 2);
+
+  return [...new Set(words)].slice(0, 12);
+}
+
 const args = process.argv.slice(2);
 const limit = args.includes('--limit') ? Number(args[args.indexOf('--limit') + 1]) : Infinity;
 const dryRun = args.includes('--dry-run');
@@ -5438,6 +5521,7 @@ async function main() {
       mosque.set('mosqueNumber', row.mosqueNumber);
       mosque.set('name', row.name);
       mosque.set('nameNormalized', row.nameNormalized);
+      mosque.set('nameTokens', tokenize(row.nameNormalized, row.village));
       mosque.set('type', row.type);
       mosque.set('typeSlug', row.typeSlug);
       mosque.set('governorate', row.governorate);
@@ -6003,6 +6087,12 @@ function createMock() {
     const actual = object.get(key);
     if (key === 'objectId') return object.id === expected;
     if (expected && expected.id) return actual && actual.id === expected.id;
+    // `equalTo` على حقل مصفوفة يعمل على MongoDB وحده؛ محوّل PostgreSQL يرمي
+    // «invalid input syntax for type json». نرفضها هنا حتى لا يمرّ نمطٌ غير
+    // محمول في الاختبار ثم يسقط على خادم حقيقي. البديل: `containsAll`.
+    if (Array.isArray(actual)) {
+      throw new Error(`equalTo على حقل مصفوفة غير محمول (${key}) — استخدم containsAll`);
+    }
     return actual === expected;
   };
 
@@ -6015,6 +6105,7 @@ function createMock() {
       this._atLeast = [];
       this._atMost = [];
       this._contained = [];
+      this._containsAll = [];
       this._prefix = [];
       this._substring = [];
     }
@@ -6025,6 +6116,7 @@ function createMock() {
     greaterThanOrEqualTo(key, value) { this._atLeast.push([key, value]); return this; }
     lessThanOrEqualTo(key, value) { this._atMost.push([key, value]); return this; }
     containedIn(key, values) { this._contained.push([key, values]); return this; }
+    containsAll(key, values) { this._containsAll.push([key, values]); return this; }
     startsWith(key, prefix) { this._prefix.push([key, prefix]); return this; }
     contains(key, needle) { this._substring.push([key, needle]); return this; }
     limit() { return this; }
@@ -6042,6 +6134,10 @@ function createMock() {
         this._atLeast.every(([k, v]) => object.get(k) >= v) &&
         this._atMost.every(([k, v]) => object.get(k) <= v) &&
         this._contained.every(([k, values]) => values.includes(object.get(k))) &&
+        this._containsAll.every(([k, values]) => {
+          const actual = object.get(k);
+          return Array.isArray(actual) && values.every((v) => actual.includes(v));
+        }) &&
         this._prefix.every(([k, v]) => String(object.get(k) || '').startsWith(v)) &&
         this._substring.every(([k, v]) => String(object.get(k) || '').includes(v)));
     }
@@ -7383,9 +7479,26 @@ test('بحث المساجد', async (t) => {
     assert.equal(ok[0].name, 'مسجد النور');
   });
 
-  await t.test('كلمة من وسط الاسم تسقط إلى المسح', async () => {
+  await t.test('كلمة من وسط الاسم تُطابَق ككلمة لا بمسح', async () => {
+    // بلا `nameTokens` كان «النور» يسقط إلى `contains` فيمسح 18 ألف وثيقة
+    api.store.Mosques.forEach((m) => m.set('nameTokens', m.get('nameNormalized').split(' ')));
+
     const { ok } = await api.call('searchMosques', { term: 'النور' }, { user });
-    assert.equal(ok.length, 2, 'لا نتيجة بالبادئة، فيلزم `contains` كخطة بديلة');
+    assert.equal(ok.length, 2);
+  });
+
+  await t.test('كلمات متعدّدة تُجمع بـAND', async () => {
+    api.store.Mosques.forEach((m) => m.set('nameTokens', m.get('nameNormalized').split(' ')));
+
+    const both = await api.call('searchMosques', { term: 'جامع النور' }, { user });
+    assert.deepEqual(both.ok.map((m) => m.name), ['جامع النور'],
+      'كلمتان معاً تُضيّقان لا تُوسّعان');
+  });
+
+  await t.test('بلا كلمات محفوظة يبقى المسح شبكة أمان', async () => {
+    // بيانات قديمة استُوردت قبل إضافة الحقل
+    const { ok } = await api.call('searchMosques', { term: 'النور' }, { user });
+    assert.equal(ok.length, 2, 'النتيجة نفسها، بمسار أبطأ');
   });
 
   // البيانات مخزَّنة مطبَّعة؛ لو لم يُطبَّع المصطلح لضاع الحقل كله

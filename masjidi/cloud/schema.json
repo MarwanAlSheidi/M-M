@@ -8,6 +8,7 @@
         "mosqueNumber": { "type": "String" },
         "name": { "type": "String", "required": true },
         "nameNormalized": { "type": "String" },
+        "nameTokens": { "type": "Array" },
         "type": { "type": "String" },
         "typeSlug": { "type": "String" },
         "governorate": { "type": "String", "required": true },
@@ -31,7 +32,8 @@
         "geo": { "location": "2dsphere" },
         "geo_box": { "lat": 1, "lng": 1 },
         "gov_wilayat": { "governorate": 1, "wilayat": 1 },
-        "name_search": { "nameNormalized": 1 }
+        "name_search": { "nameNormalized": 1 },
+        "name_tokens": { "nameTokens": 1 }
       },
       "classLevelPermissions": {
         "find": { "requiresAuthentication": true },

@@ -138,18 +138,34 @@ Parse.Cloud.define('searchMosques', async (request) => {
     return all.map((m) => m.toJSON());
   }
 
-  // البادئة المثبّتة وحدها تستفيد من فهرس `nameNormalized`. `contains` يولّد
-  // `$regex` غير مثبّت فيمسح المجموعة كاملة (18 ألف وثيقة) — يبقى خطة بديلة
-  // لأن المستخدم قد يبحث بكلمة من وسط الاسم، لا احتمالاً أولَ.
+  const emit = (rows) => rows.map((m) => m.toJSON());
+
+  // ١) مطابقة الكلمات: `nameTokens` مصفوفة، وفهرس المصفوفة يخدم المطابقة
+  //    التامة لعنصر منها. هذا يلتقط «النور» من «مسجد النور» بلا مسح — وهي
+  //    الحالة الغالبة: المستخدم يكتب اسم المسجد لا صيغته الكاملة.
+  //    كلمات متعدّدة تُجمع بـAND عبر `containsAll`، فـ«مسجد النور» يطابق
+  //    الاسم كاملاً. لا تستبدلها بـ`equalTo` متكرّرة: محوّل PostgreSQL يرفضها
+  //    على عمود مصفوفة، و`containsAll` تُترجم إلى `$all` فتخدمها الفهرسة نفسها.
+  const words = cleaned.split(' ').filter((word) => word.length >= 2);
+  if (words.length > 0) {
+    const byTokens = scoped();
+    byTokens.containsAll('nameTokens', words);
+    const tokenHits = await byTokens.find({ useMasterKey: true });
+    if (tokenHits.length > 0) return emit(tokenHits);
+  }
+
+  // ٢) بادئة مثبّتة على `nameNormalized` — تستفيد من فهرسه، وتلتقط الكتابة
+  //    الناقصة مثل «الرحم».
   const byPrefix = scoped();
   byPrefix.startsWith('nameNormalized', cleaned);
   const prefixHits = await byPrefix.find({ useMasterKey: true });
-  if (prefixHits.length > 0) return prefixHits.map((m) => m.toJSON());
+  if (prefixHits.length > 0) return emit(prefixHits);
 
+  // ٣) آخر الحيلة: `contains` يولّد `$regex` غير مثبّت فيمسح المجموعة كاملة.
+  //    يبقى لحالة الجزء من داخل كلمة، وهي نادرة بعد المرحلتين أعلاه.
   const bySubstring = scoped();
   bySubstring.contains('nameNormalized', cleaned);
-  const results = await bySubstring.find({ useMasterKey: true });
-  return results.map((m) => m.toJSON());
+  return emit(await bySubstring.find({ useMasterKey: true }));
 });
 
 /**
