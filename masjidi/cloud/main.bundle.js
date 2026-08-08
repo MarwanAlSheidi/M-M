@@ -838,15 +838,39 @@ Parse.Cloud.define('searchMosques', async (request) => {
  * لا يُعتمد تلقائياً — يبقى معلقاً حتى موافقة المشرف، لأن ربط شخص بمسجد
  * يمنحه لاحقاً صلاحية استقبال تبرعات.
  */
+/**
+ * صفة مقدّم الطلب: إمام المسجد أو وكيله.
+ *
+ * الوكيل يتولّى شؤون المسجد كالإمام في عُرف كثير من المساجد، فحرمانه من
+ * التسجيل يُعطّل مساجد، وإجبارُه أن يسمّي نفسه إماماً كذبٌ يُدخل على المشرف.
+ * الصلاحيات واحدة، والصفة تُقال ليتحقّق المشرف بما يناسبها.
+ */
+const CAPACITIES = { imam: 'إمام المسجد', agent: 'وكيل المسجد' };
+
+/** ما يُعدّ «عند المسجد» — نصف كيلومتر يحتمل ضعف الإشارة داخل البناء. */
+const AT_MOSQUE_KM = 0.5;
+
+/**
+ * طلب ملكية مسجد، ومعه تأكيد موقع مقدّمه.
+ *
+ * السؤال المفتوح منذ أوّل يوم: كيف يُثبت الإمام أنه إمام هذا المسجد؟ لا جواب
+ * تامّ دون تكامل مع الوزارة، لكن **من يدّعي مسجداً يُتوقّع أن يكون فيه**.
+ * فيُطلب موقعه لحظة التقديم وتُحسب مسافته من المسجد وتُعرض للمشرف: طلبٌ من
+ * داخل المسجد ليس دليلاً قاطعاً، لكنه أقوى بكثير من طلبٍ من مدينة أخرى.
+ *
+ * ولا يُرفض البعيد تلقائياً — القرار للمشرف: قد يُسجّل الإمام مساءً من بيته،
+ * وقد يكون المسجد بلا إحداثيات أصلاً. الرفض الآلي يُقصي محقّاً بلا مراجعة.
+ */
 Parse.Cloud.define('claimMosque', async (request) => {
-  const imam = requireRole(request, 'imam');
-  const { mosqueId, evidenceNote } = request.params;
+  const claimant = requireRole(request, 'imam');
+  const { mosqueId, evidenceNote, capacity = 'imam', lat, lng } = request.params;
   if (!mosqueId) E.invalid('معرّف المسجد مطلوب.');
+  if (!CAPACITIES[capacity]) E.invalid('الصفة إمّا إمام المسجد أو وكيله.');
 
   const mosque = await new Parse.Query('Mosques').get(mosqueId, { useMasterKey: true })
     .catch(() => E.notFound('المسجد غير موجود.'));
 
-  if (mosque.get('isClaimed')) E.duplicate('هذا المسجد مسجّل لإمام آخر بالفعل.');
+  if (mosque.get('isClaimed')) E.duplicate('هذا المسجد مسجّل باسم غيرك بالفعل.');
 
   const existing = await new Parse.Query('MosqueClaims')
     .equalTo('mosqueId', mosque)
@@ -854,15 +878,44 @@ Parse.Cloud.define('claimMosque', async (request) => {
     .first({ useMasterKey: true });
   if (existing) E.duplicate('يوجد طلب ملكية معلّق لهذا المسجد.');
 
+  const here = geo.validCoordinates(Number(lat), Number(lng))
+    ? { lat: Number(lat), lng: Number(lng) }
+    : null;
+
+  // الموقع يُطلب حين يكون للمسجد إحداثيات يُقاس إليها. وحين لا تكون له — ستة
+  // عشر مسجداً — لا يُطلب لأنه لا يُقارن بشيء، فلا يُحرم أهلها من التسجيل.
+  const mosqueLocated = geo.validCoordinates(mosque.get('lat'), mosque.get('lng'));
+  if (mosqueLocated && !here) {
+    E.invalid('أكّد موقعك عند المسجد لإتمام التسجيل — فعّل إذن الموقع وأعد المحاولة.');
+  }
+
   const Claim = Parse.Object.extend('MosqueClaims');
   const claim = new Claim();
   claim.set('mosqueId', mosque);
-  claim.set('imamId', imam);
+  claim.set('imamId', claimant);
   claim.set('status', 'pending');
+  claim.set('capacity', capacity);
   claim.set('evidenceNote', String(evidenceNote || '').slice(0, 500));
+
+  if (here) {
+    claim.set('claimLat', here.lat);
+    claim.set('claimLng', here.lng);
+    if (mosqueLocated) {
+      claim.set('claimDistanceKm', Math.round(geo.distanceKm(
+        here.lat, here.lng, mosque.get('lat'), mosque.get('lng'),
+      ) * 1000) / 1000);
+    }
+  }
   await claim.save(null, { useMasterKey: true });
 
-  return { message: 'تم استلام طلبك، سيُراجع خلال أيام عمل.', claimId: claim.id };
+  const distance = claim.get('claimDistanceKm');
+  return {
+    claimId: claim.id,
+    atMosque: distance != null && distance <= AT_MOSQUE_KM,
+    message: distance != null && distance <= AT_MOSQUE_KM
+      ? 'تم استلام طلبك من عند المسجد، سيُراجع خلال أيام عمل.'
+      : 'تم استلام طلبك، سيُراجع خلال أيام عمل.',
+  };
 });
 
 /**
@@ -914,6 +967,7 @@ Parse.Cloud.define('getMyClaims', async (request) => {
     return {
       id: claim.id,
       status: claim.get('status'),
+      capacity: claim.get('capacity') || 'imam',
       evidenceNote: claim.get('evidenceNote'),
       createdAt: claim.get('createdAt'),
       reviewedAt: claim.get('reviewedAt'),
@@ -955,6 +1009,12 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
       village: mosque ? mosque.get('village') : null,
       mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,
       governorate: mosque ? mosque.get('governorate') : null,
+      capacity: claim.get('capacity') || 'imam',
+      // المسافة لحظة التقديم: طلبٌ من داخل المسجد ليس دليلاً قاطعاً، لكنه أقوى
+      // بكثير من طلبٍ من مدينة أخرى — والقرار يبقى للمشرف
+      claimDistanceKm: claim.get('claimDistanceKm') ?? null,
+      atMosque: claim.get('claimDistanceKm') != null
+        && claim.get('claimDistanceKm') <= AT_MOSQUE_KM,
       imamName: imam ? imam.get('fullName') : null,
       imamPhone: imam ? imam.get('phone') : null, // المشرف يتحقّق بالاتصال
     };

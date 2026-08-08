@@ -779,6 +779,7 @@ export function ImamHome() {
             <article className="card" key={claim.id}>
               <div className="spread">
                 <h3>{claim.mosqueName}</h3>
+              <p>الصفة: {api.CAPACITIES[claim.capacity] || claim.capacity}</p>
                 <span className={`tag ${claim.status === 'rejected' ? 'off' : 'warn'}`}>
                   {claim.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
                 </span>
@@ -1007,6 +1008,7 @@ export function ClaimMosque() {
   // موقع الإمام يُرتّب النتائج بالأقرب — وهو ما يميّز متطابقي الاسم فعلاً.
   // فشلُ تحديد الموقع لا يمنع البحث: يسقط إلى الترتيب الطبيعي.
   const location = useLocation();
+  const [capacity, setCapacity] = useState('imam');
   const [term, setTerm] = useState('');
   const [governorate, setGovernorate] = useState('');
   const [rows, setRows] = useState(null);
@@ -1026,8 +1028,11 @@ export function ClaimMosque() {
 
   async function claim(mosque) {
     setError('');
+    setMessage('');
     try {
-      const result = await api.claimMosque(mosque.objectId, 'طلب من التطبيق');
+      const result = await api.claimMosque(
+        mosque.objectId, 'طلب من التطبيق', capacity, location.point,
+      );
       setMessage(result.message);
     } catch (caught) {
       setError(api.messageOf(caught));
@@ -1049,6 +1054,17 @@ export function ClaimMosque() {
           {api.GOVERNORATES.map((name) => <option key={name} value={name}>{name}</option>)}
         </select>
       </form>
+      <Field label="صفتك" value={capacity} options={api.CAPACITIES}
+        onChange={(event) => setCapacity(event.target.value)} />
+
+      {/* الموقع شرطُ التسجيل لا زينة: من يدّعي مسجداً يُتوقّع أن يكون فيه */}
+      {location.error && (
+        <div className="notice">
+          {location.error} — ويلزم تأكيد موقعك عند المسجد لإتمام التسجيل.{' '}
+          <button className="link" onClick={location.locate}>أعد المحاولة</button>
+        </div>
+      )}
+
       <p className="hint">
         {location.point
           ? 'كثير من المساجد تتشابه أسماؤها — النتائج مرتّبة بالأقرب إليك، فمسجدك في صدرها غالباً.'
@@ -1081,7 +1097,9 @@ export function ClaimMosque() {
             <p className="when">رقم الوزارة: {mosque.mosqueNumber}</p>
           )}
           {!mosque.isClaimed && (
-            <button className="ghost" onClick={() => claim(mosque)}>هذا مسجدي</button>
+            <button className="ghost" onClick={() => claim(mosque)}>
+              {location.point ? 'هذا مسجدي — أؤكّد أني عنده' : 'هذا مسجدي'}
+            </button>
           )}
         </article>
       ))}
@@ -1117,7 +1135,18 @@ export function AdminHome() {
         <div>
           {claims.rows.map((row) => (
             <article className="card" key={row.id}>
-              <h3>{row.mosqueName}</h3>
+              <div className="spread">
+                <h3 style={{ margin: 0 }}>{row.mosqueName}</h3>
+                {/* أقوى ما بيد المشرف قبل التكامل مع الوزارة: أكان عند المسجد؟ */}
+                {row.claimDistanceKm != null && (
+                  <span className={`tag ${row.atMosque ? 'done' : 'warn'}`}>
+                    {row.atMosque
+                      ? 'قُدّم من عند المسجد'
+                      : `قُدّم من ${api.formatDistance(row.claimDistanceKm)}`}
+                  </span>
+                )}
+              </div>
+              <p>الصفة: {api.CAPACITIES[row.capacity] || row.capacity}</p>
               {/* المشرف يعتمد ملكية مسجدٍ بعينه، وثلاثمئة غيره تحمل الاسم نفسه */}
               <Where wilayat={row.wilayat} village={row.village}
                 governorate={row.governorate} mosqueNumber={row.mosqueNumber} />

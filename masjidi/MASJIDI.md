@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 188 حالة على بديل Parse (`npm test`) + 59 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 19 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 188 حالة على بديل Parse (`npm test`) + 67 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 19 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -168,6 +168,7 @@ tests/
     inbox.test.js      صندوق الوارد بصفر Installation مسجَّل
     unlocated.test.js  فرصٌ في مساجد بلا إحداثيات — تظهر آخراً لا تُحذف
     proximity.test.js  البحث يرتّب بالأقرب — الموقع يميّز متطابقي الاسم
+    claim.test.js      تأكيد الموقع عند التسجيل، وصفة مقدّم الطلب
   e2e/                 متصفّح حقيقي فوق خادم حقيقي — `npm run test:e2e`
     harness.js         يبني الواجهة على منفذ الاختبار، ويقدّمها، ويفتح Chromium
     journey.test.js    الرحلة كاملة: التسجيل، الطلب، الاهتمام، السحب، التنبيهات
@@ -700,6 +701,42 @@ if (user.dirty('isVerifiedContractor')) {
 
 ---
 
+### 🟢 تأكيد الموقع عند التسجيل — وصفة مقدّم الطلب
+
+**السؤال المفتوح منذ أوّل يوم:** كيف يُثبت الإمام أنه إمام هذا المسجد؟ لا جواب
+تامّ دون تكامل مع الوزارة — **لكن من يدّعي مسجداً يُتوقّع أن يكون فيه**.
+
+فصار `claimMosque` يطلب موقع مقدّم الطلب، ويحسب مسافته من المسجد، ويحفظها،
+ويعرضها للمشرف بوسمٍ صريح: «قُدّم من عند المسجد» أو «قُدّم من ٨٠٠ كم». ليس
+دليلاً قاطعاً، لكنه **أقوى ما بيد المشرف** قبل التكامل الرسمي — وقد كان لا
+يملك شيئاً سوى اسمٍ ورقم هاتف.
+
+**ثلاثة قرارات في التشدّد:**
+
+- **الموقع شرطٌ حين للمسجد إحداثيات**، لا اختياريّ. «إعادة تأكيد الموقع» تعني
+  أن يكون عنده، وطلبٌ بلا موقع يُرفض برسالةٍ تقول ما يفعله.
+- **والبعيد لا يُرفض آلياً.** قد يسجّل الإمام مساءً من بيته. الرفض الآلي يُقصي
+  محقّاً بلا مراجعة — فالقرار للمشرف، والمسافة تصله ليقرّر بها.
+- **ومسجدٌ بلا إحداثيات لا يُطلب له موقع** — ستة عشر منها في البيانات، ولا
+  مسافة تُقاس إليها. حرمانُ أهلها من التسجيل عقوبةٌ على خطأٍ في بيانات الوزارة.
+
+#### وكيل المسجد
+
+الوكيل يتولّى شؤون المسجد كالإمام في عرف كثير من المساجد. وحرمانه من التسجيل
+يُعطّل مساجد، **وإجبارُه أن يسمّي نفسه إماماً كذبٌ يُدخل على المشرف** — وهو
+الذي يُفترض به أن يتحقّق.
+
+فصارت **الصفة** حقلاً في الطلب (`imam` / `agent`) تُذكر ويراها المشرف، والصلاحيات
+واحدة. ولم يُضَف دورٌ ثالث: ثمانية مواضع تشترط دور الإمام، وإضافة دورٍ موازٍ
+تُضاعف سطح الصلاحيات لأجل تسميةٍ — والتسمية تُقال في الطلب بلا ذلك.
+
+**وخطأٌ في طريقة عملي كشفه الفحص:** أضفتُ `capacity` إلى قارئَي الطلبات
+باستبدالٍ نصّي، فمرّ أحدهما بلا تغيير — `getMyClaims` يُرتّب حقوله ترتيباً آخر،
+فلم يُطابق النمط و**لم يُبلّغ الاستبدال بشيء**. صار كل استبدالٍ في هذه الجلسة
+مسبوقاً بتأكيدٍ أن موضعه موجود.
+
+---
+
 ### 🟢 الموقع هو ما يميّز — لا رقمٌ في سجلّ
 
 عالجتُ تشابه الأسماء برقم الوزارة، وهو صحيح لكنه ليس أوّل ما يُسأل عنه الإمام:
@@ -1112,215 +1149,596 @@ PostgreSQL كاملاً وخادماً**. ستة معاً تُنهك الجها�
     {
       "className": "Mosques",
       "fields": {
-        "externalId": { "type": "String", "required": true },
-        "mosqueNumber": { "type": "String" },
-        "name": { "type": "String", "required": true },
-        "nameNormalized": { "type": "String" },
-        "nameTokens": { "type": "Array" },
-        "type": { "type": "String" },
-        "typeSlug": { "type": "String" },
-        "governorate": { "type": "String", "required": true },
-        "governorateSlug": { "type": "String" },
-        "wilayat": { "type": "String" },
-        "village": { "type": "String" },
-        "location": { "type": "GeoPoint" },
-        "lat": { "type": "Number" },
-        "lng": { "type": "Number" },
-        "hasLocation": { "type": "Boolean", "defaultValue": true },
-        "address": { "type": "String" },
-        "imamId": { "type": "Pointer", "targetClass": "_User" },
-        "isClaimed": { "type": "Boolean", "defaultValue": false },
-        "walletBalance": { "type": "Number", "defaultValue": 0 },
-        "openRequestsCount": { "type": "Number", "defaultValue": 0 },
-        "dataQuality": { "type": "Object" },
-        "source": { "type": "String" }
+        "externalId": {
+          "type": "String",
+          "required": true
+        },
+        "mosqueNumber": {
+          "type": "String"
+        },
+        "name": {
+          "type": "String",
+          "required": true
+        },
+        "nameNormalized": {
+          "type": "String"
+        },
+        "nameTokens": {
+          "type": "Array"
+        },
+        "type": {
+          "type": "String"
+        },
+        "typeSlug": {
+          "type": "String"
+        },
+        "governorate": {
+          "type": "String",
+          "required": true
+        },
+        "governorateSlug": {
+          "type": "String"
+        },
+        "wilayat": {
+          "type": "String"
+        },
+        "village": {
+          "type": "String"
+        },
+        "location": {
+          "type": "GeoPoint"
+        },
+        "lat": {
+          "type": "Number"
+        },
+        "lng": {
+          "type": "Number"
+        },
+        "hasLocation": {
+          "type": "Boolean",
+          "defaultValue": true
+        },
+        "address": {
+          "type": "String"
+        },
+        "imamId": {
+          "type": "Pointer",
+          "targetClass": "_User"
+        },
+        "isClaimed": {
+          "type": "Boolean",
+          "defaultValue": false
+        },
+        "walletBalance": {
+          "type": "Number",
+          "defaultValue": 0
+        },
+        "openRequestsCount": {
+          "type": "Number",
+          "defaultValue": 0
+        },
+        "dataQuality": {
+          "type": "Object"
+        },
+        "source": {
+          "type": "String"
+        }
       },
       "_comment_indexes": "externalId_lookup فهرس بحث لا قيد تفرّد — Parse لا يعبّر عن التفرّد، فيُضاف فهرس فريد يدوياً من لوحة Back4app. حتى ذلك الحين يقوم تفادي التكرار على فحص scripts/seed_mosques.js --verify وحده.",
       "indexes": {
-        "externalId_lookup": { "externalId": 1 },
-        "geo": { "location": "2dsphere" },
-        "geo_box": { "lat": 1, "lng": 1 },
-        "gov_wilayat": { "governorate": 1, "wilayat": 1 },
-        "name_search": { "nameNormalized": 1 },
-        "name_tokens": { "nameTokens": 1 }
+        "externalId_lookup": {
+          "externalId": 1
+        },
+        "geo": {
+          "location": "2dsphere"
+        },
+        "geo_box": {
+          "lat": 1,
+          "lng": 1
+        },
+        "gov_wilayat": {
+          "governorate": 1,
+          "wilayat": 1
+        },
+        "name_search": {
+          "nameNormalized": 1
+        },
+        "name_tokens": {
+          "nameTokens": 1
+        }
       },
       "classLevelPermissions": {
-        "find": { "requiresAuthentication": true },
-        "get": { "requiresAuthentication": true },
-        "create": {}, "update": {}, "delete": {},
+        "find": {
+          "requiresAuthentication": true
+        },
+        "get": {
+          "requiresAuthentication": true
+        },
+        "create": {},
+        "update": {},
+        "delete": {},
         "addField": {},
-        "protectedFields": { "*": ["walletBalance", "dataQuality"] }
+        "protectedFields": {
+          "*": [
+            "walletBalance",
+            "dataQuality"
+          ]
+        }
       }
     },
     {
       "className": "MosqueClaims",
       "fields": {
-        "mosqueId": { "type": "Pointer", "targetClass": "Mosques", "required": true },
-        "imamId": { "type": "Pointer", "targetClass": "_User", "required": true },
-        "status": { "type": "String", "defaultValue": "pending" },
-        "evidenceNote": { "type": "String" },
-        "reviewedBy": { "type": "Pointer", "targetClass": "_User" },
-        "reviewedAt": { "type": "Date" }
+        "mosqueId": {
+          "type": "Pointer",
+          "targetClass": "Mosques",
+          "required": true
+        },
+        "imamId": {
+          "type": "Pointer",
+          "targetClass": "_User",
+          "required": true
+        },
+        "status": {
+          "type": "String",
+          "defaultValue": "pending"
+        },
+        "evidenceNote": {
+          "type": "String"
+        },
+        "reviewedBy": {
+          "type": "Pointer",
+          "targetClass": "_User"
+        },
+        "reviewedAt": {
+          "type": "Date"
+        },
+        "capacity": {
+          "type": "String",
+          "defaultValue": "imam"
+        },
+        "claimLat": {
+          "type": "Number"
+        },
+        "claimLng": {
+          "type": "Number"
+        },
+        "claimDistanceKm": {
+          "type": "Number"
+        }
       },
       "classLevelPermissions": {
-        "find": {}, "get": {}, "create": {}, "update": {}, "delete": {}, "addField": {}
-      }
+        "find": {},
+        "get": {},
+        "create": {},
+        "update": {},
+        "delete": {},
+        "addField": {}
+      },
+      "_comment": "طلب ملكية مسجد. يقدّمه الإمام أو وكيل المسجد، ومعه تأكيد موقعه لحظة التقديم — فمن يدّعي مسجداً يُتوقّع أن يكون فيه."
     },
     {
       "className": "ServiceRequests",
       "fields": {
-        "mosqueId": { "type": "Pointer", "targetClass": "Mosques", "required": true },
-        "createdBy": { "type": "Pointer", "targetClass": "_User" },
-        "title": { "type": "String", "required": true },
-        "description": { "type": "String" },
-        "category": { "type": "String" },
-        "urgency": { "type": "String", "defaultValue": "normal" },
-        "estimatedCost": { "type": "Number", "defaultValue": 0 },
-        "fundedAmount": { "type": "Number", "defaultValue": 0 },
-        "status": { "type": "String", "required": true },
-        "assignedVolunteerId": { "type": "Pointer", "targetClass": "_User" },
-        "assignedContractorId": { "type": "Pointer", "targetClass": "_User" },
-        "isFundedByDonors": { "type": "Boolean", "defaultValue": false },
-        "isPaidOut": { "type": "Boolean", "defaultValue": false },
-        "workerNotes": { "type": "String" },
-        "completionPhotos": { "type": "Array" },
-        "imamRating": { "type": "Number" },
-        "volunteerHours": { "type": "Number", "defaultValue": 0 },
-        "assignedAt": { "type": "Date" },
-        "startedAt": { "type": "Date" },
-        "workDoneAt": { "type": "Date" },
-        "fundedAt": { "type": "Date" },
-        "imamApprovalDate": { "type": "Date" },
-        "cancelledAt": { "type": "Date" }
+        "mosqueId": {
+          "type": "Pointer",
+          "targetClass": "Mosques",
+          "required": true
+        },
+        "createdBy": {
+          "type": "Pointer",
+          "targetClass": "_User"
+        },
+        "title": {
+          "type": "String",
+          "required": true
+        },
+        "description": {
+          "type": "String"
+        },
+        "category": {
+          "type": "String"
+        },
+        "urgency": {
+          "type": "String",
+          "defaultValue": "normal"
+        },
+        "estimatedCost": {
+          "type": "Number",
+          "defaultValue": 0
+        },
+        "fundedAmount": {
+          "type": "Number",
+          "defaultValue": 0
+        },
+        "status": {
+          "type": "String",
+          "required": true
+        },
+        "assignedVolunteerId": {
+          "type": "Pointer",
+          "targetClass": "_User"
+        },
+        "assignedContractorId": {
+          "type": "Pointer",
+          "targetClass": "_User"
+        },
+        "isFundedByDonors": {
+          "type": "Boolean",
+          "defaultValue": false
+        },
+        "isPaidOut": {
+          "type": "Boolean",
+          "defaultValue": false
+        },
+        "workerNotes": {
+          "type": "String"
+        },
+        "completionPhotos": {
+          "type": "Array"
+        },
+        "imamRating": {
+          "type": "Number"
+        },
+        "volunteerHours": {
+          "type": "Number",
+          "defaultValue": 0
+        },
+        "assignedAt": {
+          "type": "Date"
+        },
+        "startedAt": {
+          "type": "Date"
+        },
+        "workDoneAt": {
+          "type": "Date"
+        },
+        "fundedAt": {
+          "type": "Date"
+        },
+        "imamApprovalDate": {
+          "type": "Date"
+        },
+        "cancelledAt": {
+          "type": "Date"
+        }
       },
       "indexes": {
-        "status_mosque": { "status": 1, "mosqueId": 1 },
-        "open_feed": { "status": 1, "createdAt": -1 }
+        "status_mosque": {
+          "status": 1,
+          "mosqueId": 1
+        },
+        "open_feed": {
+          "status": 1,
+          "createdAt": -1
+        }
       },
       "classLevelPermissions": {
-        "find": { "requiresAuthentication": true },
-        "get": { "requiresAuthentication": true },
-        "create": {}, "update": {}, "delete": {}, "addField": {}
+        "find": {
+          "requiresAuthentication": true
+        },
+        "get": {
+          "requiresAuthentication": true
+        },
+        "create": {},
+        "update": {},
+        "delete": {},
+        "addField": {}
       }
     },
     {
       "className": "Transactions",
       "fields": {
-        "donorId": { "type": "Pointer", "targetClass": "_User" },
-        "payeeId": { "type": "Pointer", "targetClass": "_User" },
-        "mosqueId": { "type": "Pointer", "targetClass": "Mosques", "required": true },
-        "requestId": { "type": "Pointer", "targetClass": "ServiceRequests" },
-        "amount": { "type": "Number", "required": true },
-        "type": { "type": "String", "required": true },
-        "status": { "type": "String", "defaultValue": "pending" },
-        "paymentSessionId": { "type": "String" },
-        "paymentGatewayRef": { "type": "String" },
-        "approvedBy": { "type": "Pointer", "targetClass": "_User" },
-        "capturedAt": { "type": "Date" }
+        "donorId": {
+          "type": "Pointer",
+          "targetClass": "_User"
+        },
+        "payeeId": {
+          "type": "Pointer",
+          "targetClass": "_User"
+        },
+        "mosqueId": {
+          "type": "Pointer",
+          "targetClass": "Mosques",
+          "required": true
+        },
+        "requestId": {
+          "type": "Pointer",
+          "targetClass": "ServiceRequests"
+        },
+        "amount": {
+          "type": "Number",
+          "required": true
+        },
+        "type": {
+          "type": "String",
+          "required": true
+        },
+        "status": {
+          "type": "String",
+          "defaultValue": "pending"
+        },
+        "paymentSessionId": {
+          "type": "String"
+        },
+        "paymentGatewayRef": {
+          "type": "String"
+        },
+        "approvedBy": {
+          "type": "Pointer",
+          "targetClass": "_User"
+        },
+        "capturedAt": {
+          "type": "Date"
+        }
       },
       "indexes": {
-        "session": { "paymentSessionId": 1 },
-        "ledger": { "mosqueId": 1, "status": 1, "createdAt": -1 }
+        "session": {
+          "paymentSessionId": 1
+        },
+        "ledger": {
+          "mosqueId": 1,
+          "status": 1,
+          "createdAt": -1
+        }
       },
       "classLevelPermissions": {
-        "find": { "requiresAuthentication": true },
-        "get": { "requiresAuthentication": true },
-        "create": {}, "update": {}, "delete": {}, "addField": {},
-        "protectedFields": { "*": ["donorId", "paymentSessionId", "paymentGatewayRef"] }
+        "find": {
+          "requiresAuthentication": true
+        },
+        "get": {
+          "requiresAuthentication": true
+        },
+        "create": {},
+        "update": {},
+        "delete": {},
+        "addField": {},
+        "protectedFields": {
+          "*": [
+            "donorId",
+            "paymentSessionId",
+            "paymentGatewayRef"
+          ]
+        }
       }
     },
     {
       "className": "TaskInterests",
       "_comment": "اهتمام متطوّع بطلب مفتوح. لا يُسند الطلب — الإمام يختار عبر assignWorker.",
       "fields": {
-        "requestId": { "type": "Pointer", "targetClass": "ServiceRequests", "required": true },
-        "volunteerId": { "type": "Pointer", "targetClass": "_User", "required": true },
-        "note": { "type": "String" },
-        "status": { "type": "String", "defaultValue": "active" }
+        "requestId": {
+          "type": "Pointer",
+          "targetClass": "ServiceRequests",
+          "required": true
+        },
+        "volunteerId": {
+          "type": "Pointer",
+          "targetClass": "_User",
+          "required": true
+        },
+        "note": {
+          "type": "String"
+        },
+        "status": {
+          "type": "String",
+          "defaultValue": "active"
+        }
       },
       "indexes": {
-        "by_request": { "requestId": 1, "status": 1 },
-        "by_volunteer": { "volunteerId": 1, "createdAt": -1 }
+        "by_request": {
+          "requestId": 1,
+          "status": 1
+        },
+        "by_volunteer": {
+          "volunteerId": 1,
+          "createdAt": -1
+        }
       },
       "classLevelPermissions": {
-        "find": {}, "get": {}, "create": {}, "update": {}, "delete": {}, "addField": {}
+        "find": {},
+        "get": {},
+        "create": {},
+        "update": {},
+        "delete": {},
+        "addField": {}
       }
     },
     {
       "className": "AuditLog",
       "_comment": "سجل التدقيق. مقفل على Master Key ويُقرأ عبر getMosqueAuditTrail وحدها، فلا تُكشف هوية الفاعل.",
       "fields": {
-        "action": { "type": "String", "required": true },
-        "targetClass": { "type": "String" },
-        "targetId": { "type": "String" },
-        "mosqueId": { "type": "Pointer", "targetClass": "Mosques" },
-        "fromStatus": { "type": "String" },
-        "toStatus": { "type": "String" },
-        "actorId": { "type": "Pointer", "targetClass": "_User" },
-        "actorRole": { "type": "String" },
-        "amount": { "type": "Number" }
+        "action": {
+          "type": "String",
+          "required": true
+        },
+        "targetClass": {
+          "type": "String"
+        },
+        "targetId": {
+          "type": "String"
+        },
+        "mosqueId": {
+          "type": "Pointer",
+          "targetClass": "Mosques"
+        },
+        "fromStatus": {
+          "type": "String"
+        },
+        "toStatus": {
+          "type": "String"
+        },
+        "actorId": {
+          "type": "Pointer",
+          "targetClass": "_User"
+        },
+        "actorRole": {
+          "type": "String"
+        },
+        "amount": {
+          "type": "Number"
+        }
       },
       "indexes": {
-        "trail": { "mosqueId": 1, "createdAt": -1 }
+        "trail": {
+          "mosqueId": 1,
+          "createdAt": -1
+        }
       },
       "classLevelPermissions": {
-        "find": {}, "get": {}, "create": {}, "update": {}, "delete": {}, "addField": {}
+        "find": {},
+        "get": {},
+        "create": {},
+        "update": {},
+        "delete": {},
+        "addField": {}
       }
     },
     {
       "className": "Notifications",
       "_comment": "صندوق وارد دائم. الدفع (Parse.Push) يحتاج Installation مسجَّلاً وقد لا يصل؛ هذا يصل دائماً لأن المستخدم يفتح التطبيق. يُقرأ عبر getMyNotifications وحدها.",
       "fields": {
-        "userId": { "type": "Pointer", "targetClass": "_User", "required": true },
-        "body": { "type": "String", "required": true },
-        "kind": { "type": "String" },
-        "requestId": { "type": "String" },
-        "mosqueId": { "type": "Pointer", "targetClass": "Mosques" },
-        "readAt": { "type": "Date" }
+        "userId": {
+          "type": "Pointer",
+          "targetClass": "_User",
+          "required": true
+        },
+        "body": {
+          "type": "String",
+          "required": true
+        },
+        "kind": {
+          "type": "String"
+        },
+        "requestId": {
+          "type": "String"
+        },
+        "mosqueId": {
+          "type": "Pointer",
+          "targetClass": "Mosques"
+        },
+        "readAt": {
+          "type": "Date"
+        }
       },
       "indexes": {
-        "inbox": { "userId": 1, "createdAt": -1 },
-        "unread": { "userId": 1, "readAt": 1 }
+        "inbox": {
+          "userId": 1,
+          "createdAt": -1
+        },
+        "unread": {
+          "userId": 1,
+          "readAt": 1
+        }
       },
       "classLevelPermissions": {
-        "find": {}, "get": {}, "create": {}, "update": {}, "delete": {}, "addField": {}
+        "find": {},
+        "get": {},
+        "create": {},
+        "update": {},
+        "delete": {},
+        "addField": {}
       }
     },
     {
       "className": "_User",
       "fields": {
-        "role": { "type": "String", "defaultValue": "donor" },
-        "fullName": { "type": "String" },
-        "phone": { "type": "String" },
-        "skills": { "type": "Array" },
-        "governorate": { "type": "String" },
-        "wilayat": { "type": "String" },
-        "lastKnownLocation": { "type": "GeoPoint" },
-        "lastLat": { "type": "Number" },
-        "lastLng": { "type": "Number" },
-        "favoriteMosqueId": { "type": "Pointer", "targetClass": "Mosques" },
-        "isActive": { "type": "Boolean", "defaultValue": true },
-        "isVerifiedContractor": { "type": "Boolean", "defaultValue": false },
-        "companyName": { "type": "String" },
-        "crNumber": { "type": "String" },
-        "completedJobs": { "type": "Number", "defaultValue": 0 },
-        "abandonedJobs": { "type": "Number", "defaultValue": 0 },
-        "avgRating": { "type": "Number" }
+        "role": {
+          "type": "String",
+          "defaultValue": "donor"
+        },
+        "fullName": {
+          "type": "String"
+        },
+        "phone": {
+          "type": "String"
+        },
+        "skills": {
+          "type": "Array"
+        },
+        "governorate": {
+          "type": "String"
+        },
+        "wilayat": {
+          "type": "String"
+        },
+        "lastKnownLocation": {
+          "type": "GeoPoint"
+        },
+        "lastLat": {
+          "type": "Number"
+        },
+        "lastLng": {
+          "type": "Number"
+        },
+        "favoriteMosqueId": {
+          "type": "Pointer",
+          "targetClass": "Mosques"
+        },
+        "isActive": {
+          "type": "Boolean",
+          "defaultValue": true
+        },
+        "isVerifiedContractor": {
+          "type": "Boolean",
+          "defaultValue": false
+        },
+        "companyName": {
+          "type": "String"
+        },
+        "crNumber": {
+          "type": "String"
+        },
+        "completedJobs": {
+          "type": "Number",
+          "defaultValue": 0
+        },
+        "abandonedJobs": {
+          "type": "Number",
+          "defaultValue": 0
+        },
+        "avgRating": {
+          "type": "Number"
+        }
       },
       "indexes": {
-        "role_gov": { "role": 1, "governorate": 1 },
-        "volunteer_geo": { "lastKnownLocation": "2dsphere" },
-        "volunteer_box": { "role": 1, "lastLat": 1, "lastLng": 1 }
+        "role_gov": {
+          "role": 1,
+          "governorate": 1
+        },
+        "volunteer_geo": {
+          "lastKnownLocation": "2dsphere"
+        },
+        "volunteer_box": {
+          "role": 1,
+          "lastLat": 1,
+          "lastLng": 1
+        }
       },
       "_comment_clp": "create مفتوح لأن التسجيل يمرّ عبره. الحماية الفعلية في ACL يضبطه afterSave على المستخدم نفسه، وقراءة بيانات مستخدم آخر تمرّ عبر دوال السحابة بـ Master Key.",
       "classLevelPermissions": {
-        "find": { "requiresAuthentication": true },
-        "get": { "requiresAuthentication": true },
-        "create": { "*": true },
-        "update": { "requiresAuthentication": true },
-        "delete": { "requiresAuthentication": true },
+        "find": {
+          "requiresAuthentication": true
+        },
+        "get": {
+          "requiresAuthentication": true
+        },
+        "create": {
+          "*": true
+        },
+        "update": {
+          "requiresAuthentication": true
+        },
+        "delete": {
+          "requiresAuthentication": true
+        },
         "addField": {},
-        "protectedFields": { "*": ["phone", "lastKnownLocation", "crNumber"] }
+        "protectedFields": {
+          "*": [
+            "phone",
+            "lastKnownLocation",
+            "crNumber"
+          ]
+        }
       }
     }
   ]
@@ -2201,15 +2619,39 @@ Parse.Cloud.define('searchMosques', async (request) => {
  * لا يُعتمد تلقائياً — يبقى معلقاً حتى موافقة المشرف، لأن ربط شخص بمسجد
  * يمنحه لاحقاً صلاحية استقبال تبرعات.
  */
+/**
+ * صفة مقدّم الطلب: إمام المسجد أو وكيله.
+ *
+ * الوكيل يتولّى شؤون المسجد كالإمام في عُرف كثير من المساجد، فحرمانه من
+ * التسجيل يُعطّل مساجد، وإجبارُه أن يسمّي نفسه إماماً كذبٌ يُدخل على المشرف.
+ * الصلاحيات واحدة، والصفة تُقال ليتحقّق المشرف بما يناسبها.
+ */
+const CAPACITIES = { imam: 'إمام المسجد', agent: 'وكيل المسجد' };
+
+/** ما يُعدّ «عند المسجد» — نصف كيلومتر يحتمل ضعف الإشارة داخل البناء. */
+const AT_MOSQUE_KM = 0.5;
+
+/**
+ * طلب ملكية مسجد، ومعه تأكيد موقع مقدّمه.
+ *
+ * السؤال المفتوح منذ أوّل يوم: كيف يُثبت الإمام أنه إمام هذا المسجد؟ لا جواب
+ * تامّ دون تكامل مع الوزارة، لكن **من يدّعي مسجداً يُتوقّع أن يكون فيه**.
+ * فيُطلب موقعه لحظة التقديم وتُحسب مسافته من المسجد وتُعرض للمشرف: طلبٌ من
+ * داخل المسجد ليس دليلاً قاطعاً، لكنه أقوى بكثير من طلبٍ من مدينة أخرى.
+ *
+ * ولا يُرفض البعيد تلقائياً — القرار للمشرف: قد يُسجّل الإمام مساءً من بيته،
+ * وقد يكون المسجد بلا إحداثيات أصلاً. الرفض الآلي يُقصي محقّاً بلا مراجعة.
+ */
 Parse.Cloud.define('claimMosque', async (request) => {
-  const imam = requireRole(request, 'imam');
-  const { mosqueId, evidenceNote } = request.params;
+  const claimant = requireRole(request, 'imam');
+  const { mosqueId, evidenceNote, capacity = 'imam', lat, lng } = request.params;
   if (!mosqueId) E.invalid('معرّف المسجد مطلوب.');
+  if (!CAPACITIES[capacity]) E.invalid('الصفة إمّا إمام المسجد أو وكيله.');
 
   const mosque = await new Parse.Query('Mosques').get(mosqueId, { useMasterKey: true })
     .catch(() => E.notFound('المسجد غير موجود.'));
 
-  if (mosque.get('isClaimed')) E.duplicate('هذا المسجد مسجّل لإمام آخر بالفعل.');
+  if (mosque.get('isClaimed')) E.duplicate('هذا المسجد مسجّل باسم غيرك بالفعل.');
 
   const existing = await new Parse.Query('MosqueClaims')
     .equalTo('mosqueId', mosque)
@@ -2217,15 +2659,44 @@ Parse.Cloud.define('claimMosque', async (request) => {
     .first({ useMasterKey: true });
   if (existing) E.duplicate('يوجد طلب ملكية معلّق لهذا المسجد.');
 
+  const here = geo.validCoordinates(Number(lat), Number(lng))
+    ? { lat: Number(lat), lng: Number(lng) }
+    : null;
+
+  // الموقع يُطلب حين يكون للمسجد إحداثيات يُقاس إليها. وحين لا تكون له — ستة
+  // عشر مسجداً — لا يُطلب لأنه لا يُقارن بشيء، فلا يُحرم أهلها من التسجيل.
+  const mosqueLocated = geo.validCoordinates(mosque.get('lat'), mosque.get('lng'));
+  if (mosqueLocated && !here) {
+    E.invalid('أكّد موقعك عند المسجد لإتمام التسجيل — فعّل إذن الموقع وأعد المحاولة.');
+  }
+
   const Claim = Parse.Object.extend('MosqueClaims');
   const claim = new Claim();
   claim.set('mosqueId', mosque);
-  claim.set('imamId', imam);
+  claim.set('imamId', claimant);
   claim.set('status', 'pending');
+  claim.set('capacity', capacity);
   claim.set('evidenceNote', String(evidenceNote || '').slice(0, 500));
+
+  if (here) {
+    claim.set('claimLat', here.lat);
+    claim.set('claimLng', here.lng);
+    if (mosqueLocated) {
+      claim.set('claimDistanceKm', Math.round(geo.distanceKm(
+        here.lat, here.lng, mosque.get('lat'), mosque.get('lng'),
+      ) * 1000) / 1000);
+    }
+  }
   await claim.save(null, { useMasterKey: true });
 
-  return { message: 'تم استلام طلبك، سيُراجع خلال أيام عمل.', claimId: claim.id };
+  const distance = claim.get('claimDistanceKm');
+  return {
+    claimId: claim.id,
+    atMosque: distance != null && distance <= AT_MOSQUE_KM,
+    message: distance != null && distance <= AT_MOSQUE_KM
+      ? 'تم استلام طلبك من عند المسجد، سيُراجع خلال أيام عمل.'
+      : 'تم استلام طلبك، سيُراجع خلال أيام عمل.',
+  };
 });
 
 /**
@@ -2277,6 +2748,7 @@ Parse.Cloud.define('getMyClaims', async (request) => {
     return {
       id: claim.id,
       status: claim.get('status'),
+      capacity: claim.get('capacity') || 'imam',
       evidenceNote: claim.get('evidenceNote'),
       createdAt: claim.get('createdAt'),
       reviewedAt: claim.get('reviewedAt'),
@@ -2318,6 +2790,12 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
       village: mosque ? mosque.get('village') : null,
       mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,
       governorate: mosque ? mosque.get('governorate') : null,
+      capacity: claim.get('capacity') || 'imam',
+      // المسافة لحظة التقديم: طلبٌ من داخل المسجد ليس دليلاً قاطعاً، لكنه أقوى
+      // بكثير من طلبٍ من مدينة أخرى — والقرار يبقى للمشرف
+      claimDistanceKm: claim.get('claimDistanceKm') ?? null,
+      atMosque: claim.get('claimDistanceKm') != null
+        && claim.get('claimDistanceKm') <= AT_MOSQUE_KM,
       imamName: imam ? imam.get('fullName') : null,
       imamPhone: imam ? imam.get('phone') : null, // المشرف يتحقّق بالاتصال
     };
@@ -4683,15 +5161,39 @@ Parse.Cloud.define('searchMosques', async (request) => {
  * لا يُعتمد تلقائياً — يبقى معلقاً حتى موافقة المشرف، لأن ربط شخص بمسجد
  * يمنحه لاحقاً صلاحية استقبال تبرعات.
  */
+/**
+ * صفة مقدّم الطلب: إمام المسجد أو وكيله.
+ *
+ * الوكيل يتولّى شؤون المسجد كالإمام في عُرف كثير من المساجد، فحرمانه من
+ * التسجيل يُعطّل مساجد، وإجبارُه أن يسمّي نفسه إماماً كذبٌ يُدخل على المشرف.
+ * الصلاحيات واحدة، والصفة تُقال ليتحقّق المشرف بما يناسبها.
+ */
+const CAPACITIES = { imam: 'إمام المسجد', agent: 'وكيل المسجد' };
+
+/** ما يُعدّ «عند المسجد» — نصف كيلومتر يحتمل ضعف الإشارة داخل البناء. */
+const AT_MOSQUE_KM = 0.5;
+
+/**
+ * طلب ملكية مسجد، ومعه تأكيد موقع مقدّمه.
+ *
+ * السؤال المفتوح منذ أوّل يوم: كيف يُثبت الإمام أنه إمام هذا المسجد؟ لا جواب
+ * تامّ دون تكامل مع الوزارة، لكن **من يدّعي مسجداً يُتوقّع أن يكون فيه**.
+ * فيُطلب موقعه لحظة التقديم وتُحسب مسافته من المسجد وتُعرض للمشرف: طلبٌ من
+ * داخل المسجد ليس دليلاً قاطعاً، لكنه أقوى بكثير من طلبٍ من مدينة أخرى.
+ *
+ * ولا يُرفض البعيد تلقائياً — القرار للمشرف: قد يُسجّل الإمام مساءً من بيته،
+ * وقد يكون المسجد بلا إحداثيات أصلاً. الرفض الآلي يُقصي محقّاً بلا مراجعة.
+ */
 Parse.Cloud.define('claimMosque', async (request) => {
-  const imam = requireRole(request, 'imam');
-  const { mosqueId, evidenceNote } = request.params;
+  const claimant = requireRole(request, 'imam');
+  const { mosqueId, evidenceNote, capacity = 'imam', lat, lng } = request.params;
   if (!mosqueId) E.invalid('معرّف المسجد مطلوب.');
+  if (!CAPACITIES[capacity]) E.invalid('الصفة إمّا إمام المسجد أو وكيله.');
 
   const mosque = await new Parse.Query('Mosques').get(mosqueId, { useMasterKey: true })
     .catch(() => E.notFound('المسجد غير موجود.'));
 
-  if (mosque.get('isClaimed')) E.duplicate('هذا المسجد مسجّل لإمام آخر بالفعل.');
+  if (mosque.get('isClaimed')) E.duplicate('هذا المسجد مسجّل باسم غيرك بالفعل.');
 
   const existing = await new Parse.Query('MosqueClaims')
     .equalTo('mosqueId', mosque)
@@ -4699,15 +5201,44 @@ Parse.Cloud.define('claimMosque', async (request) => {
     .first({ useMasterKey: true });
   if (existing) E.duplicate('يوجد طلب ملكية معلّق لهذا المسجد.');
 
+  const here = geo.validCoordinates(Number(lat), Number(lng))
+    ? { lat: Number(lat), lng: Number(lng) }
+    : null;
+
+  // الموقع يُطلب حين يكون للمسجد إحداثيات يُقاس إليها. وحين لا تكون له — ستة
+  // عشر مسجداً — لا يُطلب لأنه لا يُقارن بشيء، فلا يُحرم أهلها من التسجيل.
+  const mosqueLocated = geo.validCoordinates(mosque.get('lat'), mosque.get('lng'));
+  if (mosqueLocated && !here) {
+    E.invalid('أكّد موقعك عند المسجد لإتمام التسجيل — فعّل إذن الموقع وأعد المحاولة.');
+  }
+
   const Claim = Parse.Object.extend('MosqueClaims');
   const claim = new Claim();
   claim.set('mosqueId', mosque);
-  claim.set('imamId', imam);
+  claim.set('imamId', claimant);
   claim.set('status', 'pending');
+  claim.set('capacity', capacity);
   claim.set('evidenceNote', String(evidenceNote || '').slice(0, 500));
+
+  if (here) {
+    claim.set('claimLat', here.lat);
+    claim.set('claimLng', here.lng);
+    if (mosqueLocated) {
+      claim.set('claimDistanceKm', Math.round(geo.distanceKm(
+        here.lat, here.lng, mosque.get('lat'), mosque.get('lng'),
+      ) * 1000) / 1000);
+    }
+  }
   await claim.save(null, { useMasterKey: true });
 
-  return { message: 'تم استلام طلبك، سيُراجع خلال أيام عمل.', claimId: claim.id };
+  const distance = claim.get('claimDistanceKm');
+  return {
+    claimId: claim.id,
+    atMosque: distance != null && distance <= AT_MOSQUE_KM,
+    message: distance != null && distance <= AT_MOSQUE_KM
+      ? 'تم استلام طلبك من عند المسجد، سيُراجع خلال أيام عمل.'
+      : 'تم استلام طلبك، سيُراجع خلال أيام عمل.',
+  };
 });
 
 /**
@@ -4759,6 +5290,7 @@ Parse.Cloud.define('getMyClaims', async (request) => {
     return {
       id: claim.id,
       status: claim.get('status'),
+      capacity: claim.get('capacity') || 'imam',
       evidenceNote: claim.get('evidenceNote'),
       createdAt: claim.get('createdAt'),
       reviewedAt: claim.get('reviewedAt'),
@@ -4800,6 +5332,12 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
       village: mosque ? mosque.get('village') : null,
       mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,
       governorate: mosque ? mosque.get('governorate') : null,
+      capacity: claim.get('capacity') || 'imam',
+      // المسافة لحظة التقديم: طلبٌ من داخل المسجد ليس دليلاً قاطعاً، لكنه أقوى
+      // بكثير من طلبٍ من مدينة أخرى — والقرار يبقى للمشرف
+      claimDistanceKm: claim.get('claimDistanceKm') ?? null,
+      atMosque: claim.get('claimDistanceKm') != null
+        && claim.get('claimDistanceKm') <= AT_MOSQUE_KM,
       imamName: imam ? imam.get('fullName') : null,
       imamPhone: imam ? imam.get('phone') : null, // المشرف يتحقّق بالاتصال
     };

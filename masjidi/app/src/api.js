@@ -147,8 +147,24 @@ export const searchMosques = (term, governorate, point) =>
     lng: point ? point.lng : undefined,
   });
 
-export const claimMosque = (mosqueId, evidenceNote) =>
-  run('claimMosque', { mosqueId, evidenceNote });
+/** صفة مقدّم طلب الملكية — الوكيل يتولّى شؤون المسجد كالإمام في كثير منها. */
+export const CAPACITIES = { imam: 'إمام المسجد', agent: 'وكيل المسجد' };
+
+/**
+ * طلب ملكية مسجد — ومعه تأكيد الموقع.
+ *
+ * من يدّعي مسجداً يُتوقّع أن يكون فيه. الموقع ليس دليلاً قاطعاً لكنه أقوى ما
+ * يملكه المشرف قبل التكامل مع الوزارة، والخادم يرفض الطلب بلا موقعٍ حين يكون
+ * للمسجد إحداثيات يُقاس إليها.
+ */
+export const claimMosque = (mosqueId, evidenceNote, capacity, point) =>
+  run('claimMosque', {
+    mosqueId,
+    evidenceNote,
+    capacity,
+    lat: point ? point.lat : undefined,
+    lng: point ? point.lng : undefined,
+  });
 
 export const getMyMosques = () => run('getMyMosques');
 export const getMyClaims = () => run('getMyClaims');
