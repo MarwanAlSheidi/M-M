@@ -734,6 +734,33 @@ Parse.Cloud.define('claimMosque', async (request) => {
 });
 
 /**
+ * مساجد الإمام المستدعي.
+ *
+ * مصدر الحقيقة هو `Mosques.imamId` — وهو ما تتحقّق منه `mosqueForImam` قبل كل
+ * إجراء. اشتقاق القائمة من `MosqueClaims` بدلاً منه يجعل الواجهة تختلف عن
+ * الخادم: مسجدٌ أُسند بغير مسار الطلب (ترحيل بيانات أو تدخّل إداري) لا يراه
+ * إمامه أصلاً.
+ */
+Parse.Cloud.define('getMyMosques', async (request) => {
+  const imam = requireRole(request, 'imam');
+
+  const mosques = await new Parse.Query('Mosques')
+    .equalTo('imamId', imam)
+    .equalTo('isClaimed', true)
+    .ascending('name')
+    .limit(20)
+    .find({ useMasterKey: true });
+
+  return mosques.map((mosque) => ({
+    id: mosque.id,
+    name: mosque.get('name'),
+    wilayat: mosque.get('wilayat'),
+    governorate: mosque.get('governorate'),
+    openRequestsCount: mosque.get('openRequestsCount') || 0,
+  }));
+});
+
+/**
  * طلبات الملكية الخاصة بالإمام المستدعي.
  * `MosqueClaims` مقفلة على Master Key، فبلا هذه الدالة لا يعرف الإمام أبداً
  * إن كان طلبه قد اعتُمد أو رُفض.
@@ -908,6 +935,54 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
 });
 
 const MAX_INTEREST_NOTE = 300;
+const MAX_PHOTOS = 6;
+
+/**
+ * روابط الصور المقبولة.
+ *
+ * `photoUrls` يصل من العميل، ولو قُبل كما هو لأمكن حشو سجلّ المسجد بروابط
+ * خارجية: تتبّعاً للإمام حين يفتح الطلب، أو محتوىً يتغيّر بعد الاعتماد فيصير
+ * الدليل غير ما اعتُمد. المقبول: ملفات مرفوعة إلى تخزين المشروع وحده.
+ *
+ * على Back4app الملفات تُخدَم من مضيف مستقلّ عن الـAPI، فالقائمة تُضبط بـ
+ * `FILE_HOST_ALLOWLIST` وتشمل افتراضياً مضيف الخادم ومضيف ملفات Back4app.
+ */
+function allowedFileHosts() {
+  const configured = (process.env.FILE_HOST_ALLOWLIST || '')
+    .split(',').map((host) => host.trim()).filter(Boolean);
+
+  const hosts = new Set([...configured, 'parsefiles.back4app.com']);
+  try {
+    hosts.add(new URL(Parse.serverURL).hostname);
+  } catch (_) {
+    // serverURL غير مضبوط في بعض بيئات الاختبار
+  }
+  return hosts;
+}
+
+function validatePhotos(photoUrls) {
+  if (!Array.isArray(photoUrls) || photoUrls.length === 0) return [];
+  if (photoUrls.length > MAX_PHOTOS) E.invalid(`أقصى عدد للصور ${MAX_PHOTOS}.`);
+
+  const hosts = allowedFileHosts();
+
+  return photoUrls.map((raw) => {
+    let url;
+    try {
+      url = new URL(String(raw));
+    } catch (_) {
+      return E.invalid('رابط صورة غير صالح.');
+    }
+    // http عادي يُسقط الصور خلف HTTPS ويكشفها للشبكة
+    if (url.protocol !== 'https:' && url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') {
+      E.invalid('روابط الصور يجب أن تكون عبر HTTPS.');
+    }
+    if (!hosts.has(url.hostname)) {
+      E.invalid('تُقبل الصور المرفوعة إلى تخزين التطبيق وحدها.');
+    }
+    return url.toString();
+  });
+}
 
 /**
  * المتطوّع يُسجّل اهتمامه بطلب مفتوح.
@@ -1160,9 +1235,14 @@ Parse.Cloud.define('markWorkDone', async (request) => {
 
   if (serviceRequest.get('status') !== STATUS.IN_PROGRESS) E.invalid('الطلب ليس قيد التنفيذ.');
 
+  // التحقّق قبل أي تعديل: الترتيب المعكوس يترك الكائن بحالة `pending_approval`
+  // في الذاكرة رغم رفض الصور — لا يُحفظ لأن `save` لا تُنفَّذ، لكن أي قراءة
+  // لاحقة من الكائن نفسه تصدّق حالةً لم تقع.
+  const photos = validatePhotos(photoUrls);
+
   serviceRequest.set('status', STATUS.PENDING_APPROVAL);
   serviceRequest.set('workerNotes', String(notes || '').slice(0, 1000));
-  serviceRequest.set('completionPhotos', Array.isArray(photoUrls) ? photoUrls.slice(0, 6) : []);
+  serviceRequest.set('completionPhotos', photos);
   serviceRequest.set('workDoneAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
 

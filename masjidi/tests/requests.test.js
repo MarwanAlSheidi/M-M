@@ -269,3 +269,103 @@ test('اهتمام المتطوّعين', async (t) => {
     assert.equal(remaining.length, 0, 'من لم يُختَر يبقى معروضاً كأنه بالانتظار');
   });
 });
+
+test('صور الإنجاز', async (t) => {
+  let api;
+  let imam;
+  let worker;
+  let mosque;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    // الدالة تشتقّ المضيف المسموح من عنوان الخادم
+    Parse.serverURL = 'https://parseapi.back4app.com/';
+    imam = api.asUser('user_imam', 'imam');
+    worker = api.make('_User', { role: 'volunteer', fullName: 'سالم' });
+    mosque = api.make('Mosques', { name: 'مسجد الاختبار', isClaimed: true, imamId: imam });
+  });
+
+  const inProgress = () => api.make('ServiceRequests', {
+    mosqueId: mosque, title: 'دهان', status: 'in_progress', assignedVolunteerId: worker,
+  });
+
+  const ok = 'https://parsefiles.back4app.com/appid/work-1.png';
+
+  await t.test('روابط تخزين التطبيق تُقبل وتُحفظ', async () => {
+    const request = inProgress();
+    await api.call('markWorkDone',
+      { requestId: request.id, notes: 'تمّ', photoUrls: [ok] }, { user: worker });
+
+    assert.deepEqual(request.get('completionPhotos'), [ok]);
+    assert.equal(request.get('status'), 'pending_imam_approval');
+  });
+
+  // بلا هذا الحدّ يُحشر في سجلّ المسجد رابط خارجي: يتتبّع الإمام حين يفتح
+  // الطلب، أو يتغيّر محتواه بعد الاعتماد فيصير الدليل غير ما اعتُمد.
+  await t.test('الروابط الخارجية وغير الآمنة والفاسدة تُرفض', async () => {
+    for (const [label, url] of [
+      ['نطاق خارجي', 'https://evil.example.com/track.png'],
+      ['بروتوكول غير آمن', 'http://example.org/a.png'],
+      ['ليس رابطاً', 'مجرد نص'],
+    ]) {
+      const request = inProgress();
+      const { error } = await api.call('markWorkDone',
+        { requestId: request.id, photoUrls: [url] }, { user: worker });
+
+      assert.equal(error.code, api.ParseError.VALIDATION_ERROR, label);
+      assert.equal(request.get('status'), 'in_progress', `${label}: تغيّرت الحالة رغم الرفض`);
+    }
+  });
+
+  await t.test('الإبلاغ بلا صور يمرّ — الإمام يعاين على الطبيعة', async () => {
+    const request = inProgress();
+    const { ok: result } = await api.call('markWorkDone',
+      { requestId: request.id, notes: 'تمّ' }, { user: worker });
+
+    assert.equal(result.status, 'pending_imam_approval');
+    assert.deepEqual(request.get('completionPhotos'), []);
+  });
+
+  await t.test('أكثر من ستّ صور تُرفض', async () => {
+    const request = inProgress();
+    const { error } = await api.call('markWorkDone',
+      { requestId: request.id, photoUrls: Array(7).fill(ok) }, { user: worker });
+
+    assert.equal(error.code, api.ParseError.VALIDATION_ERROR);
+  });
+});
+
+test('مساجد الإمام', async (t) => {
+  let api;
+  let imam;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    imam = api.asUser('user_imam', 'imam');
+  });
+
+  // الواجهة كانت تشتقّها من MosqueClaims، فمسجد أُسند بغير مسار الطلب لا يراه
+  // إمامه رغم أن `mosqueForImam` تقبله
+  await t.test('تُشتقّ من imamId لا من طلبات الملكية', async () => {
+    api.make('Mosques', { name: 'جامع الوادي', wilayat: 'نزوى', isClaimed: true, imamId: imam,
+      openRequestsCount: 2 });
+
+    const { ok } = await api.call('getMyMosques', {}, { user: imam });
+
+    assert.equal(ok.length, 1);
+    assert.equal(ok[0].name, 'جامع الوادي');
+    assert.equal(ok[0].openRequestsCount, 2);
+  });
+
+  await t.test('غير المعتمد لا يظهر', async () => {
+    api.make('Mosques', { name: 'مسجد معلّق', isClaimed: false, imamId: imam });
+    const { ok } = await api.call('getMyMosques', {}, { user: imam });
+    assert.equal(ok.length, 0);
+  });
+
+  await t.test('لا يرى مساجد غيره', async () => {
+    api.make('Mosques', { name: 'مسجد آخر', isClaimed: true, imamId: api.asUser('other', 'imam') });
+    const { ok } = await api.call('getMyMosques', {}, { user: imam });
+    assert.equal(ok.length, 0);
+  });
+});

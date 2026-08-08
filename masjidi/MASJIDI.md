@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ مكتوب، ❌ لم يُشغّل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسار التطوّع، القرب، خريطة جوجل (بمفتاح اختياري)، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 123 حالة على بديل Parse (`npm test`) + اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
+| الاختبارات | ✅ 132 حالة على بديل Parse (`npm test`) + اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
 
 ---
 
@@ -366,6 +366,23 @@ if (user.dirty('isVerifiedContractor')) {
 الكود تُسقط زوايا الصندوق وترتّب بالأقرب. النتيجة تحمل `distanceKm` — وهو ما
 تعرضه الواجهة أصلاً. حقل `location` (GeoPoint) يبقى للاستعمالات المستقبلية،
 والفهرس المكاني صار تحسيناً لا شرطاً.
+
+---
+
+### 🟡 جولة سابعة — ما كشفه بناء بقية الواجهة
+
+- **الإمام كان يعتمد عملاً لم يره.** `completionPhotos` معرّف ويُكتب، ولا مسار
+  في الواجهة لرفع صورة — فدورة «المنفّذ يبلّغ والإمام يقفل» تقوم على الثقة
+  وحدها. صار الرفع عبر `Parse.File` ثم الإبلاغ، والصور تُعرض قبل زرّ الاعتماد.
+  والخادم لا يقبل إلا روابط تخزينه: رابط خارجي في سجلّ المسجد يتتبّع الإمام حين
+  يفتح الطلب، أو يتغيّر محتواه بعد الاعتماد فيصير الدليل غير ما اعتُمد.
+- **شاشة «مساجدي» كانت تشتقّ المساجد من `MosqueClaims`** بينما الخادم يتحقّق من
+  `Mosques.imamId` في `mosqueForImam`. مسجدٌ أُسند بغير مسار الطلب — ترحيل
+  بيانات أو تدخّل إداري — لا يراه إمامه رغم أن كل إجراء عليه يمرّ. `getMyMosques`
+  تقرأ من مصدر الحقيقة نفسه.
+- **`markWorkDone` كان يعدّل قبل أن يتحقّق:** الحالة تصير `pending_approval` ثم
+  تُرفض الصور. لا يُحفظ شيء لأن `save` لا تُنفَّذ، لكن أي قراءة من الكائن نفسه
+  بعدها تصدّق حالةً لم تقع. التحقّق أولاً.
 
 ---
 
@@ -1380,6 +1397,33 @@ Parse.Cloud.define('claimMosque', async (request) => {
 });
 
 /**
+ * مساجد الإمام المستدعي.
+ *
+ * مصدر الحقيقة هو `Mosques.imamId` — وهو ما تتحقّق منه `mosqueForImam` قبل كل
+ * إجراء. اشتقاق القائمة من `MosqueClaims` بدلاً منه يجعل الواجهة تختلف عن
+ * الخادم: مسجدٌ أُسند بغير مسار الطلب (ترحيل بيانات أو تدخّل إداري) لا يراه
+ * إمامه أصلاً.
+ */
+Parse.Cloud.define('getMyMosques', async (request) => {
+  const imam = requireRole(request, 'imam');
+
+  const mosques = await new Parse.Query('Mosques')
+    .equalTo('imamId', imam)
+    .equalTo('isClaimed', true)
+    .ascending('name')
+    .limit(20)
+    .find({ useMasterKey: true });
+
+  return mosques.map((mosque) => ({
+    id: mosque.id,
+    name: mosque.get('name'),
+    wilayat: mosque.get('wilayat'),
+    governorate: mosque.get('governorate'),
+    openRequestsCount: mosque.get('openRequestsCount') || 0,
+  }));
+});
+
+/**
  * طلبات الملكية الخاصة بالإمام المستدعي.
  * `MosqueClaims` مقفلة على Master Key، فبلا هذه الدالة لا يعرف الإمام أبداً
  * إن كان طلبه قد اعتُمد أو رُفض.
@@ -1558,6 +1602,54 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
 });
 
 const MAX_INTEREST_NOTE = 300;
+const MAX_PHOTOS = 6;
+
+/**
+ * روابط الصور المقبولة.
+ *
+ * `photoUrls` يصل من العميل، ولو قُبل كما هو لأمكن حشو سجلّ المسجد بروابط
+ * خارجية: تتبّعاً للإمام حين يفتح الطلب، أو محتوىً يتغيّر بعد الاعتماد فيصير
+ * الدليل غير ما اعتُمد. المقبول: ملفات مرفوعة إلى تخزين المشروع وحده.
+ *
+ * على Back4app الملفات تُخدَم من مضيف مستقلّ عن الـAPI، فالقائمة تُضبط بـ
+ * `FILE_HOST_ALLOWLIST` وتشمل افتراضياً مضيف الخادم ومضيف ملفات Back4app.
+ */
+function allowedFileHosts() {
+  const configured = (process.env.FILE_HOST_ALLOWLIST || '')
+    .split(',').map((host) => host.trim()).filter(Boolean);
+
+  const hosts = new Set([...configured, 'parsefiles.back4app.com']);
+  try {
+    hosts.add(new URL(Parse.serverURL).hostname);
+  } catch (_) {
+    // serverURL غير مضبوط في بعض بيئات الاختبار
+  }
+  return hosts;
+}
+
+function validatePhotos(photoUrls) {
+  if (!Array.isArray(photoUrls) || photoUrls.length === 0) return [];
+  if (photoUrls.length > MAX_PHOTOS) E.invalid(`أقصى عدد للصور ${MAX_PHOTOS}.`);
+
+  const hosts = allowedFileHosts();
+
+  return photoUrls.map((raw) => {
+    let url;
+    try {
+      url = new URL(String(raw));
+    } catch (_) {
+      return E.invalid('رابط صورة غير صالح.');
+    }
+    // http عادي يُسقط الصور خلف HTTPS ويكشفها للشبكة
+    if (url.protocol !== 'https:' && url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') {
+      E.invalid('روابط الصور يجب أن تكون عبر HTTPS.');
+    }
+    if (!hosts.has(url.hostname)) {
+      E.invalid('تُقبل الصور المرفوعة إلى تخزين التطبيق وحدها.');
+    }
+    return url.toString();
+  });
+}
 
 /**
  * المتطوّع يُسجّل اهتمامه بطلب مفتوح.
@@ -1810,9 +1902,14 @@ Parse.Cloud.define('markWorkDone', async (request) => {
 
   if (serviceRequest.get('status') !== STATUS.IN_PROGRESS) E.invalid('الطلب ليس قيد التنفيذ.');
 
+  // التحقّق قبل أي تعديل: الترتيب المعكوس يترك الكائن بحالة `pending_approval`
+  // في الذاكرة رغم رفض الصور — لا يُحفظ لأن `save` لا تُنفَّذ، لكن أي قراءة
+  // لاحقة من الكائن نفسه تصدّق حالةً لم تقع.
+  const photos = validatePhotos(photoUrls);
+
   serviceRequest.set('status', STATUS.PENDING_APPROVAL);
   serviceRequest.set('workerNotes', String(notes || '').slice(0, 1000));
-  serviceRequest.set('completionPhotos', Array.isArray(photoUrls) ? photoUrls.slice(0, 6) : []);
+  serviceRequest.set('completionPhotos', photos);
   serviceRequest.set('workDoneAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
 
@@ -3425,6 +3522,33 @@ Parse.Cloud.define('claimMosque', async (request) => {
 });
 
 /**
+ * مساجد الإمام المستدعي.
+ *
+ * مصدر الحقيقة هو `Mosques.imamId` — وهو ما تتحقّق منه `mosqueForImam` قبل كل
+ * إجراء. اشتقاق القائمة من `MosqueClaims` بدلاً منه يجعل الواجهة تختلف عن
+ * الخادم: مسجدٌ أُسند بغير مسار الطلب (ترحيل بيانات أو تدخّل إداري) لا يراه
+ * إمامه أصلاً.
+ */
+Parse.Cloud.define('getMyMosques', async (request) => {
+  const imam = requireRole(request, 'imam');
+
+  const mosques = await new Parse.Query('Mosques')
+    .equalTo('imamId', imam)
+    .equalTo('isClaimed', true)
+    .ascending('name')
+    .limit(20)
+    .find({ useMasterKey: true });
+
+  return mosques.map((mosque) => ({
+    id: mosque.id,
+    name: mosque.get('name'),
+    wilayat: mosque.get('wilayat'),
+    governorate: mosque.get('governorate'),
+    openRequestsCount: mosque.get('openRequestsCount') || 0,
+  }));
+});
+
+/**
  * طلبات الملكية الخاصة بالإمام المستدعي.
  * `MosqueClaims` مقفلة على Master Key، فبلا هذه الدالة لا يعرف الإمام أبداً
  * إن كان طلبه قد اعتُمد أو رُفض.
@@ -3599,6 +3723,54 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
 });
 
 const MAX_INTEREST_NOTE = 300;
+const MAX_PHOTOS = 6;
+
+/**
+ * روابط الصور المقبولة.
+ *
+ * `photoUrls` يصل من العميل، ولو قُبل كما هو لأمكن حشو سجلّ المسجد بروابط
+ * خارجية: تتبّعاً للإمام حين يفتح الطلب، أو محتوىً يتغيّر بعد الاعتماد فيصير
+ * الدليل غير ما اعتُمد. المقبول: ملفات مرفوعة إلى تخزين المشروع وحده.
+ *
+ * على Back4app الملفات تُخدَم من مضيف مستقلّ عن الـAPI، فالقائمة تُضبط بـ
+ * `FILE_HOST_ALLOWLIST` وتشمل افتراضياً مضيف الخادم ومضيف ملفات Back4app.
+ */
+function allowedFileHosts() {
+  const configured = (process.env.FILE_HOST_ALLOWLIST || '')
+    .split(',').map((host) => host.trim()).filter(Boolean);
+
+  const hosts = new Set([...configured, 'parsefiles.back4app.com']);
+  try {
+    hosts.add(new URL(Parse.serverURL).hostname);
+  } catch (_) {
+    // serverURL غير مضبوط في بعض بيئات الاختبار
+  }
+  return hosts;
+}
+
+function validatePhotos(photoUrls) {
+  if (!Array.isArray(photoUrls) || photoUrls.length === 0) return [];
+  if (photoUrls.length > MAX_PHOTOS) E.invalid(`أقصى عدد للصور ${MAX_PHOTOS}.`);
+
+  const hosts = allowedFileHosts();
+
+  return photoUrls.map((raw) => {
+    let url;
+    try {
+      url = new URL(String(raw));
+    } catch (_) {
+      return E.invalid('رابط صورة غير صالح.');
+    }
+    // http عادي يُسقط الصور خلف HTTPS ويكشفها للشبكة
+    if (url.protocol !== 'https:' && url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') {
+      E.invalid('روابط الصور يجب أن تكون عبر HTTPS.');
+    }
+    if (!hosts.has(url.hostname)) {
+      E.invalid('تُقبل الصور المرفوعة إلى تخزين التطبيق وحدها.');
+    }
+    return url.toString();
+  });
+}
 
 /**
  * المتطوّع يُسجّل اهتمامه بطلب مفتوح.
@@ -3851,9 +4023,14 @@ Parse.Cloud.define('markWorkDone', async (request) => {
 
   if (serviceRequest.get('status') !== STATUS.IN_PROGRESS) E.invalid('الطلب ليس قيد التنفيذ.');
 
+  // التحقّق قبل أي تعديل: الترتيب المعكوس يترك الكائن بحالة `pending_approval`
+  // في الذاكرة رغم رفض الصور — لا يُحفظ لأن `save` لا تُنفَّذ، لكن أي قراءة
+  // لاحقة من الكائن نفسه تصدّق حالةً لم تقع.
+  const photos = validatePhotos(photoUrls);
+
   serviceRequest.set('status', STATUS.PENDING_APPROVAL);
   serviceRequest.set('workerNotes', String(notes || '').slice(0, 1000));
-  serviceRequest.set('completionPhotos', Array.isArray(photoUrls) ? photoUrls.slice(0, 6) : []);
+  serviceRequest.set('completionPhotos', photos);
   serviceRequest.set('workDoneAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
 
@@ -4769,6 +4946,7 @@ Parse.Cloud.define('health', async () => ({
 | `updateMyLocation` | الجميع | حفظ آخر موقع — عليه يقوم إشعار الفرص القريبة |
 | `searchMosques` | الجميع | بحث نصّي مع تطبيع عربي |
 | `claimMosque` | imam | طلب ملكية مسجد |
+| `getMyMosques` | imam | مساجده — من `Mosques.imamId`، مصدر الحقيقة نفسه |
 | `getMyClaims` | imam | حالة طلبات الملكية الخاصة به |
 | `listPendingClaims` | admin | طلبات الملكية المنتظرة مع بيانات الإمام |
 | `reviewMosqueClaim` | admin | اعتماد/رفض الطلب |
@@ -5637,6 +5815,10 @@ PAYMENT_SUCCESS_URL=masjidi://payment/success
 PAYMENT_CANCEL_URL=masjidi://payment/cancel
 # سرّ نقطة نهاية البوابة — يُسجَّل في لوحة ثواني ويُولَّد عشوائياً
 PAYMENT_WEBHOOK_SECRET=
+
+# مضيفو الملفات المسموح بروابطهم في صور الإنجاز (مفصولون بفواصل).
+# مضيف الخادم و parsefiles.back4app.com مضافان تلقائياً.
+FILE_HOST_ALLOWLIST=
 
 # منصة أيادي (مستقبلاً)
 AYADI_API_KEY=
@@ -6608,6 +6790,106 @@ test('اهتمام المتطوّعين', async (t) => {
     assert.equal(remaining.length, 0, 'من لم يُختَر يبقى معروضاً كأنه بالانتظار');
   });
 });
+
+test('صور الإنجاز', async (t) => {
+  let api;
+  let imam;
+  let worker;
+  let mosque;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    // الدالة تشتقّ المضيف المسموح من عنوان الخادم
+    Parse.serverURL = 'https://parseapi.back4app.com/';
+    imam = api.asUser('user_imam', 'imam');
+    worker = api.make('_User', { role: 'volunteer', fullName: 'سالم' });
+    mosque = api.make('Mosques', { name: 'مسجد الاختبار', isClaimed: true, imamId: imam });
+  });
+
+  const inProgress = () => api.make('ServiceRequests', {
+    mosqueId: mosque, title: 'دهان', status: 'in_progress', assignedVolunteerId: worker,
+  });
+
+  const ok = 'https://parsefiles.back4app.com/appid/work-1.png';
+
+  await t.test('روابط تخزين التطبيق تُقبل وتُحفظ', async () => {
+    const request = inProgress();
+    await api.call('markWorkDone',
+      { requestId: request.id, notes: 'تمّ', photoUrls: [ok] }, { user: worker });
+
+    assert.deepEqual(request.get('completionPhotos'), [ok]);
+    assert.equal(request.get('status'), 'pending_imam_approval');
+  });
+
+  // بلا هذا الحدّ يُحشر في سجلّ المسجد رابط خارجي: يتتبّع الإمام حين يفتح
+  // الطلب، أو يتغيّر محتواه بعد الاعتماد فيصير الدليل غير ما اعتُمد.
+  await t.test('الروابط الخارجية وغير الآمنة والفاسدة تُرفض', async () => {
+    for (const [label, url] of [
+      ['نطاق خارجي', 'https://evil.example.com/track.png'],
+      ['بروتوكول غير آمن', 'http://example.org/a.png'],
+      ['ليس رابطاً', 'مجرد نص'],
+    ]) {
+      const request = inProgress();
+      const { error } = await api.call('markWorkDone',
+        { requestId: request.id, photoUrls: [url] }, { user: worker });
+
+      assert.equal(error.code, api.ParseError.VALIDATION_ERROR, label);
+      assert.equal(request.get('status'), 'in_progress', `${label}: تغيّرت الحالة رغم الرفض`);
+    }
+  });
+
+  await t.test('الإبلاغ بلا صور يمرّ — الإمام يعاين على الطبيعة', async () => {
+    const request = inProgress();
+    const { ok: result } = await api.call('markWorkDone',
+      { requestId: request.id, notes: 'تمّ' }, { user: worker });
+
+    assert.equal(result.status, 'pending_imam_approval');
+    assert.deepEqual(request.get('completionPhotos'), []);
+  });
+
+  await t.test('أكثر من ستّ صور تُرفض', async () => {
+    const request = inProgress();
+    const { error } = await api.call('markWorkDone',
+      { requestId: request.id, photoUrls: Array(7).fill(ok) }, { user: worker });
+
+    assert.equal(error.code, api.ParseError.VALIDATION_ERROR);
+  });
+});
+
+test('مساجد الإمام', async (t) => {
+  let api;
+  let imam;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    imam = api.asUser('user_imam', 'imam');
+  });
+
+  // الواجهة كانت تشتقّها من MosqueClaims، فمسجد أُسند بغير مسار الطلب لا يراه
+  // إمامه رغم أن `mosqueForImam` تقبله
+  await t.test('تُشتقّ من imamId لا من طلبات الملكية', async () => {
+    api.make('Mosques', { name: 'جامع الوادي', wilayat: 'نزوى', isClaimed: true, imamId: imam,
+      openRequestsCount: 2 });
+
+    const { ok } = await api.call('getMyMosques', {}, { user: imam });
+
+    assert.equal(ok.length, 1);
+    assert.equal(ok[0].name, 'جامع الوادي');
+    assert.equal(ok[0].openRequestsCount, 2);
+  });
+
+  await t.test('غير المعتمد لا يظهر', async () => {
+    api.make('Mosques', { name: 'مسجد معلّق', isClaimed: false, imamId: imam });
+    const { ok } = await api.call('getMyMosques', {}, { user: imam });
+    assert.equal(ok.length, 0);
+  });
+
+  await t.test('لا يرى مساجد غيره', async () => {
+    api.make('Mosques', { name: 'مسجد آخر', isClaimed: true, imamId: api.asUser('other', 'imam') });
+    const { ok } = await api.call('getMyMosques', {}, { user: imam });
+    assert.equal(ok.length, 0);
+  });
+});
 ```
 
 #### `tests/audit.test.js` — سجل التدقيق والمهمة الدورية
@@ -7354,7 +7636,7 @@ test('المخطط', async (t) => {
 
 test('نقاط الدخول', async (t) => {
   const EXPECTED_FUNCTIONS = [
-    'getNearbyMosques', 'getNearbyOpportunities', 'updateMyLocation', 'searchMosques', 'claimMosque', 'getMyClaims', 'listPendingClaims', 'reviewMosqueClaim',
+    'getNearbyMosques', 'getNearbyOpportunities', 'updateMyLocation', 'searchMosques', 'claimMosque', 'getMyMosques', 'getMyClaims', 'listPendingClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'expressInterest', 'withdrawInterest',
     'getRequestInterests', 'getMyInterests', 'assignWorker', 'startWork', 'markWorkDone',
     'completeService', 'cancelServiceRequest', 'initiateDonation',

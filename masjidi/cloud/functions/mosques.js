@@ -185,6 +185,33 @@ Parse.Cloud.define('claimMosque', async (request) => {
 });
 
 /**
+ * مساجد الإمام المستدعي.
+ *
+ * مصدر الحقيقة هو `Mosques.imamId` — وهو ما تتحقّق منه `mosqueForImam` قبل كل
+ * إجراء. اشتقاق القائمة من `MosqueClaims` بدلاً منه يجعل الواجهة تختلف عن
+ * الخادم: مسجدٌ أُسند بغير مسار الطلب (ترحيل بيانات أو تدخّل إداري) لا يراه
+ * إمامه أصلاً.
+ */
+Parse.Cloud.define('getMyMosques', async (request) => {
+  const imam = requireRole(request, 'imam');
+
+  const mosques = await new Parse.Query('Mosques')
+    .equalTo('imamId', imam)
+    .equalTo('isClaimed', true)
+    .ascending('name')
+    .limit(20)
+    .find({ useMasterKey: true });
+
+  return mosques.map((mosque) => ({
+    id: mosque.id,
+    name: mosque.get('name'),
+    wilayat: mosque.get('wilayat'),
+    governorate: mosque.get('governorate'),
+    openRequestsCount: mosque.get('openRequestsCount') || 0,
+  }));
+});
+
+/**
  * طلبات الملكية الخاصة بالإمام المستدعي.
  * `MosqueClaims` مقفلة على Master Key، فبلا هذه الدالة لا يعرف الإمام أبداً
  * إن كان طلبه قد اعتُمد أو رُفض.

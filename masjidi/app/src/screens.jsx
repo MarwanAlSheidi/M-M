@@ -438,6 +438,58 @@ export function Opportunities() {
   );
 }
 
+/**
+ * إبلاغ الإنجاز بصوره.
+ *
+ * الإمام يعتمد العمل، وبلا صورة يعتمده دون أن يراه — فالصور هي الدليل الذي
+ * تقوم عليه دورة «المنفّذ يبلّغ والإمام يقفل». تُرفع أولاً ثم يُرسَل الإبلاغ،
+ * فلا يُقفل الطلب على رفعٍ لم يكتمل.
+ */
+function ReportWork({ request, onDone }) {
+  const [files, setFiles] = useState([]);
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+
+  async function submit() {
+    setError('');
+    try {
+      const urls = [];
+      for (const [index, file] of files.entries()) {
+        setBusy(`جارٍ رفع الصورة ${index + 1} من ${files.length}…`);
+        urls.push(await api.uploadPhoto(file));
+      }
+      setBusy('جارٍ الإبلاغ…');
+      await api.markWorkDone(request.id, notes || 'أُنجز العمل.', urls);
+      onDone();
+    } catch (caught) {
+      setError(api.messageOf(caught));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  return (
+    <div className="report">
+      <Field label="ملاحظات (اختياري)" value={notes}
+        onChange={(event) => setNotes(event.target.value)} />
+
+      <label htmlFor={`photos-${request.id}`}>صور الإنجاز</label>
+      <input id={`photos-${request.id}`} type="file" accept="image/*" multiple
+        data-testid="photo-input"
+        onChange={(event) => setFiles(Array.from(event.target.files).slice(0, 6))} />
+      {files.length > 0 && (
+        <p className="hint">{files.length} صورة مختارة — تُرفع عند الإبلاغ.</p>
+      )}
+
+      {error && <div className="error">{error}</div>}
+      {busy && <p className="hint">{busy}</p>}
+
+      <button onClick={submit} disabled={Boolean(busy)}>أنجزتُ العمل</button>
+    </div>
+  );
+}
+
 export function MyVolunteering() {
   const interests = useList(api.getMyInterests);
   const tasks = useList(api.assignedToMe);
@@ -471,9 +523,7 @@ export function MyVolunteering() {
                 <button onClick={() => act(api.startWork, row.id)}>بدأت العمل</button>
               )}
               {row.status === 'in_progress' && (
-                <button onClick={() => act(api.markWorkDone, row.id, 'أُنجز العمل.')}>
-                  أنجزتُ العمل
-                </button>
+                <ReportWork request={row} onDone={() => { tasks.refresh(); interests.refresh(); }} />
               )}
               {row.status === 'pending_imam_approval' && <p>بانتظار معاينة الإمام واعتماده.</p>}
             </article>
@@ -509,40 +559,55 @@ export function MyVolunteering() {
 /* ————— الإمام ————— */
 
 export function ImamHome() {
+  // المساجد من `Mosques.imamId` لا من الطلبات: هو ما يتحقّق منه الخادم
+  const mosques = useList(api.getMyMosques);
   const claims = useList(api.getMyClaims);
-  const approved = claims.rows.filter((claim) => claim.status === 'approved');
   const [openMosque, setOpenMosque] = useState(null);
 
   if (openMosque) {
     return <MosqueRequests mosque={openMosque} onBack={() => setOpenMosque(null)} />;
   }
 
+  const waiting = claims.rows.filter((claim) => claim.status !== 'approved');
+
   return (
     <>
       <h2>مساجدي</h2>
-      <Listing state={claims} empty="لم تسجّل مسجداً بعد — ابحث عنه من تبويب «تسجيل مسجد».">
+      <Listing state={mosques} empty="لم تسجّل مسجداً بعد — ابحث عنه من تبويب «تسجيل مسجد».">
         <div>
-          {claims.rows.map((claim) => (
-            <article className="card" key={claim.id}>
+          {mosques.rows.map((mosque) => (
+            <article className="card" key={mosque.id}>
               <div className="spread">
-                <h3>{claim.mosqueName}</h3>
-                <span className={`tag ${claim.status === 'approved' ? 'done'
-                  : claim.status === 'rejected' ? 'off' : 'warn'}`}>
-                  {claim.status === 'approved' ? 'معتمد'
-                    : claim.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
-                </span>
+                <h3>{mosque.name}</h3>
+                {mosque.openRequestsCount > 0 && (
+                  <span className="tag warn">{mosque.openRequestsCount} طلب مفتوح</span>
+                )}
               </div>
-              <p>{claim.wilayat}</p>
-              {claim.status === 'approved' && (
-                <button onClick={() => setOpenMosque(claim)}>طلبات الصيانة</button>
-              )}
-              {claim.status === 'pending' && <p>سيراجع المشرف طلبك خلال أيام عمل.</p>}
+              <p>{mosque.wilayat} — {mosque.governorate}</p>
+              <button onClick={() => setOpenMosque({ mosqueId: mosque.id, mosqueName: mosque.name })}>
+                طلبات الصيانة
+              </button>
             </article>
           ))}
         </div>
       </Listing>
-      {approved.length === 0 && claims.rows.length > 0 && (
-        <p className="empty">لا يمكن إنشاء طلبات قبل اعتماد ملكية المسجد.</p>
+
+      {waiting.length > 0 && (
+        <>
+          <h2>طلبات ملكية قيد المراجعة</h2>
+          {waiting.map((claim) => (
+            <article className="card" key={claim.id}>
+              <div className="spread">
+                <h3>{claim.mosqueName}</h3>
+                <span className={`tag ${claim.status === 'rejected' ? 'off' : 'warn'}`}>
+                  {claim.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
+                </span>
+              </div>
+              <p>{claim.wilayat}</p>
+              {claim.status === 'pending' && <p>سيراجع المشرف طلبك خلال أيام عمل.</p>}
+            </article>
+          ))}
+        </>
       )}
     </>
   );
@@ -700,6 +765,18 @@ function RequestDetail({ request, onBack }) {
       {status === 'pending_imam_approval' && (
         <>
           <h2>معاينة واعتماد</h2>
+          {request.workerNotes && <p className="notice">«{request.workerNotes}»</p>}
+          {request.completionPhotos.length > 0 ? (
+            <div className="gallery" data-testid="gallery">
+              {request.completionPhotos.map((url) => (
+                <a key={url} href={url} target="_blank" rel="noreferrer">
+                  <img src={url} alt="صورة الإنجاز" loading="lazy" />
+                </a>
+              ))}
+            </div>
+          ) : (
+            <p className="hint">لم يرفع المنفّذ صوراً — عاين العمل على الطبيعة قبل الاعتماد.</p>
+          )}
           <Field label="ساعات التطوّع (اختياري)" value={note}
             onChange={(event) => setNote(event.target.value)} inputMode="numeric" />
           <button onClick={() => act(api.completeService, request.id, 5, Number(note) || 0)}>

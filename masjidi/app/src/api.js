@@ -79,6 +79,7 @@ export const searchMosques = (term, governorate) =>
 export const claimMosque = (mosqueId, evidenceNote) =>
   run('claimMosque', { mosqueId, evidenceNote });
 
+export const getMyMosques = () => run('getMyMosques');
 export const getMyClaims = () => run('getMyClaims');
 
 export const getMosqueAuditTrail = (mosqueId) => run('getMosqueAuditTrail', { mosqueId });
@@ -104,6 +105,8 @@ async function listRequests(build) {
       urgency: row.get('urgency'),
       status: row.get('status'),
       estimatedCost: row.get('estimatedCost'),
+      workerNotes: row.get('workerNotes'),
+      completionPhotos: row.get('completionPhotos') || [],
       createdAt: row.get('createdAt'),
       mosqueId: mosque ? mosque.id : null,
       mosqueName: mosque ? mosque.get('name') : null,
@@ -136,7 +139,21 @@ export const getMyInterests = () => run('getMyInterests');
 export const getRequestInterests = (requestId) => run('getRequestInterests', { requestId });
 export const assignWorker = (requestId, workerId) => run('assignWorker', { requestId, workerId });
 export const startWork = (requestId) => run('startWork', { requestId });
-export const markWorkDone = (requestId, notes) => run('markWorkDone', { requestId, notes });
+export const markWorkDone = (requestId, notes, photoUrls) =>
+  run('markWorkDone', { requestId, notes, photoUrls });
+
+/**
+ * رفع صورة إنجاز.
+ *
+ * `Parse.File` يرفع إلى تخزين المشروع ويعيد رابطاً؛ والخادم لا يقبل إلا روابط
+ * هذا التخزين، فلا يُحشر في السجل رابط خارجي. الرفع يتطلّب تفعيل
+ * `fileUpload.enableForAuthenticatedUser` على الخادم.
+ */
+export async function uploadPhoto(file) {
+  const safeName = `work-${Date.now()}.${(file.name.split('.').pop() || 'jpg').toLowerCase()}`;
+  const stored = await new Parse.File(safeName, file).save();
+  return stored.url();
+}
 export const completeService = (requestId, rating, volunteerHours) =>
   run('completeService', { requestId, rating, volunteerHours });
 
