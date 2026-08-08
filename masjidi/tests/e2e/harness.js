@@ -136,10 +136,21 @@ async function openBrowser() {
   });
 
   const contexts = [];
-  async function newUserPage() {
+
+  /**
+   * صفحة مستخدم، ومعها موقعه.
+   *
+   * المنصّة تقوم على الموقع: القرب يرتّب البحث والفرص، وتسجيل المسجد يشترط
+   * تأكيد الموقع عنده. فمتصفّحٌ بلا إذنِ موقع يُمثّل مستخدماً رافضاً — وهي
+   * حالةٌ تُختبر قصداً، لا الحالة الغالبة. الافتراضي هنا أن يُمنح الإذن.
+   *
+   * @param {object} [at] إحداثيات المستخدم، أو `null` لمحاكاة رافض الإذن
+   */
+  async function newUserPage(at = { latitude: 23.6, longitude: 58.5 }) {
     const context = await browser.newContext({
       viewport: { width: 420, height: 880 },
       locale: 'ar',
+      ...(at ? { permissions: ['geolocation'], geolocation: at } : {}),
     });
     contexts.push(context);
     const page = await context.newPage();

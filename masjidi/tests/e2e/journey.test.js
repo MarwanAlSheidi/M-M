@@ -125,17 +125,18 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
   await t.test('الإمام يصل إلى مسجده وسط متشابهي الاسم', async () => {
     await onScreen(imam, 'الإمام يصل إلى مسجده وسط متشابهي الاسم', async () => {
     const Mosque = stack.Parse.Object.extend('Mosques');
+    // المتصفّح عند 23.6/58.5 — فالأوّل عنده، والباقيان أبعد بالترتيب
     const twins = [
-      { wilayat: 'القابل', village: 'المنجرد' },
-      { wilayat: 'صحار', village: 'حلال بني غيث' },
-      { wilayat: 'بركاء', village: 'السلاحة' },
+      { wilayat: 'القابل', village: 'المنجرد', lat: 23.6, lng: 58.5 },
+      { wilayat: 'صحار', village: 'حلال بني غيث', lat: 23.7, lng: 58.5 },
+      { wilayat: 'بركاء', village: 'السلاحة', lat: 23.9, lng: 58.5 },
     ].map((where, i) => {
       const twin = new Mosque();
       twin.set({
         externalId: `twin_${stamp}_${i}`, name: 'مصلى العيدين',
         nameNormalized: 'مصلي العيدين',
         nameTokens: ['مصلي', 'العيدين', where.village],
-        governorate: 'شمال الشرقية', ...where,
+        governorate: 'شمال الشرقية', hasLocation: true, ...where,
       });
       return twin;
     });
@@ -152,11 +153,27 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     assert.ok(shown.some((text) => text.includes('المنجرد')),
       'القرية غائبة عن البطاقة، فالمساجد الثلاثة سواء في عين الإمام');
 
+    // والأقرب أوّلاً: الإمام واقفٌ عند الأوّل، فهو صدر القائمة
+    assert.match(shown[0], /المنجرد/,
+      'الترتيب ليس بالأقرب — والإمام يختار من ثلاثة متطابقة الظاهر');
+
     // وإضافة القرية إلى البحث تُوصله إلى واحد — القرية ضمن الكلمات المفهرسة
     await imam.getByLabel('اسم المسجد').fill('العيدين المنجرد');
     await imam.getByRole('button', { name: 'بحث' }).click();
     await waitForCards(imam, 1);
     assert.match(await imam.locator('.card').innerText(), /المنجرد/);
+    });
+  });
+
+  // التسجيل يشترط تأكيد الموقع عند المسجد — وهو أقوى ما بيد المشرف للتحقّق
+  await t.test('التسجيل يؤكّد الموقع، ويُقبل من عند المسجد', async () => {
+    await onScreen(imam, 'التسجيل يؤكّد الموقع', async () => {
+      await imam.getByLabel('صفتك').selectOption('agent');
+      await imam.getByRole('button', { name: /أؤكّد أني عنده/ }).click();
+
+      await imam.waitForSelector('.notice');
+      assert.match(await imam.locator('.notice').innerText(), /من عند المسجد/,
+        'الطلب لم يُقبل بتأكيد الموقع — أو لم يُحتسب أنه عنده');
     });
   });
 
