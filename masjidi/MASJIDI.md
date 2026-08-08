@@ -142,6 +142,7 @@ scripts/
   clean_mosques.py     Excel → JSON نظيف
   seed_mosques.js      استيراد إلى Parse (idempotent)
   apply_schema.js      تطبيق schema.json — الحقول والصلاحيات والفهارس
+  promote_admin.js     ترقية حساب إلى مشرف — بدونه لا تُعتمد طلبات الملكية
   lib/index-plan.js    تخطيط الفهارس الناقصة وفرز المكانيّ — تحت الاختبار
   lib/tokenize.js      كلمات البحث — يشترك فيها الاستيراد واختبار التكامل
   build_single_file.py توليد cloud/main.bundle.js من ملفات cloud/
@@ -632,6 +633,29 @@ if (user.dirty('isVerifiedContractor')) {
 **التشخيص نفسه احتاج علاجاً:** «Timeout waiting for button» لا تقول شيئاً —
 أهي شاشة خطأ، أم قائمة فارغة، أم زرٌّ باسمٍ آخر؟ صار كل عطلٍ يُلحق بنصّه ما
 تعرضه الشاشة فعلاً، فبان السبب من أوّل قراءة.
+
+---
+
+### 🔴 لا مشرف على خادمٍ جديد — والمنصّة معطّلة بلا مشرف
+
+ظهر عند سؤالٍ بسيط: هل البرنامج جاهز؟
+
+`beforeSave` يمنع أي مستخدم من ترقية نفسه إلى `admin` — بحقّ. والنتيجة أن
+خادماً جديداً يبدأ **بلا مشرف إطلاقاً**، ولا سكربت ولا خطوة موثّقة لإنشاء
+أوّله. فالأئمة يسجّلون ويطلبون ملكية مساجدهم، وطلباتهم تبقى `pending` إلى
+الأبد لأن `reviewMosqueClaim` تحتاج `admin`. **الطريق مقطوع عند أوّل خطوة**،
+وكل ما بُني بعدها لا يُبلَغ.
+
+لم يظهر في أي اختبار لأن كل اختبار يصنع مشرفه بالمفتاح الرئيسي — وهو ما لا
+يملكه المُشغّل من التطبيق.
+
+**العلاج:** `scripts/promote_admin.js` (و`npm run admin`). لا يُنشئ حساباً بل
+يرقّي حساباً سجّل صاحبه بنفسه، فتبقى كلمة المرور عنده وحده. ومعه `--list`
+ليُعرف من هم المشرفون، و`--demote` للإلغاء — وترجع الصفة إلى `donor`، أضيق
+الأدوار، لا إلى ما كانت لأننا لم نحفظه. وصار خطوةً مرقّمة في `CLAUDE.md`.
+
+**الدرس:** الاختبارات تُغطّي ما يفعله المستخدم، لا ما يفعله من يُشغّل النظام
+أوّل مرّة. مسار الإقلاع لا اختبار له بطبيعته — فليُكتب في خطوات النشر.
 
 ---
 
@@ -6884,7 +6908,8 @@ files/
     "lint": "eslint cloud scripts tests --ext .js",
     "test:integration": "node --test tests/integration/*.test.js",
     "seed:verify": "node scripts/seed_mosques.js --verify",
-    "test:e2e": "node --test --test-timeout=180000 tests/e2e/*.test.js"
+    "test:e2e": "node --test --test-timeout=180000 tests/e2e/*.test.js",
+    "admin": "node scripts/promote_admin.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

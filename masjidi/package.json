@@ -12,7 +12,8 @@
     "lint": "eslint cloud scripts tests --ext .js",
     "test:integration": "node --test tests/integration/*.test.js",
     "seed:verify": "node scripts/seed_mosques.js --verify",
-    "test:e2e": "node --test --test-timeout=180000 tests/e2e/*.test.js"
+    "test:e2e": "node --test --test-timeout=180000 tests/e2e/*.test.js",
+    "admin": "node scripts/promote_admin.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
