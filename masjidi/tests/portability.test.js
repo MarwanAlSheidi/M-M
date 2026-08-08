@@ -74,6 +74,38 @@ function methodsIn(source) {
     .map((hit) => hit.slice(1).replace(/\s*\($/, '')));
 }
 
+/**
+ * قوائم المحافظات مكتوبة بأيدينا في موضعين — التحقّق في السحابة والاختيار في
+ * الواجهة — والبيانات مصدرها الوزارة. حرفٌ يختلف يعني محافظةً يرفضها الخادم أو
+ * لا يجدها المستخدم، **وتعني خطةَ الإشعار البديلة تُطابق صفراً** لأنها تُقارن
+ * محافظة المستخدم بمحافظة المسجد نصّاً.
+ */
+test('قوائم المحافظات تطابق البيانات', async (t) => {
+  const listIn = (file, declaration) => {
+    const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+    const block = source.match(new RegExp(`${declaration} = \\[(.*?)\\];`, 's'));
+    assert.ok(block, `${file}: لم يُعثر على ${declaration}`);
+    return new Set([...block[1].matchAll(/'([^']+)'/g)].map((hit) => hit[1]));
+  };
+
+  const cloud = listIn('cloud/functions/users.js', 'const GOVERNORATES');
+  const client = listIn('app/src/api.js', 'export const GOVERNORATES');
+
+  await t.test('الموضعان متطابقان', () => {
+    assert.deepEqual([...cloud].sort(), [...client].sort(),
+      'محافظة يقبلها أحدهما ويرفضها الآخر');
+  });
+
+  await t.test('وتطابقان بيانات الوزارة حرفاً بحرف', () => {
+    const data = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '..', 'data', 'mosques.json'), 'utf8'));
+    const actual = new Set(data.map((row) => row.governorate));
+
+    assert.deepEqual([...actual].sort(), [...cloud].sort(),
+      'اختلافُ حرفٍ يجعل المستخدم يختار محافظةً لا تُطابق أي مسجد');
+  });
+});
+
 test('محمولية الاستعلامات', async (t) => {
   const files = cloudSources();
 

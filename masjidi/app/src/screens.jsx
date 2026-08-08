@@ -37,9 +37,18 @@ export function Field({ label, options, multiline, ...props }) {
  * أسماء المساجد تتكرّر بالمئات على مستوى السلطنة («مصلى العيدين» اسمٌ لـ369
  * مسجداً)، فالاسم وحده لا يدلّ على شيء. القرية أدقّ ما يميّز، ثم الولاية.
  */
-export const Where = ({ wilayat, village, governorate }) => {
+export const Where = ({ wilayat, village, governorate, mosqueNumber }) => {
   const parts = [wilayat, village || governorate].filter(Boolean);
-  return parts.length ? <p>{parts.join(' — ')}</p> : null;
+  if (!parts.length && !mosqueNumber) return null;
+
+  return (
+    <>
+      {parts.length > 0 && <p>{parts.join(' — ')}</p>}
+      {/* 417 مجموعة تتطابق في الاسم والولاية والقرية معاً — 1,084 مسجداً —
+          ولا يميّزها إلا رقم الوزارة، وهو ما بيد الإمام في أوراق مسجده */}
+      {mosqueNumber && <p className="when">رقم الوزارة: {mosqueNumber}</p>}
+    </>
+  );
 };
 
 /** اختيار المهارات من فئات الأعمال نفسها — لا نصّاً حرّاً يتشتّت. */
@@ -747,7 +756,7 @@ export function ImamHome() {
                 )}
               </div>
               <Where wilayat={mosque.wilayat} village={mosque.village}
-                governorate={mosque.governorate} />
+                governorate={mosque.governorate} mosqueNumber={mosque.mosqueNumber} />
               <div className="row">
                 <button onClick={() => setOpenMosque({ mosqueId: mosque.id, mosqueName: mosque.name })}>
                   طلبات الصيانة
@@ -774,7 +783,8 @@ export function ImamHome() {
                   {claim.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
                 </span>
               </div>
-              <Where wilayat={claim.wilayat} village={claim.village} />
+              <Where wilayat={claim.wilayat} village={claim.village}
+                mosqueNumber={claim.mosqueNumber} />
               {claim.status === 'pending' && <p>سيراجع المشرف طلبك خلال أيام عمل.</p>}
             </article>
           ))}
@@ -1056,8 +1066,11 @@ export function ClaimMosque() {
             <h3>{mosque.name}</h3>
             {mosque.isClaimed && <span className="tag off">مسجّل</span>}
           </div>
-          {/* القرية أدقّ ما يميّز مسجدين متشابهي الاسم في الولاية نفسها */}
+          {/* القرية تميّز أكثرها، ورقم الوزارة يميّز ما تطابق فيها أيضاً */}
           <p>{mosque.governorate} — {mosque.wilayat}{mosque.village ? ` — ${mosque.village}` : ''}</p>
+          {mosque.mosqueNumber && (
+            <p className="when">رقم الوزارة: {mosque.mosqueNumber}</p>
+          )}
           {!mosque.isClaimed && (
             <button className="ghost" onClick={() => claim(mosque)}>هذا مسجدي</button>
           )}
@@ -1098,7 +1111,7 @@ export function AdminHome() {
               <h3>{row.mosqueName}</h3>
               {/* المشرف يعتمد ملكية مسجدٍ بعينه، وثلاثمئة غيره تحمل الاسم نفسه */}
               <Where wilayat={row.wilayat} village={row.village}
-                governorate={row.governorate} />
+                governorate={row.governorate} mosqueNumber={row.mosqueNumber} />
               <p>الطالب: {row.imamName || 'بلا اسم'}{row.imamPhone ? ` · ${row.imamPhone}` : ''}</p>
               {row.evidenceNote && <p>«{row.evidenceNote}»</p>}
               <div className="row">

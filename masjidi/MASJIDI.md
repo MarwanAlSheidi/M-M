@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 185 حالة على بديل Parse (`npm test`) + 53 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 19 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 188 حالة على بديل Parse (`npm test`) + 53 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 19 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -695,6 +695,39 @@ if (user.dirty('isVerifiedContractor')) {
 ومعه **رابط الطريق في قائمة المهامّ**: الإحداثيات كانت في القاعدة ولا تصل إلى
 المنفّذ. أُضيفت القرية إلى `getNearbyOpportunities` و`getMyClaims`
 و`listPendingClaims` وإلى قراءة الطلبات في العميل.
+
+---
+
+### 🟠 ألفٌ وأربعة وثمانون مسجداً لا يميّزها شيءٌ ممّا نعرضه
+
+اختبرتُ كفاية إصلاحي السابق — عرضُ القرية لتمييز متشابهي الاسم — فتبيّن أنه
+**غير كافٍ لستّة في المئة من البيانات**: 417 مجموعة تتطابق في الاسم والولاية
+والقرية معاً، تشمل 1,084 مسجداً. «مسجد الغبي» في عبري بقرية الغبي: **واحدٌ
+وعشرون مسجداً** بالاسم نفسه والولاية نفسها والقرية نفسها.
+
+فكيف يختار الإمام مسجده من إحدى وعشرين بطاقة متطابقة؟ لا يستطيع. يختار واحدةً
+عشوائياً، فتُقيَّد طلباته على سجلٍّ ليس سجلّ مسجده، ويأتي إمامٌ آخر فيختار
+أخرى عشوائياً كذلك. والمشرف الذي يعتمد الملكية لا يملك ما يتحقّق به أصلاً.
+
+**والوزارة حلّت هذا قبلنا.** لكل مسجد رقمٌ في سجلّها (`27/1109`)، وهو موجود في
+البيانات، **ويصل إلى العميل ضمن `PUBLIC_FIELDS` منذ البداية** — ولا يُعرض في
+شاشة واحدة. وفحصتُ: **الرقم يميّز المجموعات الـ417 كلّها بلا استثناء**، ولا
+مسجد فيها بلا رقم.
+
+فصار يُعرض حيث يجب أن يُختار مسجدٌ بعينه: شاشة تسجيل المسجد، ومراجعة المشرف،
+ومساجد الإمام وطلباته. وهو ما بيد الإمام في أوراق مسجده فيُطابقه.
+
+**الدرس:** إصلاحٌ يُحسَب كافياً حتى يُقاس. عرضُ القرية عالج 94% وبدا حلّاً
+تامّاً — ولولا أنني سألت «وكم بقي؟» لبقيت 1,084 حالةً بلا حلّ خلف إصلاحٍ يبدو
+مكتملاً.
+
+#### وقوائم المحافظات صارت محروسة
+
+كتبتُ قائمة المحافظات بيدي في موضعين — التحقّق في السحابة والاختيار في الواجهة —
+والبيانات مصدرها الوزارة. فحصتُها فطابقت، لكن لا شيء كان يُبقيها مطابقة. وحرفٌ
+واحد يعني محافظةً يرفضها الخادم أو لا يجدها المستخدم، **ويعني خطةَ الإشعار
+البديلة تُطابق صفراً** لأنها تقارن نصّاً بنصّ. صار اختبارٌ يقارن الموضعين
+بالبيانات: جرّبته بمسافةٍ زائدة واحدة فسقط.
 
 ---
 
@@ -2162,6 +2195,7 @@ Parse.Cloud.define('getMyMosques', async (request) => {
     name: mosque.get('name'),
     wilayat: mosque.get('wilayat'),
     village: mosque.get('village'),
+    mosqueNumber: mosque.get('mosqueNumber'),
     governorate: mosque.get('governorate'),
     openRequestsCount: mosque.get('openRequestsCount') || 0,
   }));
@@ -2194,6 +2228,7 @@ Parse.Cloud.define('getMyClaims', async (request) => {
       mosqueName: mosque ? mosque.get('name') : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
       village: mosque ? mosque.get('village') : null,
+      mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,
     };
   });
 });
@@ -2225,6 +2260,7 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
       mosqueName: mosque ? mosque.get('name') : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
       village: mosque ? mosque.get('village') : null,
+      mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,
       governorate: mosque ? mosque.get('governorate') : null,
       imamName: imam ? imam.get('fullName') : null,
       imamPhone: imam ? imam.get('phone') : null, // المشرف يتحقّق بالاتصال
@@ -4612,6 +4648,7 @@ Parse.Cloud.define('getMyMosques', async (request) => {
     name: mosque.get('name'),
     wilayat: mosque.get('wilayat'),
     village: mosque.get('village'),
+    mosqueNumber: mosque.get('mosqueNumber'),
     governorate: mosque.get('governorate'),
     openRequestsCount: mosque.get('openRequestsCount') || 0,
   }));
@@ -4644,6 +4681,7 @@ Parse.Cloud.define('getMyClaims', async (request) => {
       mosqueName: mosque ? mosque.get('name') : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
       village: mosque ? mosque.get('village') : null,
+      mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,
     };
   });
 });
@@ -4675,6 +4713,7 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
       mosqueName: mosque ? mosque.get('name') : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
       village: mosque ? mosque.get('village') : null,
+      mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,
       governorate: mosque ? mosque.get('governorate') : null,
       imamName: imam ? imam.get('fullName') : null,
       imamPhone: imam ? imam.get('phone') : null, // المشرف يتحقّق بالاتصال

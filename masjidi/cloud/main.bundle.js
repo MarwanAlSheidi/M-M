@@ -859,6 +859,7 @@ Parse.Cloud.define('getMyMosques', async (request) => {
     name: mosque.get('name'),
     wilayat: mosque.get('wilayat'),
     village: mosque.get('village'),
+    mosqueNumber: mosque.get('mosqueNumber'),
     governorate: mosque.get('governorate'),
     openRequestsCount: mosque.get('openRequestsCount') || 0,
   }));
@@ -891,6 +892,7 @@ Parse.Cloud.define('getMyClaims', async (request) => {
       mosqueName: mosque ? mosque.get('name') : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
       village: mosque ? mosque.get('village') : null,
+      mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,
     };
   });
 });
@@ -922,6 +924,7 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
       mosqueName: mosque ? mosque.get('name') : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
       village: mosque ? mosque.get('village') : null,
+      mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,
       governorate: mosque ? mosque.get('governorate') : null,
       imamName: imam ? imam.get('fullName') : null,
       imamPhone: imam ? imam.get('phone') : null, // المشرف يتحقّق بالاتصال
