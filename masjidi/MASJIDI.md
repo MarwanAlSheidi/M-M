@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 188 حالة على بديل Parse (`npm test`) + 53 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 19 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 188 حالة على بديل Parse (`npm test`) + 59 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 19 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -132,7 +132,7 @@ cloud/
     push.js            صندوق الوارد الدائم + الدفع فوقه — لا يرمي أبداً
     geo.js             القرب بصندوق إحاطة وهافرساين — بلا فهرس مكاني
   functions/
-    mosques.js         البحث بالكلمات المفهرسة، القرب الجغرافي، طلب ملكية المسجد
+    mosques.js         البحث بالكلمات المفهرسة ومرتّباً بالأقرب، القرب، طلب الملكية
     requests.js        دورة حياة الطلب، اهتمام المتطوّعين، سحب التكليف والحدود
     donations.js       التبرع، التأكيد، الصرف، السجل المالي، webhook البوابة
     users.js           اعتماد الشركات، الملف الشخصي، المسجد المفضّل
@@ -166,6 +166,8 @@ tests/
     photos.test.js     رفع صورة حقيقية والتحقّق من محتواها وحارس المضيف
     limits.test.js     الحدود وسحب التكليف
     inbox.test.js      صندوق الوارد بصفر Installation مسجَّل
+    unlocated.test.js  فرصٌ في مساجد بلا إحداثيات — تظهر آخراً لا تُحذف
+    proximity.test.js  البحث يرتّب بالأقرب — الموقع يميّز متطابقي الاسم
   e2e/                 متصفّح حقيقي فوق خادم حقيقي — `npm run test:e2e`
     harness.js         يبني الواجهة على منفذ الاختبار، ويقدّمها، ويفتح Chromium
     journey.test.js    الرحلة كاملة: التسجيل، الطلب، الاهتمام، السحب، التنبيهات
@@ -695,6 +697,31 @@ if (user.dirty('isVerifiedContractor')) {
 ومعه **رابط الطريق في قائمة المهامّ**: الإحداثيات كانت في القاعدة ولا تصل إلى
 المنفّذ. أُضيفت القرية إلى `getNearbyOpportunities` و`getMyClaims`
 و`listPendingClaims` وإلى قراءة الطلبات في العميل.
+
+---
+
+### 🟢 الموقع هو ما يميّز — لا رقمٌ في سجلّ
+
+عالجتُ تشابه الأسماء برقم الوزارة، وهو صحيح لكنه ليس أوّل ما يُسأل عنه الإمام:
+لن يخرج أوراق مسجده ليجده في تطبيق. **وهو واقفٌ في مسجده أو قريبٌ منه.**
+
+فصار `searchMosques` يقبل موقع الباحث — اختيارياً — ويُرتّب بالأقرب. فمن بين
+واحدٍ وعشرين «مسجد الغبي» في عبري، الذي على بُعد خمسين متراً هو مسجده بلا شكّ،
+ورقم الوزارة يبقى للتثبّت لا للتمييز.
+
+وهذا هو المبدأ الذي بُنيت عليه المنصّة من أوّلها: **موقع المسجد هو ما يربط
+المصلّين بمسجدهم**. كان مطبَّقاً في «حولي» وفي فرص التطوّع، وغائباً عن الشاشة
+التي يختار فيها الإمام مسجده — وهي أوّل ما يفعله، وأخطر خطوة في المسار كلّه:
+اختيارٌ خاطئ يُقيّد طلباته على سجلٍّ ليس سجلّ مسجده.
+
+**والقاعدة نفسها المتّبعة في الفرص:** الأقرب أوّلاً، **ومجهول الموقع آخراً
+موسوماً لا محذوفاً** — فالمسجد بلا إحداثيات يبقى في النتيجة ويبقى قابلاً
+للتسجيل. والموقع اختياري: من رفض مشاركته يرى الترتيب الطبيعي كما كان، ويبقى
+له اسم القرية والتصفية بالمحافظة ورقم الوزارة.
+
+**وحالتان تُختبران صراحةً لأنهما تُنتجان أخطاءً صامتة:** إحداثياتٌ فاسدة (نصّ
+مكان الرقم) تُعامَل كغيابها لا كصفرٍ عند خط الاستواء يجعل كل المساجد على بُعد
+آلاف الكيلومترات؛ ومسجدٌ بلا إحداثيات لا يُحذف من النتيجة.
 
 ---
 
@@ -2090,27 +2117,56 @@ function normalizeArabic(text) {
 /** بحث نصّي بالاسم أو القرية داخل ولاية/محافظة. */
 Parse.Cloud.define('searchMosques', async (request) => {
   requireUser(request);
-  const { term, governorate, wilayat, limit = 30 } = request.params;
+  const { term, governorate, wilayat, limit = 30, lat, lng } = request.params;
 
   const cleaned = term ? normalizeArabic(term) : '';
   const cap = Math.min(Number(limit) || 30, 100);
+
+  /**
+   * الموقع هو ما يربط المصلّي بمسجده.
+   *
+   * أسماء المساجد تتكرّر بالمئات — «مسجد الغبي» في عبري واحدٌ وعشرون مسجداً
+   * بالاسم والولاية والقرية نفسها — ولا يميّزها اسمٌ ولا موضعٌ مكتوب. لكن من
+   * يبحث عن مسجده واقفٌ فيه أو قريبٌ منه، فأقربها إليه هو مسجده. رقم الوزارة
+   * يبقى للتثبّت، والقرب هو الذي يدلّ.
+   *
+   * والموقع اختياري: من رفض مشاركته يرى النتائج بترتيبها الطبيعي كما كان.
+   */
+  const from = geo.validCoordinates(Number(lat), Number(lng))
+    ? { lat: Number(lat), lng: Number(lng) }
+    : null;
+
+  const withDistance = (rows) => {
+    const shaped = rows.map((mosque) => mosque.toJSON());
+    if (!from) return shaped;
+
+    return shaped
+      .map((mosque) => ({
+        ...mosque,
+        distanceKm: geo.validCoordinates(mosque.lat, mosque.lng)
+          ? Math.round(geo.distanceKm(from.lat, from.lng, mosque.lat, mosque.lng) * 100) / 100
+          : null,
+      }))
+      // الأقرب أوّلاً، ومجهولُ الموقع آخراً لا محذوفاً — القاعدة نفسها في الفرص
+      .sort((a, b) => (a.distanceKm == null ? Infinity : a.distanceKm)
+        - (b.distanceKm == null ? Infinity : b.distanceKm));
+  };
 
   /** قيود المحافظة والولاية مشتركة بين المحاولتين. */
   const scoped = () => {
     const query = new Parse.Query('Mosques');
     if (governorate) query.equalTo('governorate', governorate);
     if (wilayat) query.equalTo('wilayat', wilayat);
-    query.select(...PUBLIC_FIELDS);
+    query.select(...PUBLIC_FIELDS, 'lat', 'lng');
     query.limit(cap);
     return query;
   };
 
   if (cleaned.length < 2) {
-    const all = await scoped().find({ useMasterKey: true });
-    return all.map((m) => m.toJSON());
+    return withDistance(await scoped().find({ useMasterKey: true }));
   }
 
-  const emit = (rows) => rows.map((m) => m.toJSON());
+  const emit = withDistance;
 
   // ١) مطابقة الكلمات: `nameTokens` مصفوفة، وفهرس المصفوفة يخدم المطابقة
   //    التامة لعنصر منها. هذا يلتقط «النور» من «مسجد النور» بلا مسح — وهي
@@ -4543,27 +4599,56 @@ function normalizeArabic(text) {
 /** بحث نصّي بالاسم أو القرية داخل ولاية/محافظة. */
 Parse.Cloud.define('searchMosques', async (request) => {
   requireUser(request);
-  const { term, governorate, wilayat, limit = 30 } = request.params;
+  const { term, governorate, wilayat, limit = 30, lat, lng } = request.params;
 
   const cleaned = term ? normalizeArabic(term) : '';
   const cap = Math.min(Number(limit) || 30, 100);
+
+  /**
+   * الموقع هو ما يربط المصلّي بمسجده.
+   *
+   * أسماء المساجد تتكرّر بالمئات — «مسجد الغبي» في عبري واحدٌ وعشرون مسجداً
+   * بالاسم والولاية والقرية نفسها — ولا يميّزها اسمٌ ولا موضعٌ مكتوب. لكن من
+   * يبحث عن مسجده واقفٌ فيه أو قريبٌ منه، فأقربها إليه هو مسجده. رقم الوزارة
+   * يبقى للتثبّت، والقرب هو الذي يدلّ.
+   *
+   * والموقع اختياري: من رفض مشاركته يرى النتائج بترتيبها الطبيعي كما كان.
+   */
+  const from = geo.validCoordinates(Number(lat), Number(lng))
+    ? { lat: Number(lat), lng: Number(lng) }
+    : null;
+
+  const withDistance = (rows) => {
+    const shaped = rows.map((mosque) => mosque.toJSON());
+    if (!from) return shaped;
+
+    return shaped
+      .map((mosque) => ({
+        ...mosque,
+        distanceKm: geo.validCoordinates(mosque.lat, mosque.lng)
+          ? Math.round(geo.distanceKm(from.lat, from.lng, mosque.lat, mosque.lng) * 100) / 100
+          : null,
+      }))
+      // الأقرب أوّلاً، ومجهولُ الموقع آخراً لا محذوفاً — القاعدة نفسها في الفرص
+      .sort((a, b) => (a.distanceKm == null ? Infinity : a.distanceKm)
+        - (b.distanceKm == null ? Infinity : b.distanceKm));
+  };
 
   /** قيود المحافظة والولاية مشتركة بين المحاولتين. */
   const scoped = () => {
     const query = new Parse.Query('Mosques');
     if (governorate) query.equalTo('governorate', governorate);
     if (wilayat) query.equalTo('wilayat', wilayat);
-    query.select(...PUBLIC_FIELDS);
+    query.select(...PUBLIC_FIELDS, 'lat', 'lng');
     query.limit(cap);
     return query;
   };
 
   if (cleaned.length < 2) {
-    const all = await scoped().find({ useMasterKey: true });
-    return all.map((m) => m.toJSON());
+    return withDistance(await scoped().find({ useMasterKey: true }));
   }
 
-  const emit = (rows) => rows.map((m) => m.toJSON());
+  const emit = withDistance;
 
   // ١) مطابقة الكلمات: `nameTokens` مصفوفة، وفهرس المصفوفة يخدم المطابقة
   //    التامة لعنصر منها. هذا يلتقط «النور» من «مسجد النور» بلا مسح — وهي

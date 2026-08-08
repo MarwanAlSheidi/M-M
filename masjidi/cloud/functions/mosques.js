@@ -137,27 +137,56 @@ function normalizeArabic(text) {
 /** بحث نصّي بالاسم أو القرية داخل ولاية/محافظة. */
 Parse.Cloud.define('searchMosques', async (request) => {
   requireUser(request);
-  const { term, governorate, wilayat, limit = 30 } = request.params;
+  const { term, governorate, wilayat, limit = 30, lat, lng } = request.params;
 
   const cleaned = term ? normalizeArabic(term) : '';
   const cap = Math.min(Number(limit) || 30, 100);
+
+  /**
+   * الموقع هو ما يربط المصلّي بمسجده.
+   *
+   * أسماء المساجد تتكرّر بالمئات — «مسجد الغبي» في عبري واحدٌ وعشرون مسجداً
+   * بالاسم والولاية والقرية نفسها — ولا يميّزها اسمٌ ولا موضعٌ مكتوب. لكن من
+   * يبحث عن مسجده واقفٌ فيه أو قريبٌ منه، فأقربها إليه هو مسجده. رقم الوزارة
+   * يبقى للتثبّت، والقرب هو الذي يدلّ.
+   *
+   * والموقع اختياري: من رفض مشاركته يرى النتائج بترتيبها الطبيعي كما كان.
+   */
+  const from = geo.validCoordinates(Number(lat), Number(lng))
+    ? { lat: Number(lat), lng: Number(lng) }
+    : null;
+
+  const withDistance = (rows) => {
+    const shaped = rows.map((mosque) => mosque.toJSON());
+    if (!from) return shaped;
+
+    return shaped
+      .map((mosque) => ({
+        ...mosque,
+        distanceKm: geo.validCoordinates(mosque.lat, mosque.lng)
+          ? Math.round(geo.distanceKm(from.lat, from.lng, mosque.lat, mosque.lng) * 100) / 100
+          : null,
+      }))
+      // الأقرب أوّلاً، ومجهولُ الموقع آخراً لا محذوفاً — القاعدة نفسها في الفرص
+      .sort((a, b) => (a.distanceKm == null ? Infinity : a.distanceKm)
+        - (b.distanceKm == null ? Infinity : b.distanceKm));
+  };
 
   /** قيود المحافظة والولاية مشتركة بين المحاولتين. */
   const scoped = () => {
     const query = new Parse.Query('Mosques');
     if (governorate) query.equalTo('governorate', governorate);
     if (wilayat) query.equalTo('wilayat', wilayat);
-    query.select(...PUBLIC_FIELDS);
+    query.select(...PUBLIC_FIELDS, 'lat', 'lng');
     query.limit(cap);
     return query;
   };
 
   if (cleaned.length < 2) {
-    const all = await scoped().find({ useMasterKey: true });
-    return all.map((m) => m.toJSON());
+    return withDistance(await scoped().find({ useMasterKey: true }));
   }
 
-  const emit = (rows) => rows.map((m) => m.toJSON());
+  const emit = withDistance;
 
   // ١) مطابقة الكلمات: `nameTokens` مصفوفة، وفهرس المصفوفة يخدم المطابقة
   //    التامة لعنصر منها. هذا يلتقط «النور» من «مسجد النور» بلا مسح — وهي

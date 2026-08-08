@@ -131,8 +131,21 @@ export const nearbyOpportunities = (lat, lng, radius = 15) =>
 
 export const updateMyLocation = (lat, lng) => run('updateMyLocation', { lat, lng });
 
-export const searchMosques = (term, governorate) =>
-  run('searchMosques', { term, governorate, limit: 30 });
+/**
+ * البحث عن مسجد — ومعه موقع الباحث إن أذن به.
+ *
+ * الموقع هو ما يربط المصلّي بمسجده: أسماء المساجد تتكرّر بالمئات، ومن يبحث عن
+ * مسجده واقفٌ فيه أو قريبٌ منه. فالأقرب أوّلاً، ومن رفض المشاركة يرى الترتيب
+ * الطبيعي كما كان.
+ */
+export const searchMosques = (term, governorate, point) =>
+  run('searchMosques', {
+    term,
+    governorate,
+    limit: 30,
+    lat: point ? point.lat : undefined,
+    lng: point ? point.lng : undefined,
+  });
 
 export const claimMosque = (mosqueId, evidenceNote) =>
   run('claimMosque', { mosqueId, evidenceNote });

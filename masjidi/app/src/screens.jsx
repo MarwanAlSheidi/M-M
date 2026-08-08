@@ -1004,6 +1004,9 @@ function RequestDetail({ request, onBack }) {
 const SEARCH_CAP = 100;
 
 export function ClaimMosque() {
+  // موقع الإمام يُرتّب النتائج بالأقرب — وهو ما يميّز متطابقي الاسم فعلاً.
+  // فشلُ تحديد الموقع لا يمنع البحث: يسقط إلى الترتيب الطبيعي.
+  const location = useLocation();
   const [term, setTerm] = useState('');
   const [governorate, setGovernorate] = useState('');
   const [rows, setRows] = useState(null);
@@ -1015,7 +1018,7 @@ export function ClaimMosque() {
     setError('');
     setMessage('');
     try {
-      setRows(await api.searchMosques(term, governorate || undefined));
+      setRows(await api.searchMosques(term, governorate || undefined, location.point));
     } catch (caught) {
       setError(api.messageOf(caught));
     }
@@ -1047,8 +1050,9 @@ export function ClaimMosque() {
         </select>
       </form>
       <p className="hint">
-        كثير من المساجد تتشابه أسماؤها — أضِف اسم القرية إلى البحث أو اختر
-        محافظتك لتصل إلى مسجدك.
+        {location.point
+          ? 'كثير من المساجد تتشابه أسماؤها — النتائج مرتّبة بالأقرب إليك، فمسجدك في صدرها غالباً.'
+          : 'كثير من المساجد تتشابه أسماؤها — أضِف اسم القرية إلى البحث أو اختر محافظتك لتصل إلى مسجدك.'}
       </p>
 
       {error && <div className="error">{error}</div>}
@@ -1064,8 +1068,13 @@ export function ClaimMosque() {
         <article className="card" key={mosque.objectId}>
           <div className="spread">
             <h3>{mosque.name}</h3>
-            {mosque.isClaimed && <span className="tag off">مسجّل</span>}
+            {mosque.distanceKm != null
+              ? <DistanceTag km={mosque.distanceKm} />
+              : mosque.isClaimed && <span className="tag off">مسجّل</span>}
           </div>
+          {mosque.distanceKm != null && mosque.isClaimed && (
+            <span className="tag off">مسجّل</span>
+          )}
           {/* القرية تميّز أكثرها، ورقم الوزارة يميّز ما تطابق فيها أيضاً */}
           <p>{mosque.governorate} — {mosque.wilayat}{mosque.village ? ` — ${mosque.village}` : ''}</p>
           {mosque.mosqueNumber && (
