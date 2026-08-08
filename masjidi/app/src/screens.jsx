@@ -79,6 +79,7 @@ export function Auth({ onDone }) {
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({
     username: '', password: '', fullName: '', phone: '', role: 'volunteer',
+    companyName: '', crNumber: '',
   });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -116,6 +117,26 @@ export function Auth({ onDone }) {
             <Field label="الاسم الكامل" value={form.fullName} onChange={set('fullName')} />
             <Field label="رقم الهاتف" value={form.phone} onChange={set('phone')} inputMode="tel" />
             <Field label="الصفة" value={form.role} onChange={set('role')} options={api.ROLES} />
+
+            {form.role === 'contractor' && (
+              <>
+                <Field label="اسم الشركة" value={form.companyName}
+                  onChange={set('companyName')} />
+                <Field label="رقم السجل التجاري" value={form.crNumber}
+                  onChange={set('crNumber')} inputMode="numeric" />
+                <p className="hint">
+                  تُراجع الإدارة السجل التجاري قبل أن تُسنَد إليكم أعمال.
+                </p>
+              </>
+            )}
+
+            {form.role === 'donor' && (
+              <p className="hint">
+                التبرّع النقدي غير مُفعَّل بعد — يتطلّب تصريحاً من وزارة الأوقاف.
+                يمكنك تصفّح المساجد القريبة، وإن أردت المشاركة الآن فاختر
+                «متطوّع».
+              </p>
+            )}
           </>
         )}
 
@@ -510,6 +531,8 @@ function ReportWork({ request, onDone }) {
  */
 export function MyTasks() {
   const isVolunteer = api.currentRole() === 'volunteer';
+  const profile = useList(async () => [await api.getMyProfile()]);
+  const pending = profile.rows[0] && profile.rows[0].isVerifiedContractor === false;
   // الاستدعاء لا يُشترط: `getMyInterests` مقصورة على المتطوّعين فتردّ الشركة
   const interests = useList(async () => (isVolunteer ? api.getMyInterests() : []));
   const tasks = useList(api.assignedToMe);
@@ -530,6 +553,15 @@ export function MyTasks() {
     <>
       <h2>مهامّي</h2>
       {error && <div className="error">{error}</div>}
+
+      {/* الشركة غير المعتمدة كانت ترى قائمة فارغة إلى الأبد بلا سبب معروف */}
+      {!isVolunteer && pending && (
+        <div className="notice">
+          حسابكم بانتظار اعتماد الإدارة للسجل التجاري. لا تُسنَد إليكم أعمال
+          قبل الاعتماد.
+        </div>
+      )}
+
       <Listing state={tasks} empty="لم يُسنَد إليك عمل بعد.">
         <div>
           {tasks.rows.map((row) => (
@@ -1018,6 +1050,19 @@ export function Profile({ onLogOut }) {
             <>
               <p>أعمال منجزة: {profile.completedJobs}</p>
               <p>التقييم: {profile.avgRating ?? 'لا يوجد بعد'}</p>
+            </>
+          )}
+          {profile.role === 'contractor' && (
+            <>
+              {profile.companyName && <p>الشركة: {profile.companyName}</p>}
+              <p>السجل التجاري: {profile.crNumber || '— غير مُدخَل، راسل الإدارة'}</p>
+              <p>
+                الاعتماد:{' '}
+                <span className={`tag ${profile.isVerifiedContractor ? 'done' : 'warn'}`}>
+                  {profile.isVerifiedContractor ? 'معتمدة' : 'بانتظار المراجعة'}
+                </span>
+              </p>
+              <p>أعمال منجزة: {profile.completedJobs}</p>
             </>
           )}
           {profile.favoriteMosqueName && <p>المسجد المفضّل: {profile.favoriteMosqueName}</p>}

@@ -65,13 +65,19 @@ export const currentRole = () => {
 
 export const currentUser = () => Parse.User.current();
 
-export async function signUp({ username, password, fullName, phone, role }) {
+export async function signUp({ username, password, fullName, phone, role, companyName, crNumber }) {
   const user = new Parse.User();
   user.set('username', username.trim());
   user.set('password', password);
   user.set('role', role);
   if (fullName) user.set('fullName', fullName.trim());
   if (phone) user.set('phone', phone.trim());
+  // الشركة تُعتمد بسجلّها التجاري: بدونه يرى المشرف «غير مُدخَل» ولا يملك ما
+  // يتحقّق منه، فتبقى الشركة معلّقة بلا سبب معروف لها ولا له
+  if (role === 'contractor') {
+    if (companyName) user.set('companyName', companyName.trim());
+    if (crNumber) user.set('crNumber', crNumber.trim());
+  }
   await user.signUp();
   return user;
 }

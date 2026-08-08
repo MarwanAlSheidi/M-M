@@ -291,6 +291,47 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     });
   });
 
+  // من يسجّل بصفةٍ لا يستطيع بها شيئاً ينصرف — والشركة كانت ترى قائمةً فارغة
+  // إلى الأبد بلا سبب، والمشرف يرى «السجل التجاري: غير مُدخَل» بلا ما يتحقّق منه
+  await t.test('الشركة تُخبَر بأنها بانتظار الاعتماد، وبياناتها تصل المشرف', async () => {
+    const company = await browser.newUserPage();
+    await onScreen(company, 'الشركة تُخبَر بأنها بانتظار الاعتماد', async () => {
+      await company.goto(site.url, { waitUntil: 'networkidle' });
+      await company.getByRole('button', { name: /سجّل الآن/ }).click();
+      await company.getByLabel('اسم المستخدم').fill(`co_${stamp}`);
+      await company.getByLabel('كلمة المرور').fill(PASSWORD);
+      await company.getByLabel('الاسم الكامل').fill('مؤسسة النور');
+      await company.selectOption('select', 'contractor');
+
+      // الحقول تظهر باختيار الصفة — بدونها يصل المشرف بلا ما يتحقّق منه
+      await company.getByLabel('اسم الشركة').fill('مؤسسة النور للمقاولات');
+      await company.getByLabel('رقم السجل التجاري').fill('1234567');
+      await company.getByRole('button', { name: 'إنشاء حساب' }).click();
+      await company.waitForSelector('nav.tabs');
+
+      await company.getByRole('button', { name: 'مهامّي' }).click();
+      await company.waitForSelector('.notice');
+      assert.match(await company.locator('.notice').innerText(), /بانتظار اعتماد الإدارة/,
+        'قائمةٌ فارغة بلا سبب — لا تعرف الشركة لماذا لا يصلها عمل');
+
+      await company.getByRole('button', { name: 'حسابي' }).click();
+      await company.waitForSelector('.card');
+      const card = await company.locator('.card').innerText();
+      assert.match(card, /1234567/, 'السجل التجاري لم يُحفظ عند التسجيل');
+      assert.match(card, /بانتظار المراجعة/);
+    });
+  });
+
+  await t.test('المتبرّع يُخبَر بأن التبرّع غير مُفعَّل بعد', async () => {
+    const donor = await browser.newUserPage();
+    await onScreen(donor, 'المتبرّع يُخبَر بأن التبرّع غير مُفعَّل', async () => {
+      await donor.goto(site.url, { waitUntil: 'networkidle' });
+      await donor.getByRole('button', { name: /سجّل الآن/ }).click();
+      await donor.selectOption('select', 'donor');
+      await donor.waitForSelector('text=التبرّع النقدي غير مُفعَّل بعد');
+    });
+  });
+
   await t.test('التطبيق يقول صراحةً حين ينقطع الاتصال', async () => {
     await salim.context().setOffline(true);
     await salim.waitForSelector('[data-testid="offline"]');
