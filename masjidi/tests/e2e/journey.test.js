@@ -79,6 +79,10 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     await page.getByLabel('كلمة المرور').fill(PASSWORD);
     await page.getByLabel('الاسم الكامل').fill(fullName);
     await page.selectOption('select', role);
+    if (role === 'volunteer') {
+      // المهارات تُقرأ في قائمة المهتمّين، فبلا جمعها يختار الإمام بلا بيّنة
+      await page.getByRole('button', { name: 'كهرباء' }).click();
+    }
     await page.getByRole('button', { name: 'إنشاء حساب' }).click();
     await page.waitForSelector('nav.tabs');
   }
@@ -180,7 +184,10 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     await imam.getByRole('button', { name: 'طلبات الصيانة' }).click();
     await imam.getByRole('button', { name: 'التفاصيل' }).first().click();
     await imam.waitForSelector('button:has-text("كلّفه بالعمل")');
-    assert.match(await imam.locator('.card').first().innerText(), /سالم بن راشد/);
+    const card = await imam.locator('.card').first().innerText();
+    assert.match(card, /سالم بن راشد/);
+    assert.match(card, /مهارات: كهرباء/,
+      'المهارات تُعرض ولا تُجمع قطّ — فالإمام يختار المنفّذ بلا بيّنة');
 
     await imam.getByRole('button', { name: 'كلّفه بالعمل' }).click();
     await imam.waitForSelector('button:has-text("سحب التكليف")');
@@ -351,6 +358,23 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       await donor.getByRole('button', { name: /سجّل الآن/ }).click();
       await donor.selectOption('select', 'donor');
       await donor.waitForSelector('text=التبرّع النقدي غير مُفعَّل بعد');
+    });
+  });
+
+  await t.test('من سجّل بلا مهارات يستطيع إضافتها بعدُ', async () => {
+    await onScreen(salim, 'من سجّل بلا مهارات يستطيع إضافتها بعدُ', async () => {
+      await salim.getByRole('button', { name: 'حسابي' }).click();
+      await salim.waitForSelector('.card');
+      assert.match(await salim.locator('.card').innerText(), /مهاراتك: كهرباء/);
+
+      await salim.getByRole('button', { name: 'تعديل بياناتي' }).click();
+      await salim.getByRole('button', { name: 'سباكة' }).click();
+      await salim.selectOption('select', 'مسقط');
+      await salim.getByRole('button', { name: 'حفظ' }).click();
+
+      await salim.waitForSelector('text=مهاراتك: كهرباء، سباكة');
+      assert.match(await salim.locator('.card').innerText(), /المحافظة: مسقط/,
+        'المحافظة تُقرأ في خطة الإشعار البديلة ولم تكن تُكتب قطّ');
     });
   });
 

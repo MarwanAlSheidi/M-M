@@ -207,10 +207,10 @@ node scripts/seed_mosques.js                          # الباقي — ١٨٬�
 ## قبل كل دفع ونشر
 
 ```bash
-npm test                  # 176 حالة — على بديل Parse في الذاكرة
+npm test                  # 184 حالة — على بديل Parse في الذاكرة
 npm run lint
 npm run test:integration  # 48 حالة — خادم parse-server حقيقي
-npm run test:e2e          # 17 حالة — متصفّح حقيقي
+npm run test:e2e          # 18 حالة — متصفّح حقيقي
 ```
 
 الأخيران يتخطّيان نفسيهما بلا فشل إن غابت أدواتهما، فلا يكسران جهازاً لا

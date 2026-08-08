@@ -95,7 +95,9 @@ export const currentRole = () => {
 
 export const currentUser = () => Parse.User.current();
 
-export async function signUp({ username, password, fullName, phone, role, companyName, crNumber }) {
+export async function signUp({
+  username, password, fullName, phone, role, companyName, crNumber, skills, governorate,
+}) {
   const user = new Parse.User();
   user.set('username', username.trim());
   user.set('password', password);
@@ -108,6 +110,10 @@ export async function signUp({ username, password, fullName, phone, role, compan
     if (companyName) user.set('companyName', companyName.trim());
     if (crNumber) user.set('crNumber', crNumber.trim());
   }
+  // المهارات والمحافظة تُقرآن في اختيار الإمام وفي الإشعار القريب، فجمعُهما
+  // عند التسجيل يجنّب متطوّعاً يظهر أبداً بـ«مهارات: غير محدّدة»
+  if (role === 'volunteer' && skills && skills.length) user.set('skills', skills);
+  if (governorate) user.set('governorate', governorate);
   await user.signUp();
   return user;
 }
@@ -234,6 +240,7 @@ export const getMyNotifications = (limit) => run('getMyNotifications', { limit }
 export const markNotificationsRead = (ids) => run('markNotificationsRead', { ids });
 
 export const getMyProfile = () => run('getMyProfile');
+export const updateMyProfile = (patch) => run('updateMyProfile', patch);
 export const setFavoriteMosque = (mosqueId) => run('setFavoriteMosque', { mosqueId });
 
 /**

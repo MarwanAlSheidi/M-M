@@ -381,3 +381,72 @@ test('مراجعة طلبات الملكية', async (t) => {
     assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
   });
 });
+
+
+/**
+ * تحديث بيانات الحساب.
+ *
+ * `skills` و`governorate` كانا معرّفَين في المخطط ويُقرآن في الواجهة ولا
+ * يُكتبان قطّ — فالإمام يختار المنفّذ بلا معرفة مهاراته، وخطةُ الإشعار البديلة
+ * تُطابق بالمحافظة فلا تُطابق أحداً.
+ */
+test('تحديث بيانات الحساب', async (t) => {
+  let api;
+  let volunteer;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    volunteer = api.make('_User', { role: 'volunteer', fullName: 'سالم' });
+  });
+
+  await t.test('المهارات تُحفظ من القائمة المغلقة', async () => {
+    const { ok } = await api.call('updateMyProfile',
+      { skills: ['electrical', 'ac'] }, { user: volunteer });
+
+    assert.equal(ok.updated, true);
+    assert.deepEqual(volunteer.get('skills'), ['electrical', 'ac']);
+  });
+
+  await t.test('المهارة المجهولة تُرفض بدل أن تُبتلع', async () => {
+    const { error } = await api.call('updateMyProfile',
+      { skills: ['electrical', 'سحر'] }, { user: volunteer });
+
+    assert.equal(error.code, api.ParseError.VALIDATION_ERROR,
+      'نصٌّ حرّ في المهارات يجعل «كهرباء» و«كهربائي» شيئين لا يجمعهما بحث');
+    assert.equal(volunteer.get('skills'), undefined, 'حُفظ بعضها رغم رفض الطلب');
+  });
+
+  await t.test('التكرار يُطوى', async () => {
+    await api.call('updateMyProfile',
+      { skills: ['ac', 'ac', 'plumbing'] }, { user: volunteer });
+    assert.deepEqual(volunteer.get('skills'), ['ac', 'plumbing']);
+  });
+
+  await t.test('المحافظة تُحفظ، والمجهولة تُرفض', async () => {
+    await api.call('updateMyProfile', { governorate: 'مسقط' }, { user: volunteer });
+    assert.equal(volunteer.get('governorate'), 'مسقط');
+
+    const { error } = await api.call('updateMyProfile',
+      { governorate: 'أطلانطس' }, { user: volunteer });
+    assert.equal(error.code, api.ParseError.VALIDATION_ERROR);
+  });
+
+  await t.test('لا يرفع المستخدم صفته ولا اعتماده من هنا', async () => {
+    await api.call('updateMyProfile',
+      { role: 'admin', isVerifiedContractor: true, fullName: 'سالم' }, { user: volunteer });
+
+    assert.equal(volunteer.get('role'), 'volunteer', 'رقّى نفسه عبر تحديث الملف');
+    assert.equal(volunteer.get('isVerifiedContractor'), undefined);
+  });
+
+  await t.test('الحقول غير المرسلة لا تُمسح', async () => {
+    volunteer.set('phone', '99887766');
+    await api.call('updateMyProfile', { skills: ['paint'] }, { user: volunteer });
+    assert.equal(volunteer.get('phone'), '99887766', 'مُسح ما لم يُرسل');
+  });
+
+  await t.test('الزائر لا يُحدّث شيئاً', async () => {
+    const { error } = await api.call('updateMyProfile', { skills: ['paint'] }, {});
+    assert.equal(error.code, api.ParseError.INVALID_SESSION_TOKEN);
+  });
+});

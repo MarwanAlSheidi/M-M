@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 176 حالة على بديل Parse (`npm test`) + 48 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 17 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 184 حالة على بديل Parse (`npm test`) + 48 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 18 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -695,6 +695,42 @@ if (user.dirty('isVerifiedContractor')) {
 ومعه **رابط الطريق في قائمة المهامّ**: الإحداثيات كانت في القاعدة ولا تصل إلى
 المنفّذ. أُضيفت القرية إلى `getNearbyOpportunities` و`getMyClaims`
 و`listPendingClaims` وإلى قراءة الطلبات في العميل.
+
+---
+
+### 🟠 حقلان يُقرآن ولا يُكتبان قطّ
+
+فحصٌ منهجي ثالث: كل حقلٍ في المخطط، هل يُكتب؟ وهل يُقرأ؟ أكثر ما ظهر ضجيجٌ من
+تعبيرٍ نمطيّ خشن (حقول تُقرأ عبر `equalTo` أو `select` أو `increment`)، واثنان
+كانا حقيقيّين — وكلاهما من الشكل نفسه الذي تكرّر في هذا المستودع: **الخادم
+يقرأ ما لا يكتبه أحد.**
+
+**`_User.skills`.** `getRequestInterests` تُعيدها، والواجهة تعرض «مهارات: …»،
+والغرض أن يختار الإمام من يناسب العمل — كهرباء لطلبٍ كهربائي. **ولا شيء يجمعها
+قطّ**: لا حقل في التسجيل ولا في الحساب. فكل متطوّع يظهر أبداً بـ«مهارات: غير
+محدّدة»، والإمام يختار بلا بيّنة.
+
+**`_User.governorate`.** `pushToNearbyVolunteers` يجعلها **خطة بديلة** حين يفشل
+الاستعلام الجغرافي أو يخلو: يُطابق المتطوّعين بمحافظة المسجد. ولمّا لم يكن أحد
+يكتبها، كانت الخطة البديلة **تُطابق صفراً دائماً** — شبكةُ أمانٍ بلا خيوط،
+تبدو في الكود حمايةً وهي لا شيء.
+
+**العلاج:** `updateMyProfile` تكتب الاثنين (ومعهما الهاتف والولاية) لصاحب الحساب
+وحده، ولا تقبل `role` ولا حقول الاعتماد. والمهارات **قائمة مغلقة** تُطابق فئات
+الأعمال نفسها: نصٌّ حرّ يجعل «كهرباء» و«كهربائي» و«كهربا» ثلاثة أشياء لا يجمعها
+بحث. وتُجمع عند التسجيل، **وتُعدَّل بعده** — فمن سجّل مسرعاً لا يبقى بلا مهارات
+إلى الأبد، وهو الفخّ نفسه الذي وقعت فيه صفة الشركة.
+
+**وخطآن لي كشفهما اختباراي:**
+
+الأوّل في التحقّق: كنت أقارن طول القائمة قبل التنقية وبعدها لأرصد المهارة
+المجهولة — فصار المكرَّر يُرفض برسالة «مهارة غير معروفة». التحقّق قبل طيّ
+التكرار، والرسالة تُسمّي المجهولة.
+
+والثاني أن إغلاق القائمة نقل المشكلة ولم يُنهها: صارت المهارة تُخزَّن بمفتاحٍ
+إنجليزي، وبطاقة المهتمّين تعرضه كما هو — «مهارات: electrical» لقارئٍ عربي. وهو
+عين ما عولج في `worker_assigned` بسجلّ المسجد وفي `volunteer` برسالة الأدوار.
+**القاعدة تتكرّر: المفتاح للتخزين، والعربية للعرض — ولا يلتقيان.**
 
 ---
 
@@ -3449,6 +3485,54 @@ Parse.Cloud.define('updateMyLocation', async (request) => {
 });
 
 /** ملف المستخدم كما يعرضه التطبيق. */
+/**
+ * مهارات المتطوّع — من فئات الأعمال نفسها.
+ *
+ * تُطابق `category` في طلبات الصيانة قصداً: الإمام ينشر طلباً كهربائياً فيرى في
+ * المهتمّين من كتب «كهرباء». قائمةٌ مغلقة لا نصٌّ حرّ، وإلا صار «كهربائي»
+ * و«كهرباء» و«كهربا» ثلاثة أشياء لا يجمعها بحث.
+ */
+const SKILLS = ['electrical', 'plumbing', 'ac', 'paint', 'cleaning', 'carpet', 'other'];
+
+const GOVERNORATES = [
+  'مسقط', 'ظفار', 'مسندم', 'البريمي', 'الداخلية', 'شمال الباطنة',
+  'جنوب الباطنة', 'شمال الشرقية', 'جنوب الشرقية', 'الظاهرة', 'الوسطى',
+];
+
+/**
+ * تحديث بيانات الحساب — لصاحبه وحده.
+ *
+ * `skills` و`governorate` كانا يُقرآن ولا يُكتبان قطّ: الإمام يرى «مهارات: غير
+ * محدّدة» لكل متطوّع فيختار بلا بيّنة، وخطةُ الإشعار البديلة في `push.js` تُطابق
+ * المتطوّعين بالمحافظة فلا تُطابق أحداً. لا يقبل `role` ولا حقول الاعتماد —
+ * تلك للإدارة عبر مسارها.
+ */
+Parse.Cloud.define('updateMyProfile', async (request) => {
+  const user = requireUser(request);
+  const { fullName, phone, skills, governorate, wilayat } = request.params;
+
+  if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, 80));
+  if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, 20));
+  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, 60));
+
+  if (skills !== undefined) {
+    if (!Array.isArray(skills)) E.invalid('المهارات تُرسل كقائمة.');
+    // التحقّق قبل طيّ التكرار: مقارنة الطولين بعده تعدّ المكرّر مجهولاً
+    const asked = skills.map(String);
+    const unknown = asked.find((skill) => !SKILLS.includes(skill));
+    if (unknown) E.invalid(`مهارة غير معروفة: ${unknown}`);
+    user.set('skills', [...new Set(asked)]);
+  }
+
+  if (governorate !== undefined) {
+    if (governorate && !GOVERNORATES.includes(governorate)) E.invalid('محافظة غير معروفة.');
+    user.set('governorate', governorate || undefined);
+  }
+
+  await user.save(null, { useMasterKey: true });
+  return { updated: true };
+});
+
 Parse.Cloud.define('getMyProfile', async (request) => {
   const user = requireUser(request);
   await user.fetch({ useMasterKey: true });
@@ -5817,6 +5901,54 @@ Parse.Cloud.define('updateMyLocation', async (request) => {
 });
 
 /** ملف المستخدم كما يعرضه التطبيق. */
+/**
+ * مهارات المتطوّع — من فئات الأعمال نفسها.
+ *
+ * تُطابق `category` في طلبات الصيانة قصداً: الإمام ينشر طلباً كهربائياً فيرى في
+ * المهتمّين من كتب «كهرباء». قائمةٌ مغلقة لا نصٌّ حرّ، وإلا صار «كهربائي»
+ * و«كهرباء» و«كهربا» ثلاثة أشياء لا يجمعها بحث.
+ */
+const SKILLS = ['electrical', 'plumbing', 'ac', 'paint', 'cleaning', 'carpet', 'other'];
+
+const GOVERNORATES = [
+  'مسقط', 'ظفار', 'مسندم', 'البريمي', 'الداخلية', 'شمال الباطنة',
+  'جنوب الباطنة', 'شمال الشرقية', 'جنوب الشرقية', 'الظاهرة', 'الوسطى',
+];
+
+/**
+ * تحديث بيانات الحساب — لصاحبه وحده.
+ *
+ * `skills` و`governorate` كانا يُقرآن ولا يُكتبان قطّ: الإمام يرى «مهارات: غير
+ * محدّدة» لكل متطوّع فيختار بلا بيّنة، وخطةُ الإشعار البديلة في `push.js` تُطابق
+ * المتطوّعين بالمحافظة فلا تُطابق أحداً. لا يقبل `role` ولا حقول الاعتماد —
+ * تلك للإدارة عبر مسارها.
+ */
+Parse.Cloud.define('updateMyProfile', async (request) => {
+  const user = requireUser(request);
+  const { fullName, phone, skills, governorate, wilayat } = request.params;
+
+  if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, 80));
+  if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, 20));
+  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, 60));
+
+  if (skills !== undefined) {
+    if (!Array.isArray(skills)) E.invalid('المهارات تُرسل كقائمة.');
+    // التحقّق قبل طيّ التكرار: مقارنة الطولين بعده تعدّ المكرّر مجهولاً
+    const asked = skills.map(String);
+    const unknown = asked.find((skill) => !SKILLS.includes(skill));
+    if (unknown) E.invalid(`مهارة غير معروفة: ${unknown}`);
+    user.set('skills', [...new Set(asked)]);
+  }
+
+  if (governorate !== undefined) {
+    if (governorate && !GOVERNORATES.includes(governorate)) E.invalid('محافظة غير معروفة.');
+    user.set('governorate', governorate || undefined);
+  }
+
+  await user.save(null, { useMasterKey: true });
+  return { updated: true };
+});
+
 Parse.Cloud.define('getMyProfile', async (request) => {
   const user = requireUser(request);
   await user.fetch({ useMasterKey: true });
@@ -9010,6 +9142,75 @@ test('مراجعة طلبات الملكية', async (t) => {
     assert.equal(error.code, api.ParseError.OPERATION_FORBIDDEN);
   });
 });
+
+
+/**
+ * تحديث بيانات الحساب.
+ *
+ * `skills` و`governorate` كانا معرّفَين في المخطط ويُقرآن في الواجهة ولا
+ * يُكتبان قطّ — فالإمام يختار المنفّذ بلا معرفة مهاراته، وخطةُ الإشعار البديلة
+ * تُطابق بالمحافظة فلا تُطابق أحداً.
+ */
+test('تحديث بيانات الحساب', async (t) => {
+  let api;
+  let volunteer;
+
+  t.beforeEach(() => {
+    api = loadCloud('modular');
+    volunteer = api.make('_User', { role: 'volunteer', fullName: 'سالم' });
+  });
+
+  await t.test('المهارات تُحفظ من القائمة المغلقة', async () => {
+    const { ok } = await api.call('updateMyProfile',
+      { skills: ['electrical', 'ac'] }, { user: volunteer });
+
+    assert.equal(ok.updated, true);
+    assert.deepEqual(volunteer.get('skills'), ['electrical', 'ac']);
+  });
+
+  await t.test('المهارة المجهولة تُرفض بدل أن تُبتلع', async () => {
+    const { error } = await api.call('updateMyProfile',
+      { skills: ['electrical', 'سحر'] }, { user: volunteer });
+
+    assert.equal(error.code, api.ParseError.VALIDATION_ERROR,
+      'نصٌّ حرّ في المهارات يجعل «كهرباء» و«كهربائي» شيئين لا يجمعهما بحث');
+    assert.equal(volunteer.get('skills'), undefined, 'حُفظ بعضها رغم رفض الطلب');
+  });
+
+  await t.test('التكرار يُطوى', async () => {
+    await api.call('updateMyProfile',
+      { skills: ['ac', 'ac', 'plumbing'] }, { user: volunteer });
+    assert.deepEqual(volunteer.get('skills'), ['ac', 'plumbing']);
+  });
+
+  await t.test('المحافظة تُحفظ، والمجهولة تُرفض', async () => {
+    await api.call('updateMyProfile', { governorate: 'مسقط' }, { user: volunteer });
+    assert.equal(volunteer.get('governorate'), 'مسقط');
+
+    const { error } = await api.call('updateMyProfile',
+      { governorate: 'أطلانطس' }, { user: volunteer });
+    assert.equal(error.code, api.ParseError.VALIDATION_ERROR);
+  });
+
+  await t.test('لا يرفع المستخدم صفته ولا اعتماده من هنا', async () => {
+    await api.call('updateMyProfile',
+      { role: 'admin', isVerifiedContractor: true, fullName: 'سالم' }, { user: volunteer });
+
+    assert.equal(volunteer.get('role'), 'volunteer', 'رقّى نفسه عبر تحديث الملف');
+    assert.equal(volunteer.get('isVerifiedContractor'), undefined);
+  });
+
+  await t.test('الحقول غير المرسلة لا تُمسح', async () => {
+    volunteer.set('phone', '99887766');
+    await api.call('updateMyProfile', { skills: ['paint'] }, { user: volunteer });
+    assert.equal(volunteer.get('phone'), '99887766', 'مُسح ما لم يُرسل');
+  });
+
+  await t.test('الزائر لا يُحدّث شيئاً', async () => {
+    const { error } = await api.call('updateMyProfile', { skills: ['paint'] }, {});
+    assert.equal(error.code, api.ParseError.INVALID_SESSION_TOKEN);
+  });
+});
 ```
 
 #### `tests/schema.test.js` — الصلاحيات وتطابق النسختين
@@ -9103,7 +9304,7 @@ test('نقاط الدخول', async (t) => {
     'completeService', 'cancelServiceRequest', 'initiateDonation',
     'confirmDonation', 'paymentWebhook', 'payoutContractor', 'refundDonation',
     'getMosqueLedger', 'listPendingContractors', 'reviewContractor',
-    'setFavoriteMosque', 'getMyProfile',
+    'setFavoriteMosque', 'getMyProfile', 'updateMyProfile',
     'getMyNotifications', 'markNotificationsRead',
     'getMosqueAuditTrail', 'health',
   ];

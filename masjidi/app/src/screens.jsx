@@ -42,6 +42,26 @@ export const Where = ({ wilayat, village, governorate }) => {
   return parts.length ? <p>{parts.join(' — ')}</p> : null;
 };
 
+/** اختيار المهارات من فئات الأعمال نفسها — لا نصّاً حرّاً يتشتّت. */
+export function SkillPicker({ value, onChange }) {
+  const toggle = (key) => onChange(
+    value.includes(key) ? value.filter((s) => s !== key) : [...value, key],
+  );
+
+  return (
+    <div className="row">
+      {Object.entries(api.CATEGORIES).map(([key, label]) => (
+        <button type="button" key={key}
+          className={value.includes(key) ? '' : 'ghost'}
+          aria-pressed={value.includes(key)}
+          onClick={() => toggle(key)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export const StatusTag = ({ status }) => {
   const tone = status === 'completed' ? 'done'
     : status === 'cancelled' ? 'off'
@@ -79,8 +99,9 @@ export function Auth({ onDone }) {
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({
     username: '', password: '', fullName: '', phone: '', role: 'volunteer',
-    companyName: '', crNumber: '',
+    companyName: '', crNumber: '', governorate: '',
   });
+  const [skills, setSkills] = useState([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -92,7 +113,7 @@ export function Auth({ onDone }) {
     setError('');
     try {
       if (mode === 'login') await api.logIn(form.username, form.password);
-      else await api.signUp(form);
+      else await api.signUp({ ...form, skills });
       onDone();
     } catch (caught) {
       setError(api.messageOf(caught));
@@ -117,6 +138,19 @@ export function Auth({ onDone }) {
             <Field label="الاسم الكامل" value={form.fullName} onChange={set('fullName')} />
             <Field label="رقم الهاتف" value={form.phone} onChange={set('phone')} inputMode="tel" />
             <Field label="الصفة" value={form.role} onChange={set('role')} options={api.ROLES} />
+
+            <Field label="المحافظة" value={form.governorate} onChange={set('governorate')}
+              options={{ '': '— اختر —', ...Object.fromEntries(api.GOVERNORATES.map((g) => [g, g])) }} />
+
+            {form.role === 'volunteer' && (
+              <>
+                <label>مهاراتك</label>
+                <SkillPicker value={skills} onChange={setSkills} />
+                <p className="hint">
+                  الإمام يرى مهاراتك عند اختيار المنفّذ — واتركها فارغة إن شئت.
+                </p>
+              </>
+            )}
 
             {form.role === 'contractor' && (
               <>
@@ -879,7 +913,10 @@ function RequestDetail({ request, onBack }) {
                     <h3>{row.fullName || 'متطوّع'}</h3>
                     {row.avgRating != null && <span className="tag">تقييم {row.avgRating}</span>}
                   </div>
-                  <p>مهارات: {row.skills.length ? row.skills.join('، ') : 'غير محدّدة'}</p>
+                  {/* المهارات تُخزَّن بمفاتيح إنجليزية وتُقرأ بالعربية */}
+                  <p>مهارات: {row.skills.length
+                    ? row.skills.map((key) => api.CATEGORIES[key] || key).join('، ')
+                    : 'غير محدّدة'}</p>
                   <p>أعمال منجزة: {row.completedJobs}</p>
                   {row.abandonedJobs > 0 && (
                     <p className="warn">تغيّب عن {row.abandonedJobs} تكليفاً سابقاً.</p>
@@ -1095,9 +1132,63 @@ export function AdminHome() {
 
 /* ————— الملف الشخصي ————— */
 
+/** تعديل ما يُقرأ عن المستخدم: المهارات والمحافظة والهاتف. */
+function EditProfile({ profile, onDone }) {
+  const [skills, setSkills] = useState(profile.skills || []);
+  const [governorate, setGovernorate] = useState(profile.governorate || '');
+  const [phone, setPhone] = useState(profile.phone || '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function save() {
+    setBusy(true);
+    setError('');
+    try {
+      await api.updateMyProfile({ skills, governorate, phone });
+      onDone();
+    } catch (caught) {
+      setError(api.messageOf(caught));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button className="link" onClick={() => onDone()}>→ رجوع</button>
+      <h2>تعديل بياناتي</h2>
+      {error && <div className="error">{error}</div>}
+
+      <Field label="رقم الهاتف" value={phone} inputMode="tel"
+        onChange={(event) => setPhone(event.target.value)} />
+      <Field label="المحافظة" value={governorate}
+        onChange={(event) => setGovernorate(event.target.value)}
+        options={{ '': '— اختر —', ...Object.fromEntries(api.GOVERNORATES.map((g) => [g, g])) }} />
+
+      {profile.role === 'volunteer' && (
+        <>
+          <label>مهاراتك</label>
+          <SkillPicker value={skills} onChange={setSkills} />
+        </>
+      )}
+
+      <button onClick={save} disabled={busy} style={{ marginTop: 14 }}>
+        {busy ? 'لحظة…' : 'حفظ'}
+      </button>
+    </>
+  );
+}
+
 export function Profile({ onLogOut }) {
   const state = useList(api.getMyProfile);
+  const [editing, setEditing] = useState(false);
   const profile = state.rows;
+
+  if (editing && !state.loading) {
+    return (
+      <EditProfile profile={profile}
+        onDone={() => { setEditing(false); state.refresh(); }} />
+    );
+  }
 
   return (
     <>
@@ -1126,7 +1217,15 @@ export function Profile({ onLogOut }) {
               <p>أعمال منجزة: {profile.completedJobs}</p>
             </>
           )}
+          {profile.role === 'volunteer' && (
+            <p>مهاراتك: {(profile.skills || []).length
+              ? profile.skills.map((k) => api.CATEGORIES[k] || k).join('، ')
+              : 'غير محدّدة'}</p>
+          )}
+          {profile.governorate && <p>المحافظة: {profile.governorate}</p>}
           {profile.favoriteMosqueName && <p>المسجد المفضّل: {profile.favoriteMosqueName}</p>}
+          {/* من سجّل مسرعاً بلا مهارات كان يبقى بلا مهارات إلى الأبد */}
+          <button className="ghost" onClick={() => setEditing(true)}>تعديل بياناتي</button>
         </article>
       )}
       <button className="ghost" onClick={onLogOut}>تسجيل الخروج</button>

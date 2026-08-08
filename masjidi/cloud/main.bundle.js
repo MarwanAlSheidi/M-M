@@ -2256,6 +2256,54 @@ Parse.Cloud.define('updateMyLocation', async (request) => {
 });
 
 /** ملف المستخدم كما يعرضه التطبيق. */
+/**
+ * مهارات المتطوّع — من فئات الأعمال نفسها.
+ *
+ * تُطابق `category` في طلبات الصيانة قصداً: الإمام ينشر طلباً كهربائياً فيرى في
+ * المهتمّين من كتب «كهرباء». قائمةٌ مغلقة لا نصٌّ حرّ، وإلا صار «كهربائي»
+ * و«كهرباء» و«كهربا» ثلاثة أشياء لا يجمعها بحث.
+ */
+const SKILLS = ['electrical', 'plumbing', 'ac', 'paint', 'cleaning', 'carpet', 'other'];
+
+const GOVERNORATES = [
+  'مسقط', 'ظفار', 'مسندم', 'البريمي', 'الداخلية', 'شمال الباطنة',
+  'جنوب الباطنة', 'شمال الشرقية', 'جنوب الشرقية', 'الظاهرة', 'الوسطى',
+];
+
+/**
+ * تحديث بيانات الحساب — لصاحبه وحده.
+ *
+ * `skills` و`governorate` كانا يُقرآن ولا يُكتبان قطّ: الإمام يرى «مهارات: غير
+ * محدّدة» لكل متطوّع فيختار بلا بيّنة، وخطةُ الإشعار البديلة في `push.js` تُطابق
+ * المتطوّعين بالمحافظة فلا تُطابق أحداً. لا يقبل `role` ولا حقول الاعتماد —
+ * تلك للإدارة عبر مسارها.
+ */
+Parse.Cloud.define('updateMyProfile', async (request) => {
+  const user = requireUser(request);
+  const { fullName, phone, skills, governorate, wilayat } = request.params;
+
+  if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, 80));
+  if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, 20));
+  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, 60));
+
+  if (skills !== undefined) {
+    if (!Array.isArray(skills)) E.invalid('المهارات تُرسل كقائمة.');
+    // التحقّق قبل طيّ التكرار: مقارنة الطولين بعده تعدّ المكرّر مجهولاً
+    const asked = skills.map(String);
+    const unknown = asked.find((skill) => !SKILLS.includes(skill));
+    if (unknown) E.invalid(`مهارة غير معروفة: ${unknown}`);
+    user.set('skills', [...new Set(asked)]);
+  }
+
+  if (governorate !== undefined) {
+    if (governorate && !GOVERNORATES.includes(governorate)) E.invalid('محافظة غير معروفة.');
+    user.set('governorate', governorate || undefined);
+  }
+
+  await user.save(null, { useMasterKey: true });
+  return { updated: true };
+});
+
 Parse.Cloud.define('getMyProfile', async (request) => {
   const user = requireUser(request);
   await user.fetch({ useMasterKey: true });
