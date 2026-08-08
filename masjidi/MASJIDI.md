@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل محلياً على 400 مسجداً. ❌ لم يُشغّل على الاستيراد الكامل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 170 حالة على بديل Parse (`npm test`) + 48 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + رحلة كاملة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 176 حالة على بديل Parse (`npm test`) + 48 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + رحلة كاملة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -83,8 +83,11 @@
    ويبتلعانه. لا يفشل اعتماد عملٍ منجَز لأن إشعاراً لم يصل ولا لأن سطراً لم
    يُكتب. وكل إشعارٍ موجَّه يمرّ بـ`pushToUsers` ليُحفظ في الوارد — لا تستدعِ
    `Parse.Push` مباشرةً.
-10. **`equalTo` على حقل مصفوفة غير محمول** — يعمل على MongoDB ويرمي على محوّل
-    PostgreSQL. استخدم `containsAll`؛ تعبّر عن الشرط نفسه وتعمل على الاثنين.
+10. **صيغة الاستعلام تُراجَع محموليتها قبل استعمالها.** الاختبارات تعمل على
+    PostgreSQL وBack4app على MongoDB، وقد كشف الفرق خللين فعليّين. أي صيغة
+    جديدة تُسقِط `tests/portability.test.js` — لا تُضِفها إلى القائمة لتسكيته،
+    بل ابحث عن سلوكها في المحوّلين. (مثال محسوم: `equalTo` على حقل مصفوفة يرمي
+    على PostgreSQL — البديل `containsAll`.)
 11. **لا تعديل على `data/mosques.json` يدوياً** — عدّل السكربت وأعد توليده.
 12. **الشاشة تجلب بياناتها عند تركيبها**، و`App.jsx` يُعيد تركيبها مع كل ضغطة
     تبويب. فلا تحتفظ بحالةٍ في الشاشة تتوقّع بقاءها بين الضغطات.
@@ -152,6 +155,7 @@ tests/
   users.test.js        اعتماد الشركات، الاسترداد، البحث، الملف الشخصي
   schema.test.js       الصلاحيات، وتطابق النسختين المجزّأة والمدمجة
   indexes.test.js      تخطيط الفهارس وسلامة تعريفها في المخطط
+  portability.test.js  سلك تعثّر: يرفض صيغة استعلام لم تُراجَع بين المحوّلين
   notifications.test.js صندوق الوارد: الوصول والخصوصية والتقليم
   integration/
     harness.js         يُشغّل PostgreSQL وparse-server، ويطبّق المخطط ويستورد المساجد
@@ -706,10 +710,19 @@ if (user.dirty('isVerifiedContractor')) {
 
 ### ما لم يُعالَج بعد
 
-- **اختبار التكامل يعمل على PostgreSQL لا MongoDB.** `npm run test:integration`
-  يُشغّل `parse-server` حقيقياً، لكن Back4app يعمل على MongoDB. المنطق واحد،
-  ويبقى خارج التغطية: سلوك الفهارس، والاستعلام الجغرافي (يحتاج PostGIS محلياً
-  و`2dsphere` هناك)، وذرّية `increment` تحت التزامن الحقيقي.
+- **اختبار التكامل يعمل على PostgreSQL لا MongoDB — وهذا أكبر قيدٍ باقٍ.**
+  حاولتُ إغلاقه فتبيّن أن كل طرقه مقفلة في بيئة التطوير هذه: مضيفات MongoDB
+  نفسها و`repo.mongodb.org` تردّان 403، وإصدارات GitHub كذلك، ولا خفيّ Docker،
+  ولا حزمة على npm تُرفق الملفّ التنفيذي. ورفضتُ البدائل الموهِمة — FerretDB
+  لا يُطابق ما يطلبه Parse، والمحاكاة تعطي ثقةً كاذبة وهي أسوأ من لا شيء.
+  فالبديل سلكُ تعثّر لا تغطية: `tests/portability.test.js` يمسح `cloud/` ويرفض
+  أي صيغة استعلام لم تُراجَع محموليتها، ويرفض قائمةً صريحة من الصيغ التي تفرض
+  فهارس أو دعماً يختلف بين المحوّلين. **لا يُثبت أن الموجود يعمل على MongoDB —
+  يمنع أن يدخل جديدٌ بلا قرار.** والقيد الأصلي قائم كما هو: `npm run test:integration`
+  المنطق واحد، ويبقى خارج التغطية: سلوك الفهارس، والاستعلام الجغرافي (يحتاج
+  PostGIS محلياً و`2dsphere` هناك)، وذرّية `increment` تحت التزامن الحقيقي.
+  **أوّل نشرٍ على Back4app هو أوّل تشغيلٍ حقيقي على MongoDB** — فليكن على بيانات
+  تجريبية أولاً.
 - **سرّ الـwebhook يُدار يدوياً.** لا تدوير للمفتاح ولا تحقق من توقيع البوابة
   نفسها (`HMAC`) — السرّ المشترك أضعف من التوقيع لكنه ما تدعمه ثواني حالياً.
 - **الاسترداد قيدٌ محاسبي لا تحويل.** `refundDonation` يُعيد الرصيد ويُرجع الطلب
@@ -6848,6 +6861,10 @@ data/*.xlsx
 logs/
 dist/
 app/dist/
+
+# ملفّات يكتبها محوّل التخزين في اختبار التكامل — تُحذف عند الإيقاف
+# والاستثناء هنا لئلا يتسرّب شيء منها إن انقطع التشغيل
+files/
 ```
 
 ### `package.json`
@@ -9069,13 +9086,17 @@ async function startStack() {
   // المحوّل الافتراضي للملفات GridFS ويلزمه MongoDB. ملفّاتٌ على القرص تكفي
   // هنا، وبدونها يبقى مسار صور الإنجاز — وهو دليل الإمام على أن العمل وقع —
   // خارج أي تحقّق آليّ.
+  //
+  // `filesSubDirectory` يُضمّ إلى «files» **نسبةً إلى مجلّد التشغيل** لا إلى
+  // جذر مطلق: تمريرُ مسارٍ مطلق يُنشئ `files/<المسار كاملاً>` داخل المستودع.
+  // فنمرّر اسماً نسبياً ونحذفه عند الإيقاف.
   const FSFilesAdapter = require('@parse/fs-files-adapter');
-  const filesDir = path.join(root, 'files');
-  fs.mkdirSync(filesDir, { recursive: true });
+  const filesSubDirectory = path.basename(root);
+  const filesRoot = path.join(process.cwd(), 'files');
 
   const parseServer = new ParseServer({
     databaseURI: `postgres://postgres@127.0.0.1:${pgPort}/masjidi`,
-    filesAdapter: new FSFilesAdapter({ filesSubDirectory: filesDir }),
+    filesAdapter: new FSFilesAdapter({ filesSubDirectory }),
     fileUpload: { enableForAuthenticatedUser: true },
     cloud: CLOUD_MAIN,
     appId: APP_ID,
@@ -9103,6 +9124,9 @@ async function startStack() {
     try { await parseServer.handleShutdown(); } catch { /* الخادم مُغلق أصلاً */ }
     try { run('pg_ctl', ['-D', dataDir, '-m', 'immediate', '-w', 'stop']); } catch { /* توقّف */ }
     fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(path.join(filesRoot, filesSubDirectory), { recursive: true, force: true });
+    // `files` نفسه يُحذف إن خلا — ولا يُحذف إن كان فيه شيء لغيرنا
+    try { fs.rmdirSync(filesRoot); } catch { /* غير فارغ أو غير موجود */ }
   }
 
   return { Parse, serverURL, appId: APP_ID, masterKey: MASTER_KEY, stop };
