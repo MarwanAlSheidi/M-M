@@ -57,17 +57,22 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
   }
 
   /**
-   * ينتظر أن يستقرّ عدد البطاقات على المطلوب.
-   * `waitForSelector` لا يكفي حين تتغيّر القائمة من ثلاثٍ إلى واحدة: البطاقات
-   * موجودة في الحالتين، فينجح الانتظار قبل أن تُحدَّث النتيجة.
+   * ينتظر شرطاً يستقرّ.
+   *
+   * `waitForSelector` لا يكفي حين تتغيّر القائمة وعناصرها من النوع نفسه: يُطابق
+   * بقيّةَ العرض السابق فينجح قبل أن تُحدَّث النتيجة. وكذلك حين تمرّ الشاشة
+   * بنافذة «جارٍ التحميل…» بين حالتين — يُطابق ما قبلها أو ما بعدها بحسب الحظّ.
    */
-  async function waitForCards(page, expected) {
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      if (await page.locator('.card').count() === expected) return;
+  async function waitUntil(page, describe, holds) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      if (await holds()) return;
       await page.waitForTimeout(150);
     }
-    assert.equal(await page.locator('.card').count(), expected, 'عدد البطاقات لم يستقرّ');
+    assert.fail(`لم يستقرّ الشرط: ${describe}`);
   }
+
+  const waitForCards = (page, expected) => waitUntil(page,
+    `${expected} بطاقة`, async () => await page.locator('.card').count() === expected);
 
   /** التسجيل من الواجهة لا بالـSDK: نموذج الدخول جزء من المسار المُختبَر. */
   async function signUpVia(page, { username, fullName, role }) {
@@ -268,10 +273,13 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     assert.ok(bodies.some((body) => /بانتظار معاينتك/.test(body)));
 
     await imam.getByRole('button', { name: /تعليم/ }).click();
-    await imam.waitForSelector('button:has-text("تعليم")', { state: 'detached' });
-    // القائمة تُخلي مكانها لـ«جارٍ التحميل…» أثناء إعادة الجلب، فالتحقّق قبل
-    // عودتها يرصد نافذة التحميل لا نتيجة التعليم
-    await imam.waitForSelector('.card');
+
+    // الشرط الذي لا يصدق إلا بعد استقرار الشاشة: بطاقات حاضرة ولا واحدة منها
+    // غير مقروءة. وهو يختبر أثر التعليم نفسه لا مجرّد نجاة القائمة.
+    await waitUntil(imam, 'الوارد كلّه مقروء والقائمة باقية', async () => (
+      await imam.locator('.card').count() > 0
+      && await imam.locator('.card.unread').count() === 0));
+
     assert.ok(await imam.locator('.card').count() > 0, 'التعليم حذف القائمة بدل أن يعلّمها');
     });
   });
@@ -375,6 +383,37 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       await salim.waitForSelector('text=مهاراتك: كهرباء، سباكة');
       assert.match(await salim.locator('.card').innerText(), /المحافظة: مسقط/,
         'المحافظة تُقرأ في خطة الإشعار البديلة ولم تكن تُكتب قطّ');
+    });
+  });
+
+  /**
+   * دعوى «يعمل بلا إنترنت» — يُتحقّق منها هنا وحدها.
+   *
+   * `npm run verify:pwa` يفحص وجود الـmanifest وعامل الخدمة وسلامتهما، وهو فحص
+   * إعدادٍ لا سلوك: لا يُثبت أن الصفحة تُفتح فعلاً بلا شبكة. والفرق بينهما هو
+   * الفرق بين تطبيقٍ مثبَّتٍ يعمل وشاشةِ خطأٍ من المتصفّح.
+   */
+  await t.test('التطبيق يُفتح فعلاً بلا شبكة', async () => {
+    const offline = await browser.newUserPage();
+    await onScreen(offline, 'التطبيق يُفتح فعلاً بلا شبكة', async () => {
+      await offline.goto(site.url, { waitUntil: 'networkidle' });
+
+      // عامل الخدمة يُسجَّل ويُخزّن مسبقاً بعد التحميل — ننتظر سيطرته على الصفحة
+      await offline.waitForFunction(
+        'navigator.serviceWorker && navigator.serviceWorker.controller !== null',
+        null, { timeout: 15000 },
+      );
+
+      await offline.context().setOffline(true);
+      await offline.reload({ waitUntil: 'domcontentloaded' });
+
+      // الهيكل يُقدَّم من التخزين المسبق: العنوان والنموذج حاضران بلا شبكة
+      await offline.waitForSelector('h1');
+      assert.match(await offline.locator('h1').innerText(), /مسجدي/,
+        'شاشة خطأ المتصفّح لا التطبيق — الدعوى بأنه يعمل بلا إنترنت غير صحيحة');
+      await offline.waitForSelector('[data-testid="offline"]');
+
+      await offline.context().setOffline(false);
     });
   });
 
