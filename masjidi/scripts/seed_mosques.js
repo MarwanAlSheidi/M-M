@@ -8,6 +8,7 @@
  *   node scripts/seed_mosques.js            # استيراد كامل
  *   node scripts/seed_mosques.js --limit 100  # تجربة سريعة
  *   node scripts/seed_mosques.js --dry-run
+ *   node scripts/seed_mosques.js --verify   # فحص التكرار بلا كتابة
  */
 
 require('dotenv').config();
@@ -38,6 +39,8 @@ function tokenize(...values) {
 const args = process.argv.slice(2);
 const limit = args.includes('--limit') ? Number(args[args.indexOf('--limit') + 1]) : Infinity;
 const dryRun = args.includes('--dry-run');
+const verifyOnly = args.includes('--verify');
+const allowDuplicates = args.includes('--allow-duplicates');
 
 function initParse() {
   const { PARSE_APP_ID, PARSE_MASTER_KEY, PARSE_JS_KEY, PARSE_SERVER_URL } = process.env;
@@ -49,8 +52,17 @@ function initParse() {
   Parse.serverURL = PARSE_SERVER_URL;
 }
 
+/**
+ * خريطة `externalId` → `objectId` لكل مسجد مخزَّن، ومعها ما تكرّر منها.
+ *
+ * التكرار يُرصد هنا لأننا نمرّ على كل سجل أصلاً فلا يكلّف شيئاً. وبلا رصده
+ * كانت `found.set` تحتفظ بآخر نسخة وتُسقط ما قبلها: النسخة المهجورة لا تُحدَّث
+ * أبداً، وتبقى تظهر في البحث وتُطلَب ملكيتها بينما الطلبات تُنشأ على أختها.
+ * وفهرس `externalId_lookup` فهرس بحث لا قيد تفرّد، فلا شيء يمنع ذلك في القاعدة.
+ */
 async function existingIds() {
   const found = new Map();
+  const duplicates = new Map();
   const query = new Parse.Query('Mosques');
   query.select('externalId');
   query.limit(1000);
@@ -59,11 +71,33 @@ async function existingIds() {
     if (cursor) query.greaterThan('objectId', cursor);
     const page = await query.ascending('objectId').find({ useMasterKey: true });
     if (page.length === 0) break;
-    page.forEach((m) => found.set(m.get('externalId'), m.id));
+    for (const mosque of page) {
+      const key = mosque.get('externalId');
+      if (found.has(key)) {
+        const seen = duplicates.get(key) || [found.get(key)];
+        seen.push(mosque.id);
+        duplicates.set(key, seen);
+      } else {
+        found.set(key, mosque.id);
+      }
+    }
     cursor = page[page.length - 1].id;
     if (page.length < 1000) break;
   }
-  return found;
+  return { found, duplicates };
+}
+
+/** يطبع التكرار ويعيد `true` إن وُجد — القرار للمُشغّل لا للسكربت. */
+function reportDuplicates(duplicates) {
+  if (duplicates.size === 0) return false;
+  console.error(`\n✗ ${duplicates.size} معرّفاً خارجياً مكرّراً في القاعدة:`);
+  for (const [key, ids] of [...duplicates].slice(0, 20)) {
+    console.error(`   ${key} → ${ids.join('، ')}`);
+  }
+  if (duplicates.size > 20) console.error(`   … و${duplicates.size - 20} غيرها`);
+  console.error('\nالاستيراد يُحدّث نسخةً واحدة ويترك البقية مهجورةً تظهر في البحث.');
+  console.error('احذف الزائد يدوياً ثم أعد التشغيل، أو تجاوز بـ--allow-duplicates.');
+  return true;
 }
 
 async function main() {
@@ -79,8 +113,16 @@ async function main() {
 
   initParse();
   const Mosque = Parse.Object.extend('Mosques');
-  const known = await existingIds();
+  const { found: known, duplicates } = await existingIds();
   console.log(`→ موجود مسبقاً: ${known.size}`);
+
+  const hasDuplicates = reportDuplicates(duplicates);
+  if (verifyOnly) {
+    if (!hasDuplicates) console.log('✓ لا تكرار في المعرّفات الخارجية.');
+    process.exit(hasDuplicates ? 1 : 0);
+  }
+  // الكتابة فوق قاعدة مكرّرة تُرسّخ التكرار ولا تصلحه — نقف افتراضياً
+  if (hasDuplicates && !allowDuplicates) process.exit(1);
 
   let created = 0;
   let updated = 0;

@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل محلياً على 400 مسجداً. ❌ لم يُشغّل على الاستيراد الكامل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسار التطوّع، القرب، خريطة جوجل (بمفتاح اختياري)، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 149 حالة على بديل Parse (`npm test`) + 7 اختبارات تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
+| الاختبارات | ✅ 158 حالة على بديل Parse (`npm test`) + 7 اختبارات تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
 
 ---
 
@@ -95,7 +95,10 @@
 بلا أي حركة مالية. كود التبرعات موجود وجاهز لكنه يبقى معطّلاً حتى صدور التصريح.
 
 **تقني:**
-- Back4app المجاني: 25k طلب/شهر، قاعدة 250MB. الـ 18k مسجداً تشغل ~15MB — كافٍ.
+- Back4app المجاني: 25k طلب/شهر، قاعدة 250MB. المساحة كافية (الـ18k مسجداً
+  ~15MB)، **والطلبات هي القيد الملزم لا المساحة**: الاستيراد الكامل وحده يكلّف
+  ≈911 طلباً إن احتُسبت الدفعة طلباً واحداً، و≈18,214 إن احتُسب كل كائن على
+  حدة — أي ثلاثة أرباع الباقة الشهرية. تحقّق من طريقة الاحتساب قبل تشغيله.
 - الإشعارات تحتاج تسجيل Installation وربطه بالمستخدم عند تسجيل الدخول،
   وإلا لن يصل أي إشعار.
 - القرب الجغرافي **لا يحتاج فهرساً مكانياً**: يعمل على `lat`/`lng` بصندوق إحاطة
@@ -128,7 +131,8 @@ cloud/
 scripts/
   clean_mosques.py     Excel → JSON نظيف
   seed_mosques.js      استيراد إلى Parse (idempotent)
-  apply_schema.js      تطبيق schema.json
+  apply_schema.js      تطبيق schema.json — الحقول والصلاحيات والفهارس
+  lib/index-plan.js    تخطيط الفهارس الناقصة وفرز المكانيّ — تحت الاختبار
   build_single_file.py توليد cloud/main.bundle.js من ملفات cloud/
   build_single_doc.py  توليد MASJIDI.md من المستودع كله
 tests/
@@ -139,6 +143,7 @@ tests/
   audit.test.js        سجل التدقيق والمهمة الدورية
   users.test.js        اعتماد الشركات، الاسترداد، البحث، الملف الشخصي
   schema.test.js       الصلاحيات، وتطابق النسختين المجزّأة والمدمجة
+  indexes.test.js      تخطيط الفهارس وسلامة تعريفها في المخطط
   integration/         خادم parse-server حقيقي — `npm run test:integration`
 data/
   mosques.json         18,214 سجلاً جاهزاً
@@ -457,6 +462,54 @@ if (user.dirty('isVerifiedContractor')) {
 
 ---
 
+### 🔴 جولة عاشرة — ستة عشر فهرساً معلَناً وصفرٌ مطبَّق
+
+**العَرَض:** لا شيء. كل شيء يعمل — ببطء لا يظهر على 400 سجل ويظهر على 18 ألفاً.
+
+`schema.json` يعلن ستة عشر فهرساً، و`apply_schema.js` **يتجاهل كتلة `indexes`
+كلّها**: يطبّق الحقول والصلاحيات وحدها، ثم يطبع اعتذاراً صريحاً بأن «فهارس
+2dsphere والفهارس المركّبة تُضاف من لوحة Back4app — Parse SDK لا يديرها».
+
+الاعتذار غير صحيح. `Parse.Schema.addIndex` موجودة في SDK المثبَّت (5.3.0)،
+وتعمل على محوّلي MongoDB وPostgreSQL معاً. فكان كل استعلامٍ ضُبط في المراجعات
+السابقة «ليستفيد من الفهرس» يمسح المجموعة في الواقع: `name_tokens`
+و`name_search` و`geo_box` و`open_feed` و`ledger` و`trail` — كلّها حبرٌ على ورق.
+
+هذا أخطر من أي خطأ منطقي سبقه لأنه **لا يُنتج سلوكاً خاطئاً**: الاختبارات تمرّ،
+والواجهة تعمل، والنتائج صحيحة. لا يظهر إلا حين تكبر البيانات، أي بعد الإطلاق.
+
+**العلاج:** `apply_schema.js` يطبّق الفهارس فعلاً، والتخطيط انتُزع إلى
+`scripts/lib/index-plan.js` ليكون تحت الاختبار — الفهرس هو الفرق بين استعلامٍ
+يقرأ سطراً وآخر يمسح ثمانية عشر ألفاً، فلا يجوز أن يبقى تطبيقه بلا تغطية.
+
+- **المكانيّ يُفرز ويُطبَّق وحده.** `2dsphere` يفشل حيث لا امتداد مكاني، وكان
+  فشله سيُسقط بقية فهارس الفئة معه لأن `schema.update()` تُرسل الكلّ دفعةً.
+- **ويُميَّز بقيمته النصّية لا باسمه:** `geo_box` اسمه جغرافيّ وهو فهرس عاديّ
+  على `lat`/`lng`، وعليه يقوم القرب حيث لا PostGIS. عدُّه مكانياً يُسقط ما يعمل.
+- **عند الفشل تُعاد المحاولة واحداً واحداً** ليُعرف الفاسد ويمرّ السليم.
+
+**التحقّق على خادم حقيقي:** 14 من 16 طُبّقت، والاثنان الباقيان مكانيّان يفشلان
+على PostgreSQL كما هو متوقَّع. وتأكّدت من وجودها في `pg_indexes` لا من رسالة
+نجاح واجهة Parse — الفرق بين «قال إنه فعل» و«فُعِل».
+
+### 🟠 التكرار الصامت في المعرّفات الخارجية
+
+`existingIds()` كانت تبني خريطة `externalId → objectId` بـ`found.set`، فإن
+تكرّر معرّفٌ احتفظت بآخر نسخة وأسقطت ما قبلها بلا أثر. النسخة المهجورة لا
+تُحدَّث أبداً، وتبقى تظهر في البحث وتُطلَب ملكيتها بينما الطلبات تُنشأ على
+أختها — مسجدٌ واحد بسجلّين وإمامين محتملين.
+
+وفهرس `externalId` فهرس بحث لا قيد تفرّد (Parse لا يعبّر عن التفرّد في مخططه)،
+فلا شيء في القاعدة يمنع ذلك. صار الرصد في `existingIds` نفسها — نمرّ على كل سجل
+أصلاً فلا يكلّف شيئاً — والاستيراد يقف بدل أن يكتب فوق قاعدة مكرّرة فيُرسّخها.
+و`--verify` يفحص بلا كتابة.
+
+وأُعيدت تسمية الفهرس إلى `externalId_lookup`: الاسم القديم كان يَعِد بتفرّدٍ لا
+يفرضه، ويُطمئن قارئه إلى حماية غير موجودة. اختبارٌ يمنع عودة أي اسم يحوي
+«unique» إلى المخطط.
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB.** `npm run test:integration`
@@ -475,9 +528,16 @@ if (user.dirty('isVerifiedContractor')) {
 - **`nameTokens` تُحسب عند الاستيراد لا في المخطط.** المساجد المستوردة قبل
   إضافة الحقل لا تحمله، فلا يلتقطها بحث الكلمات (تبقى البادئة و`contains`).
   إعادة تشغيل `seed_mosques.js` تملؤها لأن الاستيراد idempotent.
-- **`externalId_unique` اسم يَعِد بما لا يُنفّذه** — التعريف `{externalId: 1}`
-  فهرس عادي، وواجهة مخطط Parse لا تعبّر عن التفرّد. أضِف فهرساً فريداً يدوياً من
-  لوحة Back4app؛ حتى ذلك الحين يقوم تفادي التكرار على استعلام‑ثم‑كتابة وحده.
+- **التفرّد الحقيقي على `externalId` يبقى يدوياً.** مخطط Parse لا يعبّر عنه،
+  فأضِف فهرساً فريداً من لوحة Back4app. حتى ذلك الحين الحماية كشفٌ بعد الوقوع
+  (`seed_mosques.js --verify`) لا منعٌ قبله.
+- **الفهرسان المكانيّان (`geo`, `volunteer_geo`) لم يُطبَّقا محلياً** — يحتاجان
+  MongoDB أو PostGIS. القرب يعمل بدونهما على `geo_box`، فهما تحسينٌ لا شرط.
+- **كلفة الاستيراد على باقة Back4app المجانية.** قِيس محلياً: SDK يجمع عشرين
+  كائناً في طلب HTTP واحد، فالاستيراد الكامل ≈911 طلباً. لكن الباقة تحدّ 25 ألف
+  طلب شهرياً، وإن كان Back4app يحتسب كل كائن داخل الدفعة طلباً مستقلاً صارت
+  الكلفة ≈18,214 — أي ثلاثة أرباع الباقة في عملية واحدة. **تحقّق من طريقة
+  الاحتساب قبل الاستيراد الكامل**، وشغّل `--limit` أولاً وراقب العدّاد.
 - **التقليم يحذف ولا يؤرشف.** `pruneAuditLog` يُسقط ما تجاوز 180 يوماً بلا نسخة
   خارجية. إن لزم الاحتفاظ الأطول للمساءلة، فالتصدير قبل الحذف مسؤولية خارجية.
 
@@ -534,8 +594,9 @@ if (user.dirty('isVerifiedContractor')) {
         "dataQuality": { "type": "Object" },
         "source": { "type": "String" }
       },
+      "_comment_indexes": "externalId_lookup فهرس بحث لا قيد تفرّد — Parse لا يعبّر عن التفرّد، فيُضاف فهرس فريد يدوياً من لوحة Back4app. حتى ذلك الحين يقوم تفادي التكرار على فحص scripts/seed_mosques.js --verify وحده.",
       "indexes": {
-        "externalId_unique": { "externalId": 1 },
+        "externalId_lookup": { "externalId": 1 },
         "geo": { "location": "2dsphere" },
         "geo_box": { "lat": 1, "lng": 1 },
         "gov_wilayat": { "governorate": 1, "wilayat": 1 },
@@ -5689,8 +5750,14 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const Parse = require('parse/node');
+const { planIndexes, splitByKind } = require('./lib/index-plan');
 
 const schemaFile = path.join(__dirname, '..', 'cloud', 'schema.json');
+
+/** أخطاء Parse قد تصل بلا `message` — الرمز وحده خيرٌ من كلمة «undefined». */
+const reason = (error) => (error && error.message)
+  || (error && error.code !== undefined && `رمز الخطأ ${error.code}`)
+  || String(error);
 
 async function main() {
   const { PARSE_APP_ID, PARSE_MASTER_KEY, PARSE_JS_KEY, PARSE_SERVER_URL } = process.env;
@@ -5702,6 +5769,7 @@ async function main() {
   Parse.serverURL = PARSE_SERVER_URL;
 
   const { classes } = JSON.parse(fs.readFileSync(schemaFile, 'utf8'));
+  let applied = 0;
 
   for (const definition of classes) {
     const schema = new Parse.Schema(definition.className);
@@ -5728,16 +5796,43 @@ async function main() {
       schema.setCLP(definition.classLevelPermissions);
     }
 
+    const { plain, spatial } = splitByKind(
+      planIndexes(definition.indexes, existing && existing.indexes),
+    );
+    for (const { name, spec } of plain) schema.addIndex(name, spec);
+
     try {
       existing ? await schema.update() : await schema.save();
-      console.log(`✓ ${definition.className}`);
+      console.log(`✓ ${definition.className}${plain.length ? ` (+${plain.length} فهرساً)` : ''}`);
     } catch (error) {
-      console.error(`✗ ${definition.className}: ${error.message}`);
+      console.error(`✗ ${definition.className}: ${reason(error)}`);
+      // فهرسٌ واحدٌ فاسد كان يُسقط الفئة كلّها ومعها بقية فهارسها — نعيد
+      // المحاولة واحداً واحداً ليُعرف الفاسد ويمرّ السليم
+      for (const { name, spec } of plain) {
+        const retry = new Parse.Schema(definition.className);
+        retry.addIndex(name, spec);
+        await retry.update()
+          .then(() => console.log(`  ✓ فهرس ${name}`))
+          .catch((e) => console.error(`  ✗ فهرس ${name}: ${reason(e)}`));
+      }
     }
+
+    // المكانيّ على حدة: يفشل حيث لا امتداد مكاني، وفشله لا يعني فشل الفئة
+    for (const { name, spec } of spatial) {
+      const geoSchema = new Parse.Schema(definition.className);
+      geoSchema.addIndex(name, spec);
+      await geoSchema.update()
+        .then(() => console.log(`  ✓ فهرس مكاني ${name}`))
+        .catch((e) => console.warn(`  ⚠ فهرس مكاني ${name} لم يُطبَّق: ${reason(e)}`));
+    }
+
+    applied += plain.length;
   }
 
-  console.log('\nملاحظة: فهارس 2dsphere والفهارس المركّبة تُضاف من لوحة Back4app');
-  console.log('(Database → Indexes) أو عبر MongoDB shell — Parse SDK لا يديرها.');
+  console.log(`\n✓ الفهارس المطبَّقة في هذه الجولة: ${applied}`);
+  console.log('الفهارس المكانية (2dsphere) تحتاج MongoDB أو PostGIS؛ القرب يعمل');
+  console.log('بدونها على صندوق الإحاطة — انظر cloud/lib/geo.js.');
+  console.log('التفرّد الحقيقي على externalId يبقى فهرساً يدوياً من لوحة Back4app.');
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
@@ -5756,6 +5851,7 @@ main().catch((e) => { console.error(e); process.exit(1); });
  *   node scripts/seed_mosques.js            # استيراد كامل
  *   node scripts/seed_mosques.js --limit 100  # تجربة سريعة
  *   node scripts/seed_mosques.js --dry-run
+ *   node scripts/seed_mosques.js --verify   # فحص التكرار بلا كتابة
  */
 
 require('dotenv').config();
@@ -5786,6 +5882,8 @@ function tokenize(...values) {
 const args = process.argv.slice(2);
 const limit = args.includes('--limit') ? Number(args[args.indexOf('--limit') + 1]) : Infinity;
 const dryRun = args.includes('--dry-run');
+const verifyOnly = args.includes('--verify');
+const allowDuplicates = args.includes('--allow-duplicates');
 
 function initParse() {
   const { PARSE_APP_ID, PARSE_MASTER_KEY, PARSE_JS_KEY, PARSE_SERVER_URL } = process.env;
@@ -5797,8 +5895,17 @@ function initParse() {
   Parse.serverURL = PARSE_SERVER_URL;
 }
 
+/**
+ * خريطة `externalId` → `objectId` لكل مسجد مخزَّن، ومعها ما تكرّر منها.
+ *
+ * التكرار يُرصد هنا لأننا نمرّ على كل سجل أصلاً فلا يكلّف شيئاً. وبلا رصده
+ * كانت `found.set` تحتفظ بآخر نسخة وتُسقط ما قبلها: النسخة المهجورة لا تُحدَّث
+ * أبداً، وتبقى تظهر في البحث وتُطلَب ملكيتها بينما الطلبات تُنشأ على أختها.
+ * وفهرس `externalId_lookup` فهرس بحث لا قيد تفرّد، فلا شيء يمنع ذلك في القاعدة.
+ */
 async function existingIds() {
   const found = new Map();
+  const duplicates = new Map();
   const query = new Parse.Query('Mosques');
   query.select('externalId');
   query.limit(1000);
@@ -5807,11 +5914,33 @@ async function existingIds() {
     if (cursor) query.greaterThan('objectId', cursor);
     const page = await query.ascending('objectId').find({ useMasterKey: true });
     if (page.length === 0) break;
-    page.forEach((m) => found.set(m.get('externalId'), m.id));
+    for (const mosque of page) {
+      const key = mosque.get('externalId');
+      if (found.has(key)) {
+        const seen = duplicates.get(key) || [found.get(key)];
+        seen.push(mosque.id);
+        duplicates.set(key, seen);
+      } else {
+        found.set(key, mosque.id);
+      }
+    }
     cursor = page[page.length - 1].id;
     if (page.length < 1000) break;
   }
-  return found;
+  return { found, duplicates };
+}
+
+/** يطبع التكرار ويعيد `true` إن وُجد — القرار للمُشغّل لا للسكربت. */
+function reportDuplicates(duplicates) {
+  if (duplicates.size === 0) return false;
+  console.error(`\n✗ ${duplicates.size} معرّفاً خارجياً مكرّراً في القاعدة:`);
+  for (const [key, ids] of [...duplicates].slice(0, 20)) {
+    console.error(`   ${key} → ${ids.join('، ')}`);
+  }
+  if (duplicates.size > 20) console.error(`   … و${duplicates.size - 20} غيرها`);
+  console.error('\nالاستيراد يُحدّث نسخةً واحدة ويترك البقية مهجورةً تظهر في البحث.');
+  console.error('احذف الزائد يدوياً ثم أعد التشغيل، أو تجاوز بـ--allow-duplicates.');
+  return true;
 }
 
 async function main() {
@@ -5827,8 +5956,16 @@ async function main() {
 
   initParse();
   const Mosque = Parse.Object.extend('Mosques');
-  const known = await existingIds();
+  const { found: known, duplicates } = await existingIds();
   console.log(`→ موجود مسبقاً: ${known.size}`);
+
+  const hasDuplicates = reportDuplicates(duplicates);
+  if (verifyOnly) {
+    if (!hasDuplicates) console.log('✓ لا تكرار في المعرّفات الخارجية.');
+    process.exit(hasDuplicates ? 1 : 0);
+  }
+  // الكتابة فوق قاعدة مكرّرة تُرسّخ التكرار ولا تصلحه — نقف افتراضياً
+  if (hasDuplicates && !allowDuplicates) process.exit(1);
 
   let created = 0;
   let updated = 0;
