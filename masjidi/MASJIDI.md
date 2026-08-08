@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 185 حالة على بديل Parse (`npm test`) + 48 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 19 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 185 حالة على بديل Parse (`npm test`) + 53 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 19 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -695,6 +695,45 @@ if (user.dirty('isVerifiedContractor')) {
 ومعه **رابط الطريق في قائمة المهامّ**: الإحداثيات كانت في القاعدة ولا تصل إلى
 المنفّذ. أُضيفت القرية إلى `getNearbyOpportunities` و`getMyClaims`
 و`listPendingClaims` وإلى قراءة الطلبات في العميل.
+
+---
+
+### 🟠 ستة عشر مسجداً خارج المنصّة بلا أن يعلم أحد
+
+`data/cleaning_report.json` يقول: ثلاثة عشر صفّاً بإحداثيات خارج حدود السلطنة
+(أحدها في الهند)، وثلاثة بلا إحداثيات. ستة عشر مسجداً بلا موقع صالح — سُجّلت
+في `DATA.md` بوصفها مشكلة بيانات، ولم يُسأل: **وماذا يقع لأهلها في التطبيق؟**
+
+الجواب: صندوق الإحاطة لا يبلغها أبداً، فطلباتها **لا تصل متطوّعاً شارك موقعه**.
+وتصل من رفض المشاركة وحده — لأن الواجهة تسقط حينها إلى `openOpportunities` التي
+تُدرج الجميع. أي أن الفرصة تظهر لمن يبحث أقلّ ويختفي عمّن يبحث أكثر، وهي مفارقةٌ
+صامتة لا يُبلَّغ بها أحد.
+
+وأشدّ منها: `if (near.length === 0) return []` — متطوّعٌ لا مسجد **مُحدَّد
+الموقع** حوله كان يُرجع له فراغٌ تامّ، وفيه فرصةٌ متاحة.
+
+**العلاج — بقاعدةٍ لا باستثناء:** القائمة تُرتَّب بالقرب، **وما لا يُعرف قربه
+يأتي آخراً موسوماً لا محذوفاً**. تُلحق مساجد `hasLocation: false` ذات الطلبات
+المفتوحة (وهي ستة عشر بحدّها الأعلى) بمسافةٍ `null`، وتُفرز آخر القائمة،
+وتُوسَم في الواجهة «موقعه غير مسجّل» — لا وسمُ حالةٍ عامّ يُفهَم منه أنها قريبة.
+وموضعها (الولاية والقرية) يصل ولو غاب موقعها، وإلا لم يعرف المتطوّع أين يذهب.
+
+**الدرس:** مشكلةُ بياناتٍ موثّقة ليست مُعالَجة. أن تُحصى وتُكتب في تقرير شيء،
+وأن يُسأل «ماذا يقع لمن خلفها؟» شيءٌ آخر.
+
+#### واختبارات التكامل تُشغَّل على التوالي
+
+الملفّ السادس أسقط اختبارَي بحثٍ صحيحين. كلٌّ منهما يمرّ وحده، ويسقط في
+المجموعة: `node --test` يُشغّل الملفات متوازيةً، **وكل ملفٍ يُقلع عنقود
+PostgreSQL كاملاً وخادماً**. ستة معاً تُنهك الجهاز.
+
+`--test-concurrency=1`. أربعٌ وعشرون ثانية للملفّات كلّها، وهو ثمنٌ أرخص من
+تشخيص فشلٍ بيئيٍّ يبدو خطأً في الكود.
+
+**وخطأٌ كرّرته:** وضعتُ الاختبار الجديد أوّلاً في ملفٍّ فيه خادمٌ آخر، فسقط بـ
+`relation "_User" does not exist` — وهو عين ما وقعت فيه مع `contractor.test.js`
+**وكتبتُ درسه في رأس ذلك الملف**. الدرس المكتوب لا يُقرأ إن لم يُبحث عنه؛
+الحارس وحده يمنع التكرار.
 
 ---
 
@@ -1943,12 +1982,28 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
   const near = geo.sortByDistance(
     await mosqueQuery.find({ useMasterKey: true }), lat, lng, radiusKm,
   );
-  if (near.length === 0) return [];
 
-  const byId = new Map(near.map(({ row, km }) => [row.id, { mosque: row, km }]));
+  // مساجد بلا إحداثيات — ستة عشر في بيانات الوزارة. صندوق الإحاطة لا يبلغها
+  // أبداً، فكانت طلباتها لا تصل متطوّعاً شارك موقعه، وتصل من رفض المشاركة
+  // وحده. تُلحق بالقائمة بمسافةٍ مجهولة لا تُسقَط منها: القائمة تُرتَّب
+  // بالقرب، وما لا يُعرف قربه يأتي آخراً موسوماً لا محذوفاً.
+  const unlocated = await new Parse.Query('Mosques')
+    .equalTo('hasLocation', false)
+    .greaterThan('openRequestsCount', 0)
+    .select('name', 'wilayat', 'village', 'governorate')
+    .limit(50)
+    .find({ useMasterKey: true });
+
+  const candidates = [
+    ...near.map(({ row, km }) => ({ row, km })),
+    ...unlocated.map((row) => ({ row, km: null })),
+  ];
+  if (candidates.length === 0) return [];
+
+  const byId = new Map(candidates.map(({ row, km }) => [row.id, { mosque: row, km }]));
 
   const requests = await new Parse.Query('ServiceRequests')
-    .containedIn('mosqueId', near.map(({ row }) => row))
+    .containedIn('mosqueId', candidates.map(({ row }) => row))
     .equalTo('status', 'open_for_volunteers')
     .limit(100)
     .find({ useMasterKey: true });
@@ -1960,7 +2015,9 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
       return { row, hit };
     })
     .filter(({ hit }) => hit)
-    .sort((a, b) => a.hit.km - b.hit.km)
+    // المجهول قربه آخراً، لا مطروحاً من الترتيب فيتصدّر أو يختفي
+    .sort((a, b) => (a.hit.km == null ? Infinity : a.hit.km)
+      - (b.hit.km == null ? Infinity : b.hit.km))
     .map(({ row, hit }) => ({
       id: row.id,
       title: row.get('title'),
@@ -1972,7 +2029,7 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
       mosqueName: hit.mosque.get('name'),
       wilayat: hit.mosque.get('wilayat'),
       village: hit.mosque.get('village'),
-      distanceKm: Math.round(hit.km * 100) / 100,
+      distanceKm: hit.km == null ? null : Math.round(hit.km * 100) / 100,
     }));
 });
 
@@ -4375,12 +4432,28 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
   const near = geo.sortByDistance(
     await mosqueQuery.find({ useMasterKey: true }), lat, lng, radiusKm,
   );
-  if (near.length === 0) return [];
 
-  const byId = new Map(near.map(({ row, km }) => [row.id, { mosque: row, km }]));
+  // مساجد بلا إحداثيات — ستة عشر في بيانات الوزارة. صندوق الإحاطة لا يبلغها
+  // أبداً، فكانت طلباتها لا تصل متطوّعاً شارك موقعه، وتصل من رفض المشاركة
+  // وحده. تُلحق بالقائمة بمسافةٍ مجهولة لا تُسقَط منها: القائمة تُرتَّب
+  // بالقرب، وما لا يُعرف قربه يأتي آخراً موسوماً لا محذوفاً.
+  const unlocated = await new Parse.Query('Mosques')
+    .equalTo('hasLocation', false)
+    .greaterThan('openRequestsCount', 0)
+    .select('name', 'wilayat', 'village', 'governorate')
+    .limit(50)
+    .find({ useMasterKey: true });
+
+  const candidates = [
+    ...near.map(({ row, km }) => ({ row, km })),
+    ...unlocated.map((row) => ({ row, km: null })),
+  ];
+  if (candidates.length === 0) return [];
+
+  const byId = new Map(candidates.map(({ row, km }) => [row.id, { mosque: row, km }]));
 
   const requests = await new Parse.Query('ServiceRequests')
-    .containedIn('mosqueId', near.map(({ row }) => row))
+    .containedIn('mosqueId', candidates.map(({ row }) => row))
     .equalTo('status', 'open_for_volunteers')
     .limit(100)
     .find({ useMasterKey: true });
@@ -4392,7 +4465,9 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
       return { row, hit };
     })
     .filter(({ hit }) => hit)
-    .sort((a, b) => a.hit.km - b.hit.km)
+    // المجهول قربه آخراً، لا مطروحاً من الترتيب فيتصدّر أو يختفي
+    .sort((a, b) => (a.hit.km == null ? Infinity : a.hit.km)
+      - (b.hit.km == null ? Infinity : b.hit.km))
     .map(({ row, hit }) => ({
       id: row.id,
       title: row.get('title'),
@@ -4404,7 +4479,7 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
       mosqueName: hit.mosque.get('name'),
       wilayat: hit.mosque.get('wilayat'),
       village: hit.mosque.get('village'),
-      distanceKm: Math.round(hit.km * 100) / 100,
+      distanceKm: hit.km == null ? null : Math.round(hit.km * 100) / 100,
     }));
 });
 
@@ -7264,7 +7339,7 @@ files/
     "schema": "node scripts/apply_schema.js",
     "test": "node --test tests/*.test.js",
     "lint": "eslint cloud scripts tests --ext .js",
-    "test:integration": "node --test tests/integration/*.test.js",
+    "test:integration": "node --test --test-concurrency=1 tests/integration/*.test.js",
     "seed:verify": "node scripts/seed_mosques.js --verify",
     "test:e2e": "node --test --test-timeout=180000 tests/e2e/*.test.js",
     "admin": "node scripts/promote_admin.js"
@@ -9450,6 +9525,11 @@ test('نقاط الدخول', async (t) => {
  *
  * يتخطّى نفسه بلا فشل إن غابت أدوات PostgreSQL أو حزم التطوير، فلا يكسر
  * `npm test` على جهاز لا يملكها.
+ *
+ * **تُشغَّل الملفات على التوالي** (`--test-concurrency=1`): كل ملفٍ يُقلع عنقود
+ * PostgreSQL كاملاً وخادماً، فتوازيها يُنهك الجهاز ويُسقط اختبارات صحيحة —
+ * وقع ذلك عند الملفّ السادس، ومرّ كلٌّ منها وحده. الفشل حينها في البيئة لا
+ * في الكود، وتشخيصُه يضيّع وقتاً أطول مما يوفّره التوازي.
  */
 
 const { execFileSync } = require('node:child_process');

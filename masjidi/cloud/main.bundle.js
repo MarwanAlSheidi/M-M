@@ -679,12 +679,28 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
   const near = geo.sortByDistance(
     await mosqueQuery.find({ useMasterKey: true }), lat, lng, radiusKm,
   );
-  if (near.length === 0) return [];
 
-  const byId = new Map(near.map(({ row, km }) => [row.id, { mosque: row, km }]));
+  // مساجد بلا إحداثيات — ستة عشر في بيانات الوزارة. صندوق الإحاطة لا يبلغها
+  // أبداً، فكانت طلباتها لا تصل متطوّعاً شارك موقعه، وتصل من رفض المشاركة
+  // وحده. تُلحق بالقائمة بمسافةٍ مجهولة لا تُسقَط منها: القائمة تُرتَّب
+  // بالقرب، وما لا يُعرف قربه يأتي آخراً موسوماً لا محذوفاً.
+  const unlocated = await new Parse.Query('Mosques')
+    .equalTo('hasLocation', false)
+    .greaterThan('openRequestsCount', 0)
+    .select('name', 'wilayat', 'village', 'governorate')
+    .limit(50)
+    .find({ useMasterKey: true });
+
+  const candidates = [
+    ...near.map(({ row, km }) => ({ row, km })),
+    ...unlocated.map((row) => ({ row, km: null })),
+  ];
+  if (candidates.length === 0) return [];
+
+  const byId = new Map(candidates.map(({ row, km }) => [row.id, { mosque: row, km }]));
 
   const requests = await new Parse.Query('ServiceRequests')
-    .containedIn('mosqueId', near.map(({ row }) => row))
+    .containedIn('mosqueId', candidates.map(({ row }) => row))
     .equalTo('status', 'open_for_volunteers')
     .limit(100)
     .find({ useMasterKey: true });
@@ -696,7 +712,9 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
       return { row, hit };
     })
     .filter(({ hit }) => hit)
-    .sort((a, b) => a.hit.km - b.hit.km)
+    // المجهول قربه آخراً، لا مطروحاً من الترتيب فيتصدّر أو يختفي
+    .sort((a, b) => (a.hit.km == null ? Infinity : a.hit.km)
+      - (b.hit.km == null ? Infinity : b.hit.km))
     .map(({ row, hit }) => ({
       id: row.id,
       title: row.get('title'),
@@ -708,7 +726,7 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
       mosqueName: hit.mosque.get('name'),
       wilayat: hit.mosque.get('wilayat'),
       village: hit.mosque.get('village'),
-      distanceKm: Math.round(hit.km * 100) / 100,
+      distanceKm: hit.km == null ? null : Math.round(hit.km * 100) / 100,
     }));
 });
 

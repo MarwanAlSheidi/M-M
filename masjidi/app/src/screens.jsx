@@ -530,9 +530,13 @@ export function Opportunities() {
             <article className="card" key={row.id}>
               <div className="spread">
                 <h3>{row.title}</h3>
+                {/* المسافة مجهولة حين لا يكون للمسجد إحداثيات — يُقال صراحةً
+                    بدل وسمٍ عامّ يُفهَم منه أن الفرصة قريبة */}
                 {row.distanceKm != null
                   ? <DistanceTag km={row.distanceKm} />
-                  : <StatusTag status={row.status} />}
+                  : nearby
+                    ? <span className="tag warn">موقعه غير مسجّل</span>
+                    : <StatusTag status={row.status} />}
               </div>
               <p>{row.mosqueName}</p>
               <Where wilayat={row.wilayat} village={row.village} />
