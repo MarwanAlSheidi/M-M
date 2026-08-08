@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل محلياً على 400 مسجداً. ❌ لم يُشغّل على الاستيراد الكامل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسار التطوّع، القرب، خريطة جوجل (بمفتاح اختياري)، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 158 حالة على بديل Parse (`npm test`) + 7 اختبارات تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
+| الاختبارات | ✅ 170 حالة على بديل Parse (`npm test`) + 7 اختبارات تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
 
 ---
 
@@ -80,7 +80,9 @@
 8. **`dirty()` وحده لا يصلح حارساً على حقل له `defaultValue`** — Parse يطبّق
    القيمة الافتراضية عند الإنشاء فيُعلّم الحقل مُعدَّلاً. ميّز `isNew()` أولاً.
 9. **الآثار الجانبية لا تُسقط العملية** — الإشعار والتدقيق يُسجّلان الفشل
-   ويبتلعانه. لا يفشل اعتماد عملٍ منجَز لأن إشعاراً لم يصل.
+   ويبتلعانه. لا يفشل اعتماد عملٍ منجَز لأن إشعاراً لم يصل ولا لأن سطراً لم
+   يُكتب. وكل إشعارٍ موجَّه يمرّ بـ`pushToUsers` ليُحفظ في الوارد — لا تستدعِ
+   `Parse.Push` مباشرةً.
 10. **`equalTo` على حقل مصفوفة غير محمول** — يعمل على MongoDB ويرمي على محوّل
     PostgreSQL. استخدم `containsAll`؛ تعبّر عن الشرط نفسه وتعمل على الاثنين.
 11. **لا تعديل على `data/mosques.json` يدوياً** — عدّل السكربت وأعد توليده.
@@ -99,8 +101,10 @@
   ~15MB)، **والطلبات هي القيد الملزم لا المساحة**: الاستيراد الكامل وحده يكلّف
   ≈911 طلباً إن احتُسبت الدفعة طلباً واحداً، و≈18,214 إن احتُسب كل كائن على
   حدة — أي ثلاثة أرباع الباقة الشهرية. تحقّق من طريقة الاحتساب قبل تشغيله.
-- الإشعارات تحتاج تسجيل Installation وربطه بالمستخدم عند تسجيل الدخول،
-  وإلا لن يصل أي إشعار.
+- **الدفع** (`Parse.Push`) يحتاج تسجيل Installation وربطه بالمستخدم عند تسجيل
+  الدخول، والتطبيق لا يسجّله بعد — فلا يصل دفعٌ اليوم. لذلك كل إشعار موجَّه
+  يُحفظ في `Notifications` ويُقرأ من شاشة «التنبيهات»؛ الدفع تحسينٌ فوقه لا
+  شرطٌ له. **لا تبنِ مساراً يعتمد على وصول الدفع وحده.**
 - القرب الجغرافي **لا يحتاج فهرساً مكانياً**: يعمل على `lat`/`lng` بصندوق إحاطة
   ثم هافرساين (`cloud/lib/geo.js`). فهرس `geo_box` المركّب يكفي، وفهرس
   `2dsphere` صار تحسيناً اختيارياً لا شرطاً.
@@ -118,16 +122,17 @@ cloud/
   lib/
     errors.js          أخطاء Parse موحّدة برسائل عربية
     auth.js            التحقق من الأدوار وملكية المسجد
-    push.js            الإشعارات (استعلام على _Installation لا _User)
     payments.js        محوّل بوابة ثواني
     audit.js           سجل التدقيق — لا يرمي أبداً
+    push.js            صندوق الوارد الدائم + الدفع فوقه — لا يرمي أبداً
     geo.js             القرب بصندوق إحاطة وهافرساين — بلا فهرس مكاني
   functions/
     mosques.js         البحث بالكلمات المفهرسة، القرب الجغرافي، طلب ملكية المسجد
     requests.js        دورة حياة الطلب، اهتمام المتطوّعين، سحب التكليف والحدود
     donations.js       التبرع، التأكيد، الصرف، السجل المالي، webhook البوابة
     users.js           اعتماد الشركات، الملف الشخصي، المسجد المفضّل
-    maintenance.js     المهام الدورية — تقليم سجل التدقيق
+    notifications.js   صندوق الوارد: القراءة والتعليم مقروءاً
+    maintenance.js     المهام الدورية — تقليم سجل التدقيق وصندوق الوارد
 scripts/
   clean_mosques.py     Excel → JSON نظيف
   seed_mosques.js      استيراد إلى Parse (idempotent)
@@ -144,6 +149,7 @@ tests/
   users.test.js        اعتماد الشركات، الاسترداد، البحث، الملف الشخصي
   schema.test.js       الصلاحيات، وتطابق النسختين المجزّأة والمدمجة
   indexes.test.js      تخطيط الفهارس وسلامة تعريفها في المخطط
+  notifications.test.js صندوق الوارد: الوصول والخصوصية والتقليم
   integration/         خادم parse-server حقيقي — `npm run test:integration`
 data/
   mosques.json         18,214 سجلاً جاهزاً
@@ -510,6 +516,47 @@ if (user.dirty('isVerifiedContractor')) {
 
 ---
 
+### 🔴 جولة حادية عشرة — كل إشعار كان يذهب إلى لا أحد
+
+**العَرَض:** لا شيء، مرّةً أخرى. الدوال تُرجع `{ sent: 3 }` والسجلّ نظيف.
+
+`Parse.Push.send` يستعلم على `_Installation` لا على `_User`، فلا يصل إلا لمن
+سُجّل لجهازه Installation ورُبط بحسابه. **تطبيق الويب لا يسجّله**، والقيد مكتوب
+في `CLAUDE.md` منذ البداية بوصفه شرط تشغيل — لكن الشرط لم يتحقّق قطّ ولم يمنع
+أحداً من كتابة عشرة مواضع تعتمد عليه.
+
+فكان المتطوّع يُكلَّف ولا يعلم، والإمام يُسجَّل اهتمامٌ بطلبه ولا يعلم، ويُسحب
+التكليف ولا يعلم أحد. والأسوأ أن `pushToUsers` كانت تُرجع `{ sent: list.length }`
+— **تُبلّغ بنجاحٍ لم يقع**، فلا تظهر المشكلة حتى في سجلّ الخادم.
+
+**العلاج:** فئة `Notifications` — صندوق وارد دائم. لكل إشعار موجَّه سطرٌ يقرأه
+صاحبه حين يفتح التطبيق، والدفع تحسينٌ فوقه لا شرطٌ له. وشاشة «التنبيهات» في
+كل دور بشارة غير المقروء.
+
+- **الموجَّه يُحفظ والبثّ لا.** خمسمائة سطر عند كل طلب جديد تُنهك باقة الطلبات،
+  والفرصة القريبة لها قناتها أصلاً: `getNearbyOpportunities` يراها المتطوّع متى
+  فتح التطبيق. الحفظ لما لا بديل له — التكليف والسحب والاهتمام والإنجاز.
+- **`stored` هو الضمان لا `pushed`.** الأخيرة عدد من استُهدف لا من وصله، ولا
+  سبيل لمعرفة الثاني من الخادم. الاسم يقول ذلك الآن بدل `sent` المُوهِمة.
+- **الحفظ أثر جانبي كالتدقيق** — لا يرمي. لا يفشل تكليفُ منفّذ لأن سطر إشعار
+  لم يُكتب.
+- **الصندوق مقفل على Master Key** كسجل التدقيق: القراءة عبر `getMyNotifications`
+  وحدها فلا يصل أحدٌ إلى وارد غيره ولو خمّن معرّفه. و`markNotificationsRead`
+  تقيّد الاستعلام بالمستخدم **حتى مع تمرير `ids`** — لولا ذلك لأخفى أحدهم عن
+  غيره إشعاراً لم يره.
+- **التقليم:** `pruneNotifications` بتسعين يوماً. الصندوق ينمو أسرع من سجل
+  التدقيق (سطرٌ لكل مستهدَف لا لكل حدث)، والإشعار خبرٌ عاجل — والأثر الدائم في
+  `AuditLog` لا هنا.
+
+**التحقّق:** تسع خطوات على خادم حقيقي **بصفر Installation مسجَّل** — وهو بيت
+القصيد: كل ما وصل، وصل بلا دفع. ومنها محاولة قراءة `Notifications` مباشرةً
+(رُفضت) ومحاولة تعليم وارد الغير مقروءاً (عُلّم صفر). والرحلة كاملة في متصفّح.
+
+**الدرس:** قيدٌ مكتوب في التوثيق ليس حمايةً. «الإشعارات تحتاج تسجيل Installation
+وإلا لن يصل أي إشعار» كانت مكتوبة بالحرف، وبُني فوقها عشرة مواضع.
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB.** `npm run test:integration`
@@ -727,6 +774,25 @@ if (user.dirty('isVerifiedContractor')) {
       }
     },
     {
+      "className": "Notifications",
+      "_comment": "صندوق وارد دائم. الدفع (Parse.Push) يحتاج Installation مسجَّلاً وقد لا يصل؛ هذا يصل دائماً لأن المستخدم يفتح التطبيق. يُقرأ عبر getMyNotifications وحدها.",
+      "fields": {
+        "userId": { "type": "Pointer", "targetClass": "_User", "required": true },
+        "body": { "type": "String", "required": true },
+        "kind": { "type": "String" },
+        "requestId": { "type": "String" },
+        "mosqueId": { "type": "Pointer", "targetClass": "Mosques" },
+        "readAt": { "type": "Date" }
+      },
+      "indexes": {
+        "inbox": { "userId": 1, "createdAt": -1 },
+        "unread": { "userId": 1, "readAt": 1 }
+      },
+      "classLevelPermissions": {
+        "find": {}, "get": {}, "create": {}, "update": {}, "delete": {}, "addField": {}
+      }
+    },
+    {
       "className": "_User",
       "fields": {
         "role": { "type": "String", "defaultValue": "donor" },
@@ -792,6 +858,7 @@ require('./functions/mosques');
 require('./functions/requests');
 require('./functions/donations');
 require('./functions/users');
+require('./functions/notifications');
 require('./functions/maintenance');
 
 Parse.Cloud.define('health', async () => ({
@@ -1008,20 +1075,57 @@ module.exports = { ROLES, requireUser, requireRole, mosqueForImam, fetchPointer 
 
 ```javascript
 /**
- * الإشعارات.
+ * الإشعارات — قناتان: صندوق وارد دائم، ودفعٌ فوق ذلك.
  *
  * ⚠️ خطأ شائع في الملف الأصلي: Parse.Push.send يستعلم على فئة _Installation
  * وليس على _User. لذلك `where: { role: "imam" }` لا يطابق شيئاً أبداً،
  * و `where: { objectId: { $in: [userIds] } }` يقارن معرّفات مستخدمين
  * بمعرّفات أجهزة. الصحيح: الاستعلام على حقل الـ pointer `user` داخل _Installation.
  *
- * شرط التشغيل: عند تسجيل الدخول في التطبيق يجب حفظ Installation
- * وربطه بالمستخدم:  installation.set('user', Parse.User.current())
+ * والأهمّ: الدفع لا يصل إلا لمن سُجّل له Installation ورُبط بحسابه. تطبيق الويب
+ * لا يسجّله بعد، فكان كل إشعار في المنصّة يذهب إلى لا أحد — والدالة تعيد
+ * `{ sent: list.length }` فتُبلّغ بنجاحٍ لم يقع. فصار لكل إشعار موجَّه سطرٌ في
+ * `Notifications` يقرأه صاحبه حين يفتح التطبيق، والدفع تحسينٌ فوقه لا شرطٌ له.
  */
 
-async function pushToUsers(users, payload) {
+const MAX_STORED = 200;
+
+/**
+ * حفظ الإشعارات في صندوق الوارد. لا يرمي أبداً — أثرٌ جانبي كالتدقيق.
+ * @returns {number} كم سطراً حُفظ فعلاً
+ */
+async function store(users, payload) {
+  try {
+    const Notification = Parse.Object.extend('Notifications');
+    const rows = users.slice(0, MAX_STORED).map((user) => {
+      const row = new Notification();
+      row.set('userId', user);
+      row.set('body', String(payload.alert || '').slice(0, 500));
+      if (payload.kind) row.set('kind', payload.kind);
+      if (payload.requestId) row.set('requestId', String(payload.requestId));
+      if (payload.mosqueId) row.set('mosqueId', payload.mosqueId);
+      return row;
+    });
+    if (rows.length === 0) return 0;
+    await Parse.Object.saveAll(rows, { useMasterKey: true });
+    return rows.length;
+  } catch (error) {
+    console.error('[push] تعذّر حفظ صندوق الوارد:', error && error.message);
+    return 0;
+  }
+}
+
+/**
+ * إشعار موجَّه: يُحفظ ويُدفَع.
+ *
+ * @param {object} [options.store] اجعله `false` للبثّ الواسع — انظر
+ *   `pushToNearbyVolunteers`. الافتراضي الحفظ لأن الموجَّه لا قناة له سواه.
+ */
+async function pushToUsers(users, payload, options = {}) {
   const list = (Array.isArray(users) ? users : [users]).filter(Boolean);
-  if (list.length === 0) return { sent: 0 };
+  if (list.length === 0) return { stored: 0, pushed: 0 };
+
+  const stored = options.store === false ? 0 : await store(list, payload);
 
   const installations = new Parse.Query(Parse.Installation);
   installations.containedIn('user', list);
@@ -1038,9 +1142,11 @@ async function pushToUsers(users, payload) {
   } catch (error) {
     // مقصود: الإشعار أثر جانبي لا يجوز أن يُسقط العملية التي يُبلّغ عنها
     console.error('[push] تعذّر الإرسال:', error && error.message);
-    return { sent: 0, failed: true };
+    return { stored, pushed: 0, failed: true };
   }
-  return { sent: list.length };
+  // `pushed` عدد من استُهدف لا من وصله: الوصول يتوقّف على Installation مسجَّل،
+  // ولا سبيل لمعرفته من هنا. لذلك يبقى `stored` هو الضمان لا هذا.
+  return { stored, pushed: list.length };
 }
 
 const geo = require('./geo');
@@ -1081,10 +1187,13 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
     // الاستعلام الجغرافي يفشل إن غاب فهرس `2dsphere` — وغيابه وارد: يُضاف
     // يدوياً من لوحة Back4app. لا يجوز أن يُسقط ذلك إنشاء طلب صيانة.
     console.error('[push] تعذّر جلب المتطوّعين القريبين:', error && error.message);
-    return { sent: 0, failed: true };
+    return { stored: 0, pushed: 0, failed: true };
   }
 
-  return pushToUsers(volunteers, payload);
+  // البثّ لا يُحفظ: خمسمائة سطر عند كل طلب جديد تُنهك باقة الطلبات، والفرصة
+  // القريبة لها قناتها أصلاً — `getNearbyOpportunities` يراها المتطوّع متى فتح
+  // التطبيق. الحفظ للموجَّه الذي لا بديل له.
+  return pushToUsers(volunteers, payload, { store: false });
 }
 
 module.exports = { pushToUsers, pushToNearbyVolunteers };
@@ -3071,6 +3180,37 @@ Parse.Cloud.job('pruneAuditLog', async (request) => {
   message(summary);
   return summary;
 });
+
+// صندوق الوارد ينمو أسرع من سجل التدقيق: سطرٌ لكل مستخدم مستهدَف لا لكل حدث.
+// تسعون يوماً تكفي — الإشعار خبرٌ عاجل، ومن لم يقرأه في ثلاثة أشهر فاته أوانه،
+// والأثر الدائم في `AuditLog` لا هنا.
+const NOTIFICATION_RETENTION_DAYS = 90;
+
+Parse.Cloud.job('pruneNotifications', async (request) => {
+  const { params, message } = request;
+
+  const days = Math.max(Number(params.retentionDays) || NOTIFICATION_RETENTION_DAYS, 7);
+  const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
+
+  let removed = 0;
+  for (;;) {
+    const batch = await new Parse.Query('Notifications')
+      .lessThan('createdAt', cutoff)
+      .limit(PRUNE_BATCH)
+      .find({ useMasterKey: true });
+
+    if (batch.length === 0) break;
+    await Parse.Object.destroyAll(batch, { useMasterKey: true });
+    removed += batch.length;
+
+    message(`حُذف ${removed} إشعاراً حتى الآن…`);
+    if (batch.length < PRUNE_BATCH) break;
+  }
+
+  const summary = `حُذف ${removed} إشعاراً أقدم من ${days} يوماً.`;
+  message(summary);
+  return summary;
+});
 ```
 
 ### 6ب — النسخة المدمجة (للصق في Back4app)
@@ -3187,20 +3327,57 @@ async function fetchPointer(pointer, className) {
 // ======================================================================
 
 /**
- * الإشعارات.
+ * الإشعارات — قناتان: صندوق وارد دائم، ودفعٌ فوق ذلك.
  *
  * ⚠️ خطأ شائع في الملف الأصلي: Parse.Push.send يستعلم على فئة _Installation
  * وليس على _User. لذلك `where: { role: "imam" }` لا يطابق شيئاً أبداً،
  * و `where: { objectId: { $in: [userIds] } }` يقارن معرّفات مستخدمين
  * بمعرّفات أجهزة. الصحيح: الاستعلام على حقل الـ pointer `user` داخل _Installation.
  *
- * شرط التشغيل: عند تسجيل الدخول في التطبيق يجب حفظ Installation
- * وربطه بالمستخدم:  installation.set('user', Parse.User.current())
+ * والأهمّ: الدفع لا يصل إلا لمن سُجّل له Installation ورُبط بحسابه. تطبيق الويب
+ * لا يسجّله بعد، فكان كل إشعار في المنصّة يذهب إلى لا أحد — والدالة تعيد
+ * `{ sent: list.length }` فتُبلّغ بنجاحٍ لم يقع. فصار لكل إشعار موجَّه سطرٌ في
+ * `Notifications` يقرأه صاحبه حين يفتح التطبيق، والدفع تحسينٌ فوقه لا شرطٌ له.
  */
 
-async function pushToUsers(users, payload) {
+const MAX_STORED = 200;
+
+/**
+ * حفظ الإشعارات في صندوق الوارد. لا يرمي أبداً — أثرٌ جانبي كالتدقيق.
+ * @returns {number} كم سطراً حُفظ فعلاً
+ */
+async function store(users, payload) {
+  try {
+    const Notification = Parse.Object.extend('Notifications');
+    const rows = users.slice(0, MAX_STORED).map((user) => {
+      const row = new Notification();
+      row.set('userId', user);
+      row.set('body', String(payload.alert || '').slice(0, 500));
+      if (payload.kind) row.set('kind', payload.kind);
+      if (payload.requestId) row.set('requestId', String(payload.requestId));
+      if (payload.mosqueId) row.set('mosqueId', payload.mosqueId);
+      return row;
+    });
+    if (rows.length === 0) return 0;
+    await Parse.Object.saveAll(rows, { useMasterKey: true });
+    return rows.length;
+  } catch (error) {
+    console.error('[push] تعذّر حفظ صندوق الوارد:', error && error.message);
+    return 0;
+  }
+}
+
+/**
+ * إشعار موجَّه: يُحفظ ويُدفَع.
+ *
+ * @param {object} [options.store] اجعله `false` للبثّ الواسع — انظر
+ *   `pushToNearbyVolunteers`. الافتراضي الحفظ لأن الموجَّه لا قناة له سواه.
+ */
+async function pushToUsers(users, payload, options = {}) {
   const list = (Array.isArray(users) ? users : [users]).filter(Boolean);
-  if (list.length === 0) return { sent: 0 };
+  if (list.length === 0) return { stored: 0, pushed: 0 };
+
+  const stored = options.store === false ? 0 : await store(list, payload);
 
   const installations = new Parse.Query(Parse.Installation);
   installations.containedIn('user', list);
@@ -3217,9 +3394,11 @@ async function pushToUsers(users, payload) {
   } catch (error) {
     // مقصود: الإشعار أثر جانبي لا يجوز أن يُسقط العملية التي يُبلّغ عنها
     console.error('[push] تعذّر الإرسال:', error && error.message);
-    return { sent: 0, failed: true };
+    return { stored, pushed: 0, failed: true };
   }
-  return { sent: list.length };
+  // `pushed` عدد من استُهدف لا من وصله: الوصول يتوقّف على Installation مسجَّل،
+  // ولا سبيل لمعرفته من هنا. لذلك يبقى `stored` هو الضمان لا هذا.
+  return { stored, pushed: list.length };
 }
 
 
@@ -3259,10 +3438,13 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
     // الاستعلام الجغرافي يفشل إن غاب فهرس `2dsphere` — وغيابه وارد: يُضاف
     // يدوياً من لوحة Back4app. لا يجوز أن يُسقط ذلك إنشاء طلب صيانة.
     console.error('[push] تعذّر جلب المتطوّعين القريبين:', error && error.message);
-    return { sent: 0, failed: true };
+    return { stored: 0, pushed: 0, failed: true };
   }
 
-  return pushToUsers(volunteers, payload);
+  // البثّ لا يُحفظ: خمسمائة سطر عند كل طلب جديد تُنهك باقة الطلبات، والفرصة
+  // القريبة لها قناتها أصلاً — `getNearbyOpportunities` يراها المتطوّع متى فتح
+  // التطبيق. الحفظ للموجَّه الذي لا بديل له.
+  return pushToUsers(volunteers, payload, { store: false });
 }
 
 
@@ -5300,6 +5482,77 @@ Parse.Cloud.define('getMyProfile', async (request) => {
 
 
 // ======================================================================
+// صندوق الوارد   [functions/notifications.js]
+// ======================================================================
+
+/**
+ * صندوق الوارد.
+ *
+ * `Notifications` مقفلة على Master Key كسجل التدقيق: القراءة تمرّ من هنا وحدها
+ * فلا يصل أحدٌ إلى وارد غيره ولو خمّن معرّفه.
+ */
+
+const MAX_PAGE = 50;
+
+/** إشعارات المستخدم المستدعي، ومعها عدد غير المقروء. */
+Parse.Cloud.define('getMyNotifications', async (request) => {
+  const user = requireUser(request);
+  const cap = Math.min(Number(request.params.limit) || 30, MAX_PAGE);
+
+  const query = new Parse.Query('Notifications');
+  query.equalTo('userId', user);
+  query.descending('createdAt');
+  query.limit(cap);
+  const rows = await query.find({ useMasterKey: true });
+
+  // `doesNotExist` لا `equalTo(null)`: الحقل غائب على غير المقروء لا مضبوط بـnull
+  const unreadQuery = new Parse.Query('Notifications');
+  unreadQuery.equalTo('userId', user);
+  unreadQuery.doesNotExist('readAt');
+  const unread = await unreadQuery.count({ useMasterKey: true });
+
+  return {
+    unread,
+    items: rows.map((row) => ({
+      id: row.id,
+      body: row.get('body'),
+      kind: row.get('kind') || null,
+      requestId: row.get('requestId') || null,
+      readAt: row.get('readAt') || null,
+      createdAt: row.get('createdAt'),
+    })),
+  };
+});
+
+/**
+ * تعليم الوارد مقروءاً. بلا `ids` يُعلَّم كل غير المقروء.
+ *
+ * الاستعلام مقيَّد بالمستخدم دائماً حتى مع `ids`: لولا ذلك لعلّم أحدهم وارد
+ * غيره مقروءاً بتمرير معرّفات ليست له، فيُخفي عنه إشعاراً لم يره.
+ */
+Parse.Cloud.define('markNotificationsRead', async (request) => {
+  const user = requireUser(request);
+  const { ids } = request.params;
+
+  const query = new Parse.Query('Notifications');
+  query.equalTo('userId', user);
+  query.doesNotExist('readAt');
+  if (Array.isArray(ids) && ids.length > 0) {
+    if (ids.length > MAX_PAGE) E.invalid(`لا تتجاوز ${MAX_PAGE} إشعاراً في المرّة.`);
+    query.containedIn('objectId', ids.map(String));
+  }
+  query.limit(MAX_PAGE);
+
+  const rows = await query.find({ useMasterKey: true });
+  const now = new Date();
+  for (const row of rows) row.set('readAt', now);
+  if (rows.length > 0) await Parse.Object.saveAll(rows, { useMasterKey: true });
+
+  return { marked: rows.length };
+});
+
+
+// ======================================================================
 // الصيانة الدورية   [functions/maintenance.js]
 // ======================================================================
 
@@ -5335,6 +5588,37 @@ Parse.Cloud.job('pruneAuditLog', async (request) => {
   }
 
   const summary = `حُذف ${removed} سطر تدقيق أقدم من ${days} يوماً.`;
+  message(summary);
+  return summary;
+});
+
+// صندوق الوارد ينمو أسرع من سجل التدقيق: سطرٌ لكل مستخدم مستهدَف لا لكل حدث.
+// تسعون يوماً تكفي — الإشعار خبرٌ عاجل، ومن لم يقرأه في ثلاثة أشهر فاته أوانه،
+// والأثر الدائم في `AuditLog` لا هنا.
+const NOTIFICATION_RETENTION_DAYS = 90;
+
+Parse.Cloud.job('pruneNotifications', async (request) => {
+  const { params, message } = request;
+
+  const days = Math.max(Number(params.retentionDays) || NOTIFICATION_RETENTION_DAYS, 7);
+  const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
+
+  let removed = 0;
+  for (;;) {
+    const batch = await new Parse.Query('Notifications')
+      .lessThan('createdAt', cutoff)
+      .limit(PRUNE_BATCH)
+      .find({ useMasterKey: true });
+
+    if (batch.length === 0) break;
+    await Parse.Object.destroyAll(batch, { useMasterKey: true });
+    removed += batch.length;
+
+    message(`حُذف ${removed} إشعاراً حتى الآن…`);
+    if (batch.length < PRUNE_BATCH) break;
+  }
+
+  const summary = `حُذف ${removed} إشعاراً أقدم من ${days} يوماً.`;
   message(summary);
   return summary;
 });
@@ -6051,6 +6335,7 @@ ORDER = [
     ("functions/requests.js", "دوال طلبات الصيانة"),
     ("functions/donations.js", "دوال التبرعات والصرف"),
     ("functions/users.js", "شؤون الحسابات"),
+    ("functions/notifications.js", "صندوق الوارد"),
     ("functions/maintenance.js", "الصيانة الدورية"),
 ]
 
@@ -6568,6 +6853,7 @@ function createMock() {
       this._atLeast = [];
       this._atMost = [];
       this._contained = [];
+      this._absent = [];
       this._containsAll = [];
       this._prefix = [];
       this._substring = [];
@@ -6580,6 +6866,7 @@ function createMock() {
     lessThanOrEqualTo(key, value) { this._atMost.push([key, value]); return this; }
     containedIn(key, values) { this._contained.push([key, values]); return this; }
     containsAll(key, values) { this._containsAll.push([key, values]); return this; }
+    doesNotExist(key) { this._absent.push(key); return this; }
     startsWith(key, prefix) { this._prefix.push([key, prefix]); return this; }
     contains(key, needle) { this._substring.push([key, needle]); return this; }
     limit() { return this; }
@@ -6596,7 +6883,9 @@ function createMock() {
         this._less.every(([k, v]) => object.get(k) < v) &&
         this._atLeast.every(([k, v]) => object.get(k) >= v) &&
         this._atMost.every(([k, v]) => object.get(k) <= v) &&
-        this._contained.every(([k, values]) => values.includes(object.get(k))) &&
+        this._contained.every(([k, values]) => values.includes(
+          k === 'objectId' ? object.id : object.get(k))) &&
+        this._absent.every((k) => object.get(k) === undefined || object.get(k) === null) &&
         this._containsAll.every(([k, values]) => {
           const actual = object.get(k);
           return Array.isArray(actual) && values.every((v) => actual.includes(v));
@@ -8396,6 +8685,14 @@ test('المخطط', async (t) => {
     }
   });
 
+  await t.test('Notifications مقفلة — وارد كل امرئ له وحده', () => {
+    const clp = classOf('Notifications').classLevelPermissions;
+    for (const action of ['find', 'get', 'create', 'update', 'delete']) {
+      assert.deepEqual(clp[action], {},
+        `Notifications.${action} مفتوح — يُقرأ وارد الغير أو يُعلَّم مقروءاً`);
+    }
+  });
+
   await t.test('walletBalance غير مقروء من العميل', () => {
     assert.ok(classOf('Mosques').classLevelPermissions.protectedFields['*']
       .includes('walletBalance'));
@@ -8412,6 +8709,7 @@ test('نقاط الدخول', async (t) => {
     'confirmDonation', 'paymentWebhook', 'payoutContractor', 'refundDonation',
     'getMosqueLedger', 'listPendingContractors', 'reviewContractor',
     'setFavoriteMosque', 'getMyProfile',
+    'getMyNotifications', 'markNotificationsRead',
     'getMosqueAuditTrail', 'health',
   ];
 
@@ -8435,7 +8733,7 @@ test('نقاط الدخول', async (t) => {
     for (const entry of ['modular', 'bundle']) {
       const api = loadCloud(entry);
       assert.deepEqual(Object.keys(api.jobs).sort(),
-        ['pruneAuditLog', 'reviewPendingDonations'], `النسخة ${entry}`);
+        ['pruneAuditLog', 'pruneNotifications', 'reviewPendingDonations'], `النسخة ${entry}`);
     }
   });
 

@@ -63,6 +63,14 @@ test('المخطط', async (t) => {
     }
   });
 
+  await t.test('Notifications مقفلة — وارد كل امرئ له وحده', () => {
+    const clp = classOf('Notifications').classLevelPermissions;
+    for (const action of ['find', 'get', 'create', 'update', 'delete']) {
+      assert.deepEqual(clp[action], {},
+        `Notifications.${action} مفتوح — يُقرأ وارد الغير أو يُعلَّم مقروءاً`);
+    }
+  });
+
   await t.test('walletBalance غير مقروء من العميل', () => {
     assert.ok(classOf('Mosques').classLevelPermissions.protectedFields['*']
       .includes('walletBalance'));
@@ -79,6 +87,7 @@ test('نقاط الدخول', async (t) => {
     'confirmDonation', 'paymentWebhook', 'payoutContractor', 'refundDonation',
     'getMosqueLedger', 'listPendingContractors', 'reviewContractor',
     'setFavoriteMosque', 'getMyProfile',
+    'getMyNotifications', 'markNotificationsRead',
     'getMosqueAuditTrail', 'health',
   ];
 
@@ -102,7 +111,7 @@ test('نقاط الدخول', async (t) => {
     for (const entry of ['modular', 'bundle']) {
       const api = loadCloud(entry);
       assert.deepEqual(Object.keys(api.jobs).sort(),
-        ['pruneAuditLog', 'reviewPendingDonations'], `النسخة ${entry}`);
+        ['pruneAuditLog', 'pruneNotifications', 'reviewPendingDonations'], `النسخة ${entry}`);
     }
   });
 

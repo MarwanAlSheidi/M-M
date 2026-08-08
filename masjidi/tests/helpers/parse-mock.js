@@ -140,6 +140,7 @@ function createMock() {
       this._atLeast = [];
       this._atMost = [];
       this._contained = [];
+      this._absent = [];
       this._containsAll = [];
       this._prefix = [];
       this._substring = [];
@@ -152,6 +153,7 @@ function createMock() {
     lessThanOrEqualTo(key, value) { this._atMost.push([key, value]); return this; }
     containedIn(key, values) { this._contained.push([key, values]); return this; }
     containsAll(key, values) { this._containsAll.push([key, values]); return this; }
+    doesNotExist(key) { this._absent.push(key); return this; }
     startsWith(key, prefix) { this._prefix.push([key, prefix]); return this; }
     contains(key, needle) { this._substring.push([key, needle]); return this; }
     limit() { return this; }
@@ -168,7 +170,9 @@ function createMock() {
         this._less.every(([k, v]) => object.get(k) < v) &&
         this._atLeast.every(([k, v]) => object.get(k) >= v) &&
         this._atMost.every(([k, v]) => object.get(k) <= v) &&
-        this._contained.every(([k, values]) => values.includes(object.get(k))) &&
+        this._contained.every(([k, values]) => values.includes(
+          k === 'objectId' ? object.id : object.get(k))) &&
+        this._absent.every((k) => object.get(k) === undefined || object.get(k) === null) &&
         this._containsAll.every(([k, values]) => {
           const actual = object.get(k);
           return Array.isArray(actual) && values.every((v) => actual.includes(v));

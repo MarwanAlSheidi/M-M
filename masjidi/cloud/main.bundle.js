@@ -103,20 +103,57 @@ async function fetchPointer(pointer, className) {
 // ======================================================================
 
 /**
- * الإشعارات.
+ * الإشعارات — قناتان: صندوق وارد دائم، ودفعٌ فوق ذلك.
  *
  * ⚠️ خطأ شائع في الملف الأصلي: Parse.Push.send يستعلم على فئة _Installation
  * وليس على _User. لذلك `where: { role: "imam" }` لا يطابق شيئاً أبداً،
  * و `where: { objectId: { $in: [userIds] } }` يقارن معرّفات مستخدمين
  * بمعرّفات أجهزة. الصحيح: الاستعلام على حقل الـ pointer `user` داخل _Installation.
  *
- * شرط التشغيل: عند تسجيل الدخول في التطبيق يجب حفظ Installation
- * وربطه بالمستخدم:  installation.set('user', Parse.User.current())
+ * والأهمّ: الدفع لا يصل إلا لمن سُجّل له Installation ورُبط بحسابه. تطبيق الويب
+ * لا يسجّله بعد، فكان كل إشعار في المنصّة يذهب إلى لا أحد — والدالة تعيد
+ * `{ sent: list.length }` فتُبلّغ بنجاحٍ لم يقع. فصار لكل إشعار موجَّه سطرٌ في
+ * `Notifications` يقرأه صاحبه حين يفتح التطبيق، والدفع تحسينٌ فوقه لا شرطٌ له.
  */
 
-async function pushToUsers(users, payload) {
+const MAX_STORED = 200;
+
+/**
+ * حفظ الإشعارات في صندوق الوارد. لا يرمي أبداً — أثرٌ جانبي كالتدقيق.
+ * @returns {number} كم سطراً حُفظ فعلاً
+ */
+async function store(users, payload) {
+  try {
+    const Notification = Parse.Object.extend('Notifications');
+    const rows = users.slice(0, MAX_STORED).map((user) => {
+      const row = new Notification();
+      row.set('userId', user);
+      row.set('body', String(payload.alert || '').slice(0, 500));
+      if (payload.kind) row.set('kind', payload.kind);
+      if (payload.requestId) row.set('requestId', String(payload.requestId));
+      if (payload.mosqueId) row.set('mosqueId', payload.mosqueId);
+      return row;
+    });
+    if (rows.length === 0) return 0;
+    await Parse.Object.saveAll(rows, { useMasterKey: true });
+    return rows.length;
+  } catch (error) {
+    console.error('[push] تعذّر حفظ صندوق الوارد:', error && error.message);
+    return 0;
+  }
+}
+
+/**
+ * إشعار موجَّه: يُحفظ ويُدفَع.
+ *
+ * @param {object} [options.store] اجعله `false` للبثّ الواسع — انظر
+ *   `pushToNearbyVolunteers`. الافتراضي الحفظ لأن الموجَّه لا قناة له سواه.
+ */
+async function pushToUsers(users, payload, options = {}) {
   const list = (Array.isArray(users) ? users : [users]).filter(Boolean);
-  if (list.length === 0) return { sent: 0 };
+  if (list.length === 0) return { stored: 0, pushed: 0 };
+
+  const stored = options.store === false ? 0 : await store(list, payload);
 
   const installations = new Parse.Query(Parse.Installation);
   installations.containedIn('user', list);
@@ -133,9 +170,11 @@ async function pushToUsers(users, payload) {
   } catch (error) {
     // مقصود: الإشعار أثر جانبي لا يجوز أن يُسقط العملية التي يُبلّغ عنها
     console.error('[push] تعذّر الإرسال:', error && error.message);
-    return { sent: 0, failed: true };
+    return { stored, pushed: 0, failed: true };
   }
-  return { sent: list.length };
+  // `pushed` عدد من استُهدف لا من وصله: الوصول يتوقّف على Installation مسجَّل،
+  // ولا سبيل لمعرفته من هنا. لذلك يبقى `stored` هو الضمان لا هذا.
+  return { stored, pushed: list.length };
 }
 
 
@@ -175,10 +214,13 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
     // الاستعلام الجغرافي يفشل إن غاب فهرس `2dsphere` — وغيابه وارد: يُضاف
     // يدوياً من لوحة Back4app. لا يجوز أن يُسقط ذلك إنشاء طلب صيانة.
     console.error('[push] تعذّر جلب المتطوّعين القريبين:', error && error.message);
-    return { sent: 0, failed: true };
+    return { stored: 0, pushed: 0, failed: true };
   }
 
-  return pushToUsers(volunteers, payload);
+  // البثّ لا يُحفظ: خمسمائة سطر عند كل طلب جديد تُنهك باقة الطلبات، والفرصة
+  // القريبة لها قناتها أصلاً — `getNearbyOpportunities` يراها المتطوّع متى فتح
+  // التطبيق. الحفظ للموجَّه الذي لا بديل له.
+  return pushToUsers(volunteers, payload, { store: false });
 }
 
 
@@ -2216,6 +2258,77 @@ Parse.Cloud.define('getMyProfile', async (request) => {
 
 
 // ======================================================================
+// صندوق الوارد   [functions/notifications.js]
+// ======================================================================
+
+/**
+ * صندوق الوارد.
+ *
+ * `Notifications` مقفلة على Master Key كسجل التدقيق: القراءة تمرّ من هنا وحدها
+ * فلا يصل أحدٌ إلى وارد غيره ولو خمّن معرّفه.
+ */
+
+const MAX_PAGE = 50;
+
+/** إشعارات المستخدم المستدعي، ومعها عدد غير المقروء. */
+Parse.Cloud.define('getMyNotifications', async (request) => {
+  const user = requireUser(request);
+  const cap = Math.min(Number(request.params.limit) || 30, MAX_PAGE);
+
+  const query = new Parse.Query('Notifications');
+  query.equalTo('userId', user);
+  query.descending('createdAt');
+  query.limit(cap);
+  const rows = await query.find({ useMasterKey: true });
+
+  // `doesNotExist` لا `equalTo(null)`: الحقل غائب على غير المقروء لا مضبوط بـnull
+  const unreadQuery = new Parse.Query('Notifications');
+  unreadQuery.equalTo('userId', user);
+  unreadQuery.doesNotExist('readAt');
+  const unread = await unreadQuery.count({ useMasterKey: true });
+
+  return {
+    unread,
+    items: rows.map((row) => ({
+      id: row.id,
+      body: row.get('body'),
+      kind: row.get('kind') || null,
+      requestId: row.get('requestId') || null,
+      readAt: row.get('readAt') || null,
+      createdAt: row.get('createdAt'),
+    })),
+  };
+});
+
+/**
+ * تعليم الوارد مقروءاً. بلا `ids` يُعلَّم كل غير المقروء.
+ *
+ * الاستعلام مقيَّد بالمستخدم دائماً حتى مع `ids`: لولا ذلك لعلّم أحدهم وارد
+ * غيره مقروءاً بتمرير معرّفات ليست له، فيُخفي عنه إشعاراً لم يره.
+ */
+Parse.Cloud.define('markNotificationsRead', async (request) => {
+  const user = requireUser(request);
+  const { ids } = request.params;
+
+  const query = new Parse.Query('Notifications');
+  query.equalTo('userId', user);
+  query.doesNotExist('readAt');
+  if (Array.isArray(ids) && ids.length > 0) {
+    if (ids.length > MAX_PAGE) E.invalid(`لا تتجاوز ${MAX_PAGE} إشعاراً في المرّة.`);
+    query.containedIn('objectId', ids.map(String));
+  }
+  query.limit(MAX_PAGE);
+
+  const rows = await query.find({ useMasterKey: true });
+  const now = new Date();
+  for (const row of rows) row.set('readAt', now);
+  if (rows.length > 0) await Parse.Object.saveAll(rows, { useMasterKey: true });
+
+  return { marked: rows.length };
+});
+
+
+// ======================================================================
 // الصيانة الدورية   [functions/maintenance.js]
 // ======================================================================
 
@@ -2251,6 +2364,37 @@ Parse.Cloud.job('pruneAuditLog', async (request) => {
   }
 
   const summary = `حُذف ${removed} سطر تدقيق أقدم من ${days} يوماً.`;
+  message(summary);
+  return summary;
+});
+
+// صندوق الوارد ينمو أسرع من سجل التدقيق: سطرٌ لكل مستخدم مستهدَف لا لكل حدث.
+// تسعون يوماً تكفي — الإشعار خبرٌ عاجل، ومن لم يقرأه في ثلاثة أشهر فاته أوانه،
+// والأثر الدائم في `AuditLog` لا هنا.
+const NOTIFICATION_RETENTION_DAYS = 90;
+
+Parse.Cloud.job('pruneNotifications', async (request) => {
+  const { params, message } = request;
+
+  const days = Math.max(Number(params.retentionDays) || NOTIFICATION_RETENTION_DAYS, 7);
+  const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
+
+  let removed = 0;
+  for (;;) {
+    const batch = await new Parse.Query('Notifications')
+      .lessThan('createdAt', cutoff)
+      .limit(PRUNE_BATCH)
+      .find({ useMasterKey: true });
+
+    if (batch.length === 0) break;
+    await Parse.Object.destroyAll(batch, { useMasterKey: true });
+    removed += batch.length;
+
+    message(`حُذف ${removed} إشعاراً حتى الآن…`);
+    if (batch.length < PRUNE_BATCH) break;
+  }
+
+  const summary = `حُذف ${removed} إشعاراً أقدم من ${days} يوماً.`;
   message(summary);
   return summary;
 });

@@ -1,18 +1,55 @@
 /**
- * الإشعارات.
+ * الإشعارات — قناتان: صندوق وارد دائم، ودفعٌ فوق ذلك.
  *
  * ⚠️ خطأ شائع في الملف الأصلي: Parse.Push.send يستعلم على فئة _Installation
  * وليس على _User. لذلك `where: { role: "imam" }` لا يطابق شيئاً أبداً،
  * و `where: { objectId: { $in: [userIds] } }` يقارن معرّفات مستخدمين
  * بمعرّفات أجهزة. الصحيح: الاستعلام على حقل الـ pointer `user` داخل _Installation.
  *
- * شرط التشغيل: عند تسجيل الدخول في التطبيق يجب حفظ Installation
- * وربطه بالمستخدم:  installation.set('user', Parse.User.current())
+ * والأهمّ: الدفع لا يصل إلا لمن سُجّل له Installation ورُبط بحسابه. تطبيق الويب
+ * لا يسجّله بعد، فكان كل إشعار في المنصّة يذهب إلى لا أحد — والدالة تعيد
+ * `{ sent: list.length }` فتُبلّغ بنجاحٍ لم يقع. فصار لكل إشعار موجَّه سطرٌ في
+ * `Notifications` يقرأه صاحبه حين يفتح التطبيق، والدفع تحسينٌ فوقه لا شرطٌ له.
  */
 
-async function pushToUsers(users, payload) {
+const MAX_STORED = 200;
+
+/**
+ * حفظ الإشعارات في صندوق الوارد. لا يرمي أبداً — أثرٌ جانبي كالتدقيق.
+ * @returns {number} كم سطراً حُفظ فعلاً
+ */
+async function store(users, payload) {
+  try {
+    const Notification = Parse.Object.extend('Notifications');
+    const rows = users.slice(0, MAX_STORED).map((user) => {
+      const row = new Notification();
+      row.set('userId', user);
+      row.set('body', String(payload.alert || '').slice(0, 500));
+      if (payload.kind) row.set('kind', payload.kind);
+      if (payload.requestId) row.set('requestId', String(payload.requestId));
+      if (payload.mosqueId) row.set('mosqueId', payload.mosqueId);
+      return row;
+    });
+    if (rows.length === 0) return 0;
+    await Parse.Object.saveAll(rows, { useMasterKey: true });
+    return rows.length;
+  } catch (error) {
+    console.error('[push] تعذّر حفظ صندوق الوارد:', error && error.message);
+    return 0;
+  }
+}
+
+/**
+ * إشعار موجَّه: يُحفظ ويُدفَع.
+ *
+ * @param {object} [options.store] اجعله `false` للبثّ الواسع — انظر
+ *   `pushToNearbyVolunteers`. الافتراضي الحفظ لأن الموجَّه لا قناة له سواه.
+ */
+async function pushToUsers(users, payload, options = {}) {
   const list = (Array.isArray(users) ? users : [users]).filter(Boolean);
-  if (list.length === 0) return { sent: 0 };
+  if (list.length === 0) return { stored: 0, pushed: 0 };
+
+  const stored = options.store === false ? 0 : await store(list, payload);
 
   const installations = new Parse.Query(Parse.Installation);
   installations.containedIn('user', list);
@@ -29,9 +66,11 @@ async function pushToUsers(users, payload) {
   } catch (error) {
     // مقصود: الإشعار أثر جانبي لا يجوز أن يُسقط العملية التي يُبلّغ عنها
     console.error('[push] تعذّر الإرسال:', error && error.message);
-    return { sent: 0, failed: true };
+    return { stored, pushed: 0, failed: true };
   }
-  return { sent: list.length };
+  // `pushed` عدد من استُهدف لا من وصله: الوصول يتوقّف على Installation مسجَّل،
+  // ولا سبيل لمعرفته من هنا. لذلك يبقى `stored` هو الضمان لا هذا.
+  return { stored, pushed: list.length };
 }
 
 const geo = require('./geo');
@@ -72,10 +111,13 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
     // الاستعلام الجغرافي يفشل إن غاب فهرس `2dsphere` — وغيابه وارد: يُضاف
     // يدوياً من لوحة Back4app. لا يجوز أن يُسقط ذلك إنشاء طلب صيانة.
     console.error('[push] تعذّر جلب المتطوّعين القريبين:', error && error.message);
-    return { sent: 0, failed: true };
+    return { stored: 0, pushed: 0, failed: true };
   }
 
-  return pushToUsers(volunteers, payload);
+  // البثّ لا يُحفظ: خمسمائة سطر عند كل طلب جديد تُنهك باقة الطلبات، والفرصة
+  // القريبة لها قناتها أصلاً — `getNearbyOpportunities` يراها المتطوّع متى فتح
+  // التطبيق. الحفظ للموجَّه الذي لا بديل له.
+  return pushToUsers(volunteers, payload, { store: false });
 }
 
 module.exports = { pushToUsers, pushToNearbyVolunteers };

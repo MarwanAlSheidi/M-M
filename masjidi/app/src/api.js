@@ -160,6 +160,9 @@ export const completeService = (requestId, rating, volunteerHours) =>
 
 /* ————— الحساب ————— */
 
+export const getMyNotifications = (limit) => run('getMyNotifications', { limit });
+export const markNotificationsRead = (ids) => run('markNotificationsRead', { ids });
+
 export const getMyProfile = () => run('getMyProfile');
 export const setFavoriteMosque = (mosqueId) => run('setFavoriteMosque', { mosqueId });
 

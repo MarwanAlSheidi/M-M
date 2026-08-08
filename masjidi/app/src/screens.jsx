@@ -962,3 +962,54 @@ export function Profile({ onLogOut }) {
     </>
   );
 }
+
+/**
+ * التنبيهات.
+ *
+ * الدفع (Parse.Push) لا يصل إلا لجهازٍ سُجّل Installation وربطه بالحساب، وهذا
+ * التطبيق لا يسجّله بعد. فهذه الشاشة هي القناة التي تصل فعلاً — لا رفاهية
+ * فوق الدفع بل بديله العامل.
+ */
+export function Notifications() {
+  const [unread, setUnread] = useState(0);
+  const state = useList(async () => {
+    const result = await api.getMyNotifications(50);
+    setUnread(result.unread);
+    return result.items;
+  });
+  const [busy, setBusy] = useState(false);
+
+  async function markAll() {
+    setBusy(true);
+    try {
+      await api.markNotificationsRead();
+      await state.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="spread">
+        <h2 style={{ margin: 0 }}>التنبيهات</h2>
+        {unread > 0 && (
+          <button className="ghost" onClick={markAll} disabled={busy}>
+            {busy ? 'لحظة…' : `تعليم ${unread} كمقروء`}
+          </button>
+        )}
+      </div>
+
+      <Listing state={state} empty="لا تنبيهات بعد.">
+        <div>
+          {state.rows.map((row) => (
+            <article className={row.readAt ? 'card' : 'card unread'} key={row.id}>
+              <p style={{ margin: 0 }}>{row.body}</p>
+              <p className="when">{new Date(row.createdAt).toLocaleString('ar')}</p>
+            </article>
+          ))}
+        </div>
+      </Listing>
+    </>
+  );
+}

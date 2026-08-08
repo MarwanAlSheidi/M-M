@@ -160,6 +160,25 @@
       }
     },
     {
+      "className": "Notifications",
+      "_comment": "صندوق وارد دائم. الدفع (Parse.Push) يحتاج Installation مسجَّلاً وقد لا يصل؛ هذا يصل دائماً لأن المستخدم يفتح التطبيق. يُقرأ عبر getMyNotifications وحدها.",
+      "fields": {
+        "userId": { "type": "Pointer", "targetClass": "_User", "required": true },
+        "body": { "type": "String", "required": true },
+        "kind": { "type": "String" },
+        "requestId": { "type": "String" },
+        "mosqueId": { "type": "Pointer", "targetClass": "Mosques" },
+        "readAt": { "type": "Date" }
+      },
+      "indexes": {
+        "inbox": { "userId": 1, "createdAt": -1 },
+        "unread": { "userId": 1, "readAt": 1 }
+      },
+      "classLevelPermissions": {
+        "find": {}, "get": {}, "create": {}, "update": {}, "delete": {}, "addField": {}
+      }
+    },
+    {
       "className": "_User",
       "fields": {
         "role": { "type": "String", "defaultValue": "donor" },

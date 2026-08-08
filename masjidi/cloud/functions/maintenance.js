@@ -33,3 +33,34 @@ Parse.Cloud.job('pruneAuditLog', async (request) => {
   message(summary);
   return summary;
 });
+
+// صندوق الوارد ينمو أسرع من سجل التدقيق: سطرٌ لكل مستخدم مستهدَف لا لكل حدث.
+// تسعون يوماً تكفي — الإشعار خبرٌ عاجل، ومن لم يقرأه في ثلاثة أشهر فاته أوانه،
+// والأثر الدائم في `AuditLog` لا هنا.
+const NOTIFICATION_RETENTION_DAYS = 90;
+
+Parse.Cloud.job('pruneNotifications', async (request) => {
+  const { params, message } = request;
+
+  const days = Math.max(Number(params.retentionDays) || NOTIFICATION_RETENTION_DAYS, 7);
+  const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
+
+  let removed = 0;
+  for (;;) {
+    const batch = await new Parse.Query('Notifications')
+      .lessThan('createdAt', cutoff)
+      .limit(PRUNE_BATCH)
+      .find({ useMasterKey: true });
+
+    if (batch.length === 0) break;
+    await Parse.Object.destroyAll(batch, { useMasterKey: true });
+    removed += batch.length;
+
+    message(`حُذف ${removed} إشعاراً حتى الآن…`);
+    if (batch.length < PRUNE_BATCH) break;
+  }
+
+  const summary = `حُذف ${removed} إشعاراً أقدم من ${days} يوماً.`;
+  message(summary);
+  return summary;
+});

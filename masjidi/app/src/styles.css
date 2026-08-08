@@ -70,6 +70,14 @@ h2:first-child { margin-top: 0; }
 /* إشارة تُنبّه الإمام قبل الاختيار بلا أن تُقصي المتطوّع — القرار له */
 p.warn { color: #7a5200; font-size: 13px; }
 
+/* غير المقروء يُميَّز بحافّة لا بلون خلفية — يبقى مقروءاً في الوضع الداكن */
+.card.unread { border-right: 3px solid var(--green); }
+.when { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+.tabs button .badge {
+  background: #b3261e; color: #fff; border-radius: 999px;
+  font-size: 11px; padding: 0 5px; margin-inline-start: 4px;
+}
+
 .report { border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 6px; }
 .report input[type='file'] { border: 0; padding: 6px 0; }
 .hint { color: var(--muted); font-size: 13px; margin: 6px 0; }
