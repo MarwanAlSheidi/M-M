@@ -2,6 +2,28 @@ const E = require('./errors');
 
 const ROLES = ['imam', 'volunteer', 'donor', 'contractor', 'admin'];
 
+/**
+ * أسماء الأدوار كما تُعرض للمستخدم.
+ *
+ * الرسالة كانت تسرد الأسماء البرمجية: «متاحة لـ: volunteer فقط» — إنجليزيةٌ في
+ * واجهة عربية، وتكشف تسمية داخلية لا تعني قارئها شيئاً.
+ */
+const ROLE_LABEL = {
+  imam: 'أئمة المساجد',
+  volunteer: 'المتطوّعين',
+  donor: 'المتبرّعين',
+  contractor: 'شركات الخدمات المعتمدة',
+  admin: 'الإدارة',
+};
+
+/**
+ * إلحاق لام الجرّ بالاسم.
+ *
+ * لام الجرّ مع «الـ» تُدغم فتصير «لل» وتسقط الألف: «للمتطوّعين» لا
+ * «لـالمتطوّعين». وما لا ألف لام فيه تدخل عليه اللام مباشرةً.
+ */
+const withLam = (label) => `ل${label.startsWith('ال') ? label.slice(1) : label}`;
+
 /** يتحقق من وجود جلسة صالحة ويعيد المستخدم. */
 function requireUser(request) {
   const user = request.user;
@@ -17,7 +39,10 @@ function requireRole(request, ...roles) {
   const user = requireUser(request);
   const role = user.get('role');
   if (!roles.includes(role)) {
-    E.forbidden(`هذه الخاصية متاحة لـ: ${roles.join('، ')} فقط.`);
+    const named = roles.map((name) => withLam(ROLE_LABEL[name] || name));
+    // «فقط» لا «وحدهم»: الأخيرة تلزمها مطابقة العدد والجنس، و«الإدارة»
+    // مفرد مؤنّث فتصير «وحدها» — و«فقط» لا تتغيّر مع شيء
+    E.forbidden(`هذه الخاصية ${named.join(' و')} فقط.`);
   }
   return user;
 }

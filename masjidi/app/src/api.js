@@ -47,6 +47,11 @@ const run = (name, params) => Parse.Cloud.run(name, params);
 
 /* ————— الجلسة ————— */
 
+export const currentRole = () => {
+  const me = Parse.User.current();
+  return me ? me.get('role') : null;
+};
+
 export const currentUser = () => Parse.User.current();
 
 export async function signUp({ username, password, fullName, phone, role }) {
@@ -125,8 +130,21 @@ export const requestsForMosque = (mosqueId) =>
     query.equalTo('mosqueId', mosque);
   });
 
-export const assignedToMe = () =>
-  listRequests((query) => query.equalTo('assignedVolunteerId', Parse.User.current()));
+/**
+ * الأعمال المُسنَدة إليّ.
+ *
+ * المتطوّع والشركة لا يشتركان في حقلٍ واحد على الخادم، فكان الاستعلام على
+ * `assignedVolunteerId` وحده يعني أن شركةً مكلَّفة لا ترى تكليفها أبداً — بينما
+ * الخادم يقبل إسنادها ويقبل منها `startWork` و`markWorkDone`. الدور ثابت بعد
+ * التسجيل، فالحقل يُشتقّ منه كما يفعل `assignmentField` في دوال السحابة.
+ */
+export const assignedToMe = () => {
+  const me = Parse.User.current();
+  const field = me && me.get('role') === 'contractor'
+    ? 'assignedContractorId'
+    : 'assignedVolunteerId';
+  return listRequests((query) => query.equalTo(field, me));
+};
 
 export const createServiceRequest = (payload) => run('createServiceRequest', payload);
 export const cancelServiceRequest = (requestId) => run('cancelServiceRequest', { requestId });

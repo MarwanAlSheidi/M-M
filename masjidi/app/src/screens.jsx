@@ -490,8 +490,16 @@ function ReportWork({ request, onDone }) {
   );
 }
 
-export function MyVolunteering() {
-  const interests = useList(api.getMyInterests);
+/**
+ * أعمال المنفّذ — متطوّعاً كان أو شركة.
+ *
+ * الشركة تُكلَّف وتُنفّذ وتُبلّغ كالمتطوّع تماماً على الخادم، ويختلفان في
+ * الاهتمام وحده: `expressInterest` للمتطوّعين، والشركة يختارها الإمام مباشرةً.
+ */
+export function MyTasks() {
+  const isVolunteer = api.currentRole() === 'volunteer';
+  // الاستدعاء لا يُشترط: `getMyInterests` مقصورة على المتطوّعين فتردّ الشركة
+  const interests = useList(async () => (isVolunteer ? api.getMyInterests() : []));
   const tasks = useList(api.assignedToMe);
   const [error, setError] = useState('');
 
@@ -537,6 +545,8 @@ export function MyVolunteering() {
         </div>
       </Listing>
 
+      {isVolunteer && (
+        <>
       <h2>اهتماماتي</h2>
       <Listing state={interests} empty="لم تسجّل اهتماماً بعد.">
         <div>
@@ -558,6 +568,8 @@ export function MyVolunteering() {
           ))}
         </div>
       </Listing>
+        </>
+      )}
     </>
   );
 }

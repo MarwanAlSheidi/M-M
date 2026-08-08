@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as api from './api';
 import {
-  AdminHome, AroundMe, Auth, ClaimMosque, ImamHome, MyVolunteering,
+  AdminHome, AroundMe, Auth, ClaimMosque, ImamHome, MyTasks,
   Notifications, Opportunities, Profile,
 } from './screens.jsx';
 
@@ -16,7 +16,7 @@ const TABS = {
   volunteer: [
     ['home', 'الفرص', Opportunities],
     ['near', 'حولي', AroundMe],
-    ['mine', 'مهامّي', MyVolunteering],
+    ['mine', 'مهامّي', MyTasks],
     ['me', 'حسابي', Profile],
   ],
   admin: [
@@ -24,7 +24,8 @@ const TABS = {
     ['me', 'حسابي', Profile],
   ],
   donor: [['near', 'حولي', AroundMe], ['me', 'حسابي', Profile]],
-  contractor: [['me', 'حسابي', Profile]],
+  // الشركة تُكلَّف وتُنفّذ كالمتطوّع؛ ما ينقصها الاهتمام وحده — الإمام يختارها
+  contractor: [['mine', 'مهامّي', MyTasks], ['me', 'حسابي', Profile]],
 };
 
 /**
