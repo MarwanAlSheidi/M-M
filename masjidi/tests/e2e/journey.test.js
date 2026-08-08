@@ -56,6 +56,19 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     }
   }
 
+  /**
+   * ينتظر أن يستقرّ عدد البطاقات على المطلوب.
+   * `waitForSelector` لا يكفي حين تتغيّر القائمة من ثلاثٍ إلى واحدة: البطاقات
+   * موجودة في الحالتين، فينجح الانتظار قبل أن تُحدَّث النتيجة.
+   */
+  async function waitForCards(page, expected) {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (await page.locator('.card').count() === expected) return;
+      await page.waitForTimeout(150);
+    }
+    assert.equal(await page.locator('.card').count(), expected, 'عدد البطاقات لم يستقرّ');
+  }
+
   /** التسجيل من الواجهة لا بالـSDK: نموذج الدخول جزء من المسار المُختبَر. */
   async function signUpVia(page, { username, fullName, role }) {
     await page.goto(site.url, { waitUntil: 'networkidle' });
@@ -98,8 +111,50 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     await imam.waitForSelector('text=جامع الرحمة');
   });
 
+  // على مستوى السلطنة تتكرّر أسماء المساجد بكثرة — «مصلى العيدين» اسمٌ لـ369
+  // مسجداً — فالوصول إلى مسجدٍ بعينه هو الاختبار الحقيقي لا وجود شاشة البحث
+  await t.test('الإمام يصل إلى مسجده وسط متشابهي الاسم', async () => {
+    await onScreen(imam, 'الإمام يصل إلى مسجده وسط متشابهي الاسم', async () => {
+    const Mosque = stack.Parse.Object.extend('Mosques');
+    const twins = [
+      { wilayat: 'القابل', village: 'المنجرد' },
+      { wilayat: 'صحار', village: 'حلال بني غيث' },
+      { wilayat: 'بركاء', village: 'السلاحة' },
+    ].map((where, i) => {
+      const twin = new Mosque();
+      twin.set({
+        externalId: `twin_${stamp}_${i}`, name: 'مصلى العيدين',
+        nameNormalized: 'مصلي العيدين',
+        nameTokens: ['مصلي', 'العيدين', where.village],
+        governorate: 'شمال الشرقية', ...where,
+      });
+      return twin;
+    });
+    await stack.Parse.Object.saveAll(twins, { useMasterKey: true });
+
+    await imam.getByRole('button', { name: 'تسجيل مسجد' }).click();
+    await imam.getByLabel('اسم المسجد').fill('مصلى العيدين');
+    await imam.getByRole('button', { name: 'بحث' }).click();
+    await imam.waitForSelector('.card');
+    assert.equal(await imam.locator('.card').count(), 3, 'الثلاثة متطابقة الاسم');
+
+    // القرية معروضة — بدونها لا يميّز الإمام واحداً من ثلاثة
+    const shown = await imam.locator('.card').allInnerTexts();
+    assert.ok(shown.some((text) => text.includes('المنجرد')),
+      'القرية غائبة عن البطاقة، فالمساجد الثلاثة سواء في عين الإمام');
+
+    // وإضافة القرية إلى البحث تُوصله إلى واحد — القرية ضمن الكلمات المفهرسة
+    await imam.getByLabel('اسم المسجد').fill('العيدين المنجرد');
+    await imam.getByRole('button', { name: 'بحث' }).click();
+    await waitForCards(imam, 1);
+    assert.match(await imam.locator('.card').innerText(), /المنجرد/);
+    });
+  });
+
   await t.test('الإمام ينشر طلب صيانة', async () => {
     await onScreen(imam, 'الإمام ينشر طلب صيانة', async () => {
+    // عائدٌ من شاشة تسجيل المسجد، و«طلبات الصيانة» في بطاقة المسجد بـ«مساجدي»
+    await imam.getByRole('button', { name: 'مساجدي' }).click();
     await imam.getByRole('button', { name: 'طلبات الصيانة' }).click();
     await imam.getByRole('button', { name: 'طلب جديد' }).click();
     await imam.getByLabel('العنوان').fill('تصليح إنارة الصحن');
@@ -198,6 +253,9 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
 
     await imam.getByRole('button', { name: /تعليم/ }).click();
     await imam.waitForSelector('button:has-text("تعليم")', { state: 'detached' });
+    // القائمة تُخلي مكانها لـ«جارٍ التحميل…» أثناء إعادة الجلب، فالتحقّق قبل
+    // عودتها يرصد نافذة التحميل لا نتيجة التعليم
+    await imam.waitForSelector('.card');
     assert.ok(await imam.locator('.card').count() > 0, 'التعليم حذف القائمة بدل أن يعلّمها');
     });
   });

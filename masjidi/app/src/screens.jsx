@@ -826,8 +826,20 @@ function RequestDetail({ request, onBack }) {
   );
 }
 
+/**
+ * تسجيل المسجد.
+ *
+ * أسماء المساجد تتكرّر كثيراً على مستوى السلطنة — «مصلى العيدين» اسمٌ لـ369
+ * مسجداً — فالبحث بالاسم وحده يُرجع مئة نتيجة متطابقة الظاهر، ولا يعرف الإمام
+ * أيّها مسجده. ولذلك ثلاثة أشياء هنا: تصفيةٌ بالمحافظة، وعرض القرية (أدقّ ما
+ * يميّز)، وإرشادٌ إلى إضافة اسم القرية للبحث — والقرية ضمن كلمات البحث المفهرسة
+ * فـ«العيدين المنجرد» يُرجع نتيجةً واحدة.
+ */
+const SEARCH_CAP = 100;
+
 export function ClaimMosque() {
   const [term, setTerm] = useState('');
+  const [governorate, setGovernorate] = useState('');
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -837,7 +849,7 @@ export function ClaimMosque() {
     setError('');
     setMessage('');
     try {
-      setRows(await api.searchMosques(term));
+      setRows(await api.searchMosques(term, governorate || undefined));
     } catch (caught) {
       setError(api.messageOf(caught));
     }
@@ -856,23 +868,40 @@ export function ClaimMosque() {
   return (
     <>
       <h2>تسجيل مسجد</h2>
-      <form onSubmit={search} className="row">
-        <input value={term} onChange={(event) => setTerm(event.target.value)}
-          placeholder="ابحث باسم المسجد" style={{ flex: 1 }} />
-        <button type="submit">بحث</button>
+      <form onSubmit={search}>
+        <div className="row">
+          <input value={term} onChange={(event) => setTerm(event.target.value)}
+            placeholder="ابحث باسم المسجد" aria-label="اسم المسجد" style={{ flex: 1 }} />
+          <button type="submit">بحث</button>
+        </div>
+        <select value={governorate} aria-label="المحافظة"
+          onChange={(event) => setGovernorate(event.target.value)} style={{ marginTop: 8 }}>
+          <option value="">كل المحافظات</option>
+          {api.GOVERNORATES.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
       </form>
+      <p className="hint">
+        كثير من المساجد تتشابه أسماؤها — أضِف اسم القرية إلى البحث أو اختر
+        محافظتك لتصل إلى مسجدك.
+      </p>
 
       {error && <div className="error">{error}</div>}
       {message && <div className="notice">{message}</div>}
 
       {rows && rows.length === 0 && <p className="empty">لا نتائج.</p>}
+      {rows && rows.length >= SEARCH_CAP && (
+        <div className="notice">
+          النتائج أكثر من {SEARCH_CAP} — ضيّق البحث باسم قريتك أو بمحافظتك.
+        </div>
+      )}
       {rows && rows.map((mosque) => (
         <article className="card" key={mosque.objectId}>
           <div className="spread">
             <h3>{mosque.name}</h3>
             {mosque.isClaimed && <span className="tag off">مسجّل</span>}
           </div>
-          <p>{mosque.governorate} — {mosque.wilayat}</p>
+          {/* القرية أدقّ ما يميّز مسجدين متشابهي الاسم في الولاية نفسها */}
+          <p>{mosque.governorate} — {mosque.wilayat}{mosque.village ? ` — ${mosque.village}` : ''}</p>
           {!mosque.isClaimed && (
             <button className="ghost" onClick={() => claim(mosque)}>هذا مسجدي</button>
           )}
