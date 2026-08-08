@@ -127,6 +127,11 @@ async function listRequests(build) {
       mosqueId: mosque ? mosque.id : null,
       mosqueName: mosque ? mosque.get('name') : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
+      // القرية والإحداثيات: أسماء المساجد تتكرّر بالمئات على مستوى السلطنة،
+      // والمنفّذ يحتاج أن يصل إلى المسجد لا أن يعرف اسمه
+      village: mosque ? mosque.get('village') : null,
+      mosqueLat: mosque ? mosque.get('lat') : null,
+      mosqueLng: mosque ? mosque.get('lng') : null,
     };
   });
 }

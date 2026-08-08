@@ -228,6 +228,15 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     await onScreen(khalid, 'المنفّذ ينفّذ ويُبلّغ بصورةٍ يرفعها', async () => {
     await khalid.getByRole('button', { name: 'مهامّي' }).click();
     await khalid.waitForSelector('button:has-text("بدأت العمل")');
+
+    // الاسم وحده لا يدلّ على مسجدٍ بعينه — «مصلى العيدين» اسمٌ لـ369 مسجداً —
+    // والمنفّذ يقصد المسجد بجسده، فيلزمه موضعه وطريقه لا اسمه
+    const task = await khalid.locator('.card').first().innerText();
+    assert.match(task, /بوشر/, 'المهمّة بلا موضع — إلى أيّ مسجدٍ يذهب؟');
+    const route = khalid.getByRole('link', { name: 'الطريق إلى المسجد' });
+    assert.equal(await route.count(), 1, 'لا طريق إلى المسجد');
+    assert.match(await route.getAttribute('href'), /23\.6.*58\.5|58\.5.*23\.6/,
+      'الرابط لا يحمل إحداثيات المسجد');
     await khalid.getByRole('button', { name: 'بدأت العمل' }).click();
     await khalid.waitForSelector('button:has-text("أنجزتُ العمل")');
     // صورةٌ حقيقية تمرّ بـ`Parse.File` ثم بحارس المضيف في `validatePhotos`:

@@ -673,7 +673,7 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
   const mosqueQuery = new Parse.Query('Mosques');
   geo.withinBox(mosqueQuery, geo.boundingBox(lat, lng, radiusKm));
   mosqueQuery.greaterThan('openRequestsCount', 0); // لا معنى لمسجد بلا طلبات
-  mosqueQuery.select('name', 'wilayat', 'governorate', 'lat', 'lng');
+  mosqueQuery.select('name', 'wilayat', 'village', 'governorate', 'lat', 'lng');
   mosqueQuery.limit(BOX_CANDIDATE_CAP);
 
   const near = geo.sortByDistance(
@@ -707,6 +707,7 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
       mosqueId: hit.mosque.id,
       mosqueName: hit.mosque.get('name'),
       wilayat: hit.mosque.get('wilayat'),
+      village: hit.mosque.get('village'),
       distanceKm: Math.round(hit.km * 100) / 100,
     }));
 });
@@ -839,6 +840,7 @@ Parse.Cloud.define('getMyMosques', async (request) => {
     id: mosque.id,
     name: mosque.get('name'),
     wilayat: mosque.get('wilayat'),
+    village: mosque.get('village'),
     governorate: mosque.get('governorate'),
     openRequestsCount: mosque.get('openRequestsCount') || 0,
   }));
@@ -870,6 +872,7 @@ Parse.Cloud.define('getMyClaims', async (request) => {
       mosqueId: mosque ? mosque.id : null,
       mosqueName: mosque ? mosque.get('name') : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
+      village: mosque ? mosque.get('village') : null,
     };
   });
 });
@@ -900,6 +903,7 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
       createdAt: claim.get('createdAt'),
       mosqueName: mosque ? mosque.get('name') : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
+      village: mosque ? mosque.get('village') : null,
       governorate: mosque ? mosque.get('governorate') : null,
       imamName: imam ? imam.get('fullName') : null,
       imamPhone: imam ? imam.get('phone') : null, // المشرف يتحقّق بالاتصال

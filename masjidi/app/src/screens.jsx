@@ -31,6 +31,17 @@ export function Field({ label, options, multiline, ...props }) {
   );
 }
 
+/**
+ * أين المسجد — لا اسمه.
+ *
+ * أسماء المساجد تتكرّر بالمئات على مستوى السلطنة («مصلى العيدين» اسمٌ لـ369
+ * مسجداً)، فالاسم وحده لا يدلّ على شيء. القرية أدقّ ما يميّز، ثم الولاية.
+ */
+export const Where = ({ wilayat, village, governorate }) => {
+  const parts = [wilayat, village || governorate].filter(Boolean);
+  return parts.length ? <p>{parts.join(' — ')}</p> : null;
+};
+
 export const StatusTag = ({ status }) => {
   const tone = status === 'completed' ? 'done'
     : status === 'cancelled' ? 'off'
@@ -424,7 +435,8 @@ export function Opportunities() {
                   ? <DistanceTag km={row.distanceKm} />
                   : <StatusTag status={row.status} />}
               </div>
-              <p>{row.mosqueName} — {row.wilayat}</p>
+              <p>{row.mosqueName}</p>
+              <Where wilayat={row.wilayat} village={row.village} />
               <p>{row.description}</p>
               <div className="row">
                 <span className="tag">{api.CATEGORIES[row.category] || 'أخرى'}</span>
@@ -527,6 +539,15 @@ export function MyTasks() {
                 <StatusTag status={row.status} />
               </div>
               <p>{row.mosqueName}</p>
+              <Where wilayat={row.wilayat} village={row.village} />
+              {row.mosqueLat != null && (
+                <p>
+                  <a className="maplink" target="_blank" rel="noreferrer"
+                    href={api.mapsLink(row.mosqueLat, row.mosqueLng, row.mosqueName)}>
+                    الطريق إلى المسجد
+                  </a>
+                </p>
+              )}
               {row.status === 'assigned' && (
                 <div className="row">
                   <button onClick={() => act(api.startWork, row.id)}>بدأت العمل</button>
@@ -601,7 +622,8 @@ export function ImamHome() {
                   <span className="tag warn">{mosque.openRequestsCount} طلب مفتوح</span>
                 )}
               </div>
-              <p>{mosque.wilayat} — {mosque.governorate}</p>
+              <Where wilayat={mosque.wilayat} village={mosque.village}
+                governorate={mosque.governorate} />
               <button onClick={() => setOpenMosque({ mosqueId: mosque.id, mosqueName: mosque.name })}>
                 طلبات الصيانة
               </button>
@@ -621,7 +643,7 @@ export function ImamHome() {
                   {claim.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
                 </span>
               </div>
-              <p>{claim.wilayat}</p>
+              <Where wilayat={claim.wilayat} village={claim.village} />
               {claim.status === 'pending' && <p>سيراجع المشرف طلبك خلال أيام عمل.</p>}
             </article>
           ))}
@@ -940,7 +962,9 @@ export function AdminHome() {
           {claims.rows.map((row) => (
             <article className="card" key={row.id}>
               <h3>{row.mosqueName}</h3>
-              <p>{row.wilayat} — {row.governorate}</p>
+              {/* المشرف يعتمد ملكية مسجدٍ بعينه، وثلاثمئة غيره تحمل الاسم نفسه */}
+              <Where wilayat={row.wilayat} village={row.village}
+                governorate={row.governorate} />
               <p>الطالب: {row.imamName || 'بلا اسم'}{row.imamPhone ? ` · ${row.imamPhone}` : ''}</p>
               {row.evidenceNote && <p>«{row.evidenceNote}»</p>}
               <div className="row">
