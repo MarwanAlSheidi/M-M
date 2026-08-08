@@ -179,6 +179,7 @@ app/
   src/App.jsx          التبويبات حسب الدور، ومؤشّر الاتصال، وتحديث الشاشة بضغط تبويبها
   scripts/             توليد الأيقونات وفحص التثبيت — `npm run verify:pwa`
 docs/
+  DEPLOY.md            دليل النشر والتجربة الميدانية — اقرأه قبل أول نشر
   PROJECT_SPEC.md      المواصفات الأصلية
   REVIEW.md            الأخطاء التي أُصلحت ولماذا — اقرأه قبل تعديل المنطق المالي
   DATA.md              وصف البيانات ومشاكلها
@@ -6370,6 +6371,8 @@ main().catch((e) => { console.error(e); process.exit(1); });
  *   node scripts/seed_mosques.js --limit 100  # تجربة سريعة
  *   node scripts/seed_mosques.js --dry-run
  *   node scripts/seed_mosques.js --verify   # فحص التكرار بلا كتابة
+ *   node scripts/seed_mosques.js --governorate muscat   # محافظة واحدة
+ *   node scripts/seed_mosques.js --governorates         # ما المتاح منها
  */
 
 require('dotenv').config();
@@ -6385,6 +6388,15 @@ const args = process.argv.slice(2);
 const limit = args.includes('--limit') ? Number(args[args.indexOf('--limit') + 1]) : Infinity;
 const dryRun = args.includes('--dry-run');
 const verifyOnly = args.includes('--verify');
+const listGovernorates = args.includes('--governorates');
+/**
+ * تجربةٌ ميدانية في محافظة واحدة أقرب إلى الواقع من أوّل مئة سجلّ: `--limit`
+ * يأخذ أوائل الملفّ وهي ترتيبٌ لا معنى له، فيخرج المتطوّع يبحث حوله فلا يجد
+ * مسجده. والتصفية تقلّل كلفة الاستيراد على الباقة المجانية كذلك.
+ */
+const governorate = args.includes('--governorate')
+  ? (args[args.indexOf('--governorate') + 1] || '').trim()
+  : null;
 const allowDuplicates = args.includes('--allow-duplicates');
 
 function initParse() {
@@ -6447,7 +6459,33 @@ function reportDuplicates(duplicates) {
 
 async function main() {
   const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  const records = raw.slice(0, limit);
+
+  if (listGovernorates) {
+    const counts = new Map();
+    for (const row of raw) {
+      const key = `${row.governorateSlug}\t${row.governorate}`;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    console.log(`المحافظات المتاحة (${raw.length} مسجداً إجمالاً):\n`);
+    for (const [key, count] of [...counts].sort((a, b) => b[1] - a[1])) {
+      const [slug, name] = key.split('\t');
+      console.log(`  ${slug.padEnd(18)} ${name.padEnd(16)} ${count}`);
+    }
+    return;
+  }
+
+  let pool = raw;
+  if (governorate) {
+    const wanted = governorate.toLowerCase();
+    pool = raw.filter((row) => row.governorateSlug === wanted || row.governorate === governorate);
+    if (pool.length === 0) {
+      console.error(`✗ لا محافظة باسم «${governorate}». استعمل --governorates لعرض المتاح.`);
+      process.exit(1);
+    }
+    console.log(`→ محافظة ${pool[0].governorate}: ${pool.length} مسجداً`);
+  }
+
+  const records = pool.slice(0, limit);
   console.log(`→ ${records.length} سجلاً جاهزاً للاستيراد`);
 
   if (dryRun) {
