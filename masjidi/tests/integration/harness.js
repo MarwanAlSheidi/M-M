@@ -123,13 +123,17 @@ async function startStack() {
   // المحوّل الافتراضي للملفات GridFS ويلزمه MongoDB. ملفّاتٌ على القرص تكفي
   // هنا، وبدونها يبقى مسار صور الإنجاز — وهو دليل الإمام على أن العمل وقع —
   // خارج أي تحقّق آليّ.
+  //
+  // `filesSubDirectory` يُضمّ إلى «files» **نسبةً إلى مجلّد التشغيل** لا إلى
+  // جذر مطلق: تمريرُ مسارٍ مطلق يُنشئ `files/<المسار كاملاً>` داخل المستودع.
+  // فنمرّر اسماً نسبياً ونحذفه عند الإيقاف.
   const FSFilesAdapter = require('@parse/fs-files-adapter');
-  const filesDir = path.join(root, 'files');
-  fs.mkdirSync(filesDir, { recursive: true });
+  const filesSubDirectory = path.basename(root);
+  const filesRoot = path.join(process.cwd(), 'files');
 
   const parseServer = new ParseServer({
     databaseURI: `postgres://postgres@127.0.0.1:${pgPort}/masjidi`,
-    filesAdapter: new FSFilesAdapter({ filesSubDirectory: filesDir }),
+    filesAdapter: new FSFilesAdapter({ filesSubDirectory }),
     fileUpload: { enableForAuthenticatedUser: true },
     cloud: CLOUD_MAIN,
     appId: APP_ID,
@@ -157,6 +161,9 @@ async function startStack() {
     try { await parseServer.handleShutdown(); } catch { /* الخادم مُغلق أصلاً */ }
     try { run('pg_ctl', ['-D', dataDir, '-m', 'immediate', '-w', 'stop']); } catch { /* توقّف */ }
     fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(path.join(filesRoot, filesSubDirectory), { recursive: true, force: true });
+    // `files` نفسه يُحذف إن خلا — ولا يُحذف إن كان فيه شيء لغيرنا
+    try { fs.rmdirSync(filesRoot); } catch { /* غير فارغ أو غير موجود */ }
   }
 
   return { Parse, serverURL, appId: APP_ID, masterKey: MASTER_KEY, stop };
