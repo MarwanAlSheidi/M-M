@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل محلياً على 400 مسجداً. ❌ لم يُشغّل على الاستيراد الكامل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 170 حالة على بديل Parse (`npm test`) + 41 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + رحلة كاملة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 170 حالة على بديل Parse (`npm test`) + 48 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + رحلة كاملة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -158,6 +158,7 @@ tests/
     flow.test.js       الرحلة كاملة: التسجيل والصلاحيات والـACL
     search.test.js     البحث المفهرس على بيانات الوزارة — يرصد فروق المحوّل
     contractor.test.js مسار الشركة: الاعتماد، التكليف، التنفيذ، السجل
+    photos.test.js     رفع صورة حقيقية والتحقّق من محتواها وحارس المضيف
     limits.test.js     الحدود وسحب التكليف
     inbox.test.js      صندوق الوارد بصفر Installation مسجَّل
   e2e/                 متصفّح حقيقي فوق خادم حقيقي — `npm run test:e2e`
@@ -630,6 +631,28 @@ if (user.dirty('isVerifiedContractor')) {
 
 ---
 
+### 🟢 سلسلة إثبات الإنجاز تحت التحقّق أخيراً
+
+الإمام يعتمد عملاً لم يره إلا في صورةٍ رفعها المنفّذ، فسلامة هذه السلسلة هي ما
+يمنع اعتماداً على غير بيّنة. وكانت `validatePhotos` مُختبَرة على روابط مخترَعة
+وحدها: لا رفع حقيقي، ولا تحقّق أن المخزَّن هو المرفوع.
+
+مِرقاة التكامل صارت تُشغّل محوّل ملفات على القرص (`@parse/fs-files-adapter`)
+وتفتح الرفع للمصادَقين — المحوّل الافتراضي GridFS ويلزمه MongoDB. وعليه
+`photos.test.js`: يرفع `Parse.File` حقيقياً، يمرّره بـ`markWorkDone`، يقرؤه
+الإمام من السجل، **ثم يجلبه من رابطه ويقارن بايتاته بالمرفوع** — فالرابط في
+السجل بلا محتوى ليس دليلاً، وقد يكون التخزين رفض الملف صامتاً.
+
+ويرفض الرابط الخارجي ولو كان HTTPS، ويتحقّق أن الطلب لم يُترك في حالةٍ لم تقع
+بعد الرفض (التحقّق قبل أي تعديل — «جولة سابعة»).
+
+وفي المتصفّح: المنفّذ يختار صورةً فعلاً عبر `setInputFiles`، والإمام لا يكتفي
+الاختبار بوجودها في السجل بل يتحقّق أنها **حُمِّلت في الصفحة**
+(`naturalWidth > 0`) قبل زرّ الاعتماد — صورةٌ في السجل لا تُعرض تعني اعتماداً
+على ثقةٍ لا بيّنة.
+
+---
+
 ### 🟠 جولة رابعة عشرة — دورٌ كامل مبنيّ على الخادم ولا يصله العميل
 
 الشركة تُسجَّل، ويعتمدها المشرف، ويكلّفها الإمام — ثم **لا ترى تكليفها أبداً**.
@@ -702,9 +725,6 @@ if (user.dirty('isVerifiedContractor')) {
 - **التفرّد الحقيقي على `externalId` يبقى يدوياً.** مخطط Parse لا يعبّر عنه،
   فأضِف فهرساً فريداً من لوحة Back4app. حتى ذلك الحين الحماية كشفٌ بعد الوقوع
   (`seed_mosques.js --verify`) لا منعٌ قبله.
-- **رفع الصور خارج تغطية المتصفّح.** `npm run test:e2e` يقود الرحلة كاملة،
-  لكن مسار `Parse.File` (اختيار صورة، رفعها، عرضها قبل الاعتماد) يحتاج ملفاً
-  حقيقياً وتخزيناً مهيّأً. يُغطّيه `validatePhotos` في اختبارات الوحدة وحده.
 - **الفهرسان المكانيّان (`geo`, `volunteer_geo`) لم يُطبَّقا محلياً** — يحتاجان
   MongoDB أو PostGIS. القرب يعمل بدونهما على `geo_box`، فهما تحسينٌ لا شرط.
 - **كلفة الاستيراد على باقة Back4app المجانية.** قِيس محلياً: SDK يجمع عشرين
@@ -8976,6 +8996,7 @@ function unavailableReason() {
   try {
     require.resolve('parse-server');
     require.resolve('parse/node');
+    require.resolve('@parse/fs-files-adapter');
   } catch {
     return 'حزم التطوير غير مثبّتة — شغّل `npm install`';
   }
@@ -9045,8 +9066,17 @@ async function startStack() {
   const apiPort = await freePort();
   const serverURL = `http://127.0.0.1:${apiPort}/parse`;
 
+  // المحوّل الافتراضي للملفات GridFS ويلزمه MongoDB. ملفّاتٌ على القرص تكفي
+  // هنا، وبدونها يبقى مسار صور الإنجاز — وهو دليل الإمام على أن العمل وقع —
+  // خارج أي تحقّق آليّ.
+  const FSFilesAdapter = require('@parse/fs-files-adapter');
+  const filesDir = path.join(root, 'files');
+  fs.mkdirSync(filesDir, { recursive: true });
+
   const parseServer = new ParseServer({
     databaseURI: `postgres://postgres@127.0.0.1:${pgPort}/masjidi`,
+    filesAdapter: new FSFilesAdapter({ filesSubDirectory: filesDir }),
+    fileUpload: { enableForAuthenticatedUser: true },
     cloud: CLOUD_MAIN,
     appId: APP_ID,
     masterKey: MASTER_KEY,

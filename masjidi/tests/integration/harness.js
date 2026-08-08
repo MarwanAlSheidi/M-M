@@ -50,6 +50,7 @@ function unavailableReason() {
   try {
     require.resolve('parse-server');
     require.resolve('parse/node');
+    require.resolve('@parse/fs-files-adapter');
   } catch {
     return 'حزم التطوير غير مثبّتة — شغّل `npm install`';
   }
@@ -119,8 +120,17 @@ async function startStack() {
   const apiPort = await freePort();
   const serverURL = `http://127.0.0.1:${apiPort}/parse`;
 
+  // المحوّل الافتراضي للملفات GridFS ويلزمه MongoDB. ملفّاتٌ على القرص تكفي
+  // هنا، وبدونها يبقى مسار صور الإنجاز — وهو دليل الإمام على أن العمل وقع —
+  // خارج أي تحقّق آليّ.
+  const FSFilesAdapter = require('@parse/fs-files-adapter');
+  const filesDir = path.join(root, 'files');
+  fs.mkdirSync(filesDir, { recursive: true });
+
   const parseServer = new ParseServer({
     databaseURI: `postgres://postgres@127.0.0.1:${pgPort}/masjidi`,
+    filesAdapter: new FSFilesAdapter({ filesSubDirectory: filesDir }),
+    fileUpload: { enableForAuthenticatedUser: true },
     cloud: CLOUD_MAIN,
     appId: APP_ID,
     masterKey: MASTER_KEY,

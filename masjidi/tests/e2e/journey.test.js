@@ -34,6 +34,11 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
 
   const stamp = Date.now();
   const PASSWORD = 'Journey12345!';
+  /** أصغر PNG صالح — يُرفع كما يرفع المنفّذ صورته. */
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
 
   /**
    * يُلحق بالخطأ ما تعرضه الشاشة فعلاً.
@@ -164,12 +169,18 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     });
   });
 
-  await t.test('المنفّذ ينفّذ ويُبلّغ', async () => {
-    await onScreen(khalid, 'المنفّذ ينفّذ ويُبلّغ', async () => {
+  await t.test('المنفّذ ينفّذ ويُبلّغ بصورةٍ يرفعها', async () => {
+    await onScreen(khalid, 'المنفّذ ينفّذ ويُبلّغ بصورةٍ يرفعها', async () => {
     await khalid.getByRole('button', { name: 'مهامّي' }).click();
     await khalid.waitForSelector('button:has-text("بدأت العمل")');
     await khalid.getByRole('button', { name: 'بدأت العمل' }).click();
     await khalid.waitForSelector('button:has-text("أنجزتُ العمل")');
+    // صورةٌ حقيقية تمرّ بـ`Parse.File` ثم بحارس المضيف في `validatePhotos`:
+    // الإبلاغ بلا صورة يعتمده الإمام على الثقة وحدها
+    await khalid.setInputFiles('[data-testid="photo-input"]',
+      { name: 'work.png', mimeType: 'image/png', buffer: PNG });
+    await khalid.waitForSelector('text=صورة مختارة');
+
     await khalid.getByRole('button', { name: 'أنجزتُ العمل' }).click();
     await khalid.waitForSelector('text=بانتظار معاينة الإمام');
     });
@@ -191,12 +202,19 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     });
   });
 
-  await t.test('الإمام يعتمد، وسجل المنفّذ يتحدّث', async () => {
-    await onScreen(imam, 'الإمام يعتمد، وسجل المنفّذ يتحدّث', async () => {
+  await t.test('الإمام يرى الصورة ثم يعتمد، وسجل المنفّذ يتحدّث', async () => {
+    await onScreen(imam, 'الإمام يرى الصورة ثم يعتمد، وسجل المنفّذ يتحدّث', async () => {
     // الإمام واقفٌ على شاشة التنبيهات، و«طلبات الصيانة» في بطاقة المسجد
     await imam.getByRole('button', { name: 'مساجدي' }).click();
     await imam.getByRole('button', { name: 'طلبات الصيانة' }).click();
     await imam.getByRole('button', { name: 'التفاصيل' }).first().click();
+
+    // الصورة معروضة قبل زرّ الاعتماد لا بعده
+    await imam.waitForSelector('[data-testid="gallery"] img');
+    const shown = await imam.locator('[data-testid="gallery"] img').first()
+      .evaluate((img) => img.naturalWidth > 0 && img.complete);
+    assert.ok(shown, 'الصورة في السجل ولا تُحمَّل — فالإمام يعتمد على ثقةٍ لا بيّنة');
+
     await imam.getByRole('button', { name: 'اعتماد العمل' }).click();
     await imam.waitForSelector('.tag:has-text("منجَز")');
 
