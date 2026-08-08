@@ -77,6 +77,9 @@
         },
         "source": {
           "type": "String"
+        },
+        "locationSource": {
+          "type": "String"
         }
       },
       "_comment_indexes": "externalId_lookup فهرس بحث لا قيد تفرّد — Parse لا يعبّر عن التفرّد، فيُضاف فهرس فريد يدوياً من لوحة Back4app. حتى ذلك الحين يقوم تفادي التكرار على فحص scripts/seed_mosques.js --verify وحده.",

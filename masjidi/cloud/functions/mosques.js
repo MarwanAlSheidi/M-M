@@ -420,10 +420,32 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
   claim.set('reviewedAt', new Date());
   await claim.save(null, { useMasterKey: true });
 
+  let locationLearned = false;
   if (approve) {
     const mosque = claim.get('mosqueId');
     mosque.set('imamId', claim.get('imamId'));
     mosque.set('isClaimed', true);
+
+    // مسجدٌ بلا إحداثيات سجّله إمامه من عنده: فقد عرفنا أين هو. ستة عشر مسجداً
+    // في بيانات الوزارة بلا موقع صالح، وأهلها خارج البحث بالقرب وفرصهم في ذيل
+    // القائمة — فتُتبنّى إحداثيات الطلب بعد اعتماد المشرف لها.
+    //
+    // **ولا تُمسّ إحداثيات موجودة أبداً.** بيانات الوزارة مرجع، وموقع مقدّم
+    // الطلب تقديرٌ بدقّة الجهاز: يملأ فراغاً ولا ينسخ فوق مرجع.
+    const hasCoordinates = geo.validCoordinates(mosque.get('lat'), mosque.get('lng'));
+    const claimed = { lat: claim.get('claimLat'), lng: claim.get('claimLng') };
+    if (!hasCoordinates && geo.validCoordinates(claimed.lat, claimed.lng)) {
+      mosque.set('lat', claimed.lat);
+      mosque.set('lng', claimed.lng);
+      mosque.set('location', new Parse.GeoPoint({
+        latitude: claimed.lat, longitude: claimed.lng,
+      }));
+      mosque.set('hasLocation', true);
+      // المصدر يُقال: من يقرأ الحقل لاحقاً يعرف أنه تقديرٌ لا بيانات وزارة
+      mosque.set('locationSource', 'claim');
+      locationLearned = true;
+    }
+
     await mosque.save(null, { useMasterKey: true });
   }
 
@@ -435,5 +457,14 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
     toStatus: claim.get('status'),
   });
 
-  return { status: claim.get('status') };
+  if (locationLearned) {
+    await audit.record({
+      action: audit.ACTIONS.LOCATION_LEARNED,
+      target: claim.get('mosqueId'),
+      mosque: claim.get('mosqueId'),
+      actor: admin,
+    });
+  }
+
+  return { status: claim.get('status'), locationLearned };
 });

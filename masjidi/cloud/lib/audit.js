@@ -30,6 +30,7 @@ const ACTIONS = {
   DONATION_EXPIRED: 'donation_expired',
   PAYOUT_RECORDED: 'payout_recorded',
   CLAIM_REVIEWED: 'claim_reviewed',
+  LOCATION_LEARNED: 'location_learned',
   CONTRACTOR_REVIEWED: 'contractor_reviewed',
   DONATION_REFUNDED: 'donation_refunded',
 };

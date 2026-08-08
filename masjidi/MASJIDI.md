@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 188 حالة على بديل Parse (`npm test`) + 67 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 19 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 188 حالة على بديل Parse (`npm test`) + 72 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 19 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -169,6 +169,7 @@ tests/
     unlocated.test.js  فرصٌ في مساجد بلا إحداثيات — تظهر آخراً لا تُحذف
     proximity.test.js  البحث يرتّب بالأقرب — الموقع يميّز متطابقي الاسم
     claim.test.js      تأكيد الموقع عند التسجيل، وصفة مقدّم الطلب
+    learned-location.test.js  المسجد يتعلّم موقعه من طلب ملكيته
   e2e/                 متصفّح حقيقي فوق خادم حقيقي — `npm run test:e2e`
     harness.js         يبني الواجهة على منفذ الاختبار، ويقدّمها، ويفتح Chromium
     journey.test.js    الرحلة كاملة: التسجيل، الطلب، الاهتمام، السحب، التنبيهات
@@ -701,6 +702,37 @@ if (user.dirty('isVerifiedContractor')) {
 
 ---
 
+### 🟢 المسجد يتعلّم موقعه من طلب ملكيته
+
+يتبع من تأكيد الموقع: حين يسجّل الإمام مسجداً **بلا إحداثيات** ونحن نحفظ موقعه
+لحظة التقديم — **فقد عرفنا أين المسجد**.
+
+فصار `reviewMosqueClaim` يتبنّى إحداثيات الطلب عند الاعتماد، ويضبط `location`
+و`hasLocation` معها، ويقيّد `location_learned` في سجلّ المسجد. فيخرج المسجد من
+عزلته: يظهر في البحث بالقرب، وتخرج فرصه من ذيل القائمة، ويعرف المتطوّع طريقه
+إليه. **البيانات تُصلَح بالاستعمال** لا بحملة تصحيحٍ منفصلة.
+
+**وثلاثة قيود:**
+
+- **لا تُمسّ إحداثياتٌ موجودة أبداً.** بيانات الوزارة مرجع، وموقع الجهاز تقديرٌ
+  بدقّته: يملأ فراغاً ولا ينسخ فوق مرجع.
+- **المصدر يُقال** (`locationSource: 'claim'`) — من يقرأ الحقل لاحقاً يعرف أنه
+  تقديرٌ لا بيانات وزارة.
+- **الرفض لا يمنح شيئاً.** الاعتماد وحده يُثبت، فطلبٌ رفضه المشرف لا يغيّر بيانات
+  مسجد.
+
+#### وحارسٌ بدل درسٍ مكتوب
+
+وقعتُ **للمرّة الثالثة** في وضع خادمَين في ملفٍ واحد — و`directAccess` يربط
+Parse بأوّلهما، فيخاطب الثاني قاعدة الأوّل بعد إغلاقها، وتظهر
+`relation "_User" does not exist` وهي رسالةٌ لا تدلّ على سببها إطلاقاً.
+
+وكنتُ كتبتُ درس ذلك **مرّتين** في رؤوس الملفات. لم ينفع: الدرس المكتوب لا يُقرأ
+إن لم يُبحث عنه. فصار `startStack` يرفض النداء الثاني برسالةٍ تسمّي السبب وتقول
+العلاج. **ما يتكرّر ثلاثاً لا يُعالَج بتعليقٍ رابع.**
+
+---
+
 ### 🟢 تأكيد الموقع عند التسجيل — وصفة مقدّم الطلب
 
 **السؤال المفتوح منذ أوّل يوم:** كيف يُثبت الإمام أنه إمام هذا المسجد؟ لا جواب
@@ -1221,6 +1253,9 @@ PostgreSQL كاملاً وخادماً**. ستة معاً تُنهك الجها�
           "type": "Object"
         },
         "source": {
+          "type": "String"
+        },
+        "locationSource": {
           "type": "String"
         }
       },
@@ -2263,6 +2298,7 @@ const ACTIONS = {
   DONATION_EXPIRED: 'donation_expired',
   PAYOUT_RECORDED: 'payout_recorded',
   CLAIM_REVIEWED: 'claim_reviewed',
+  LOCATION_LEARNED: 'location_learned',
   CONTRACTOR_REVIEWED: 'contractor_reviewed',
   DONATION_REFUNDED: 'donation_refunded',
 };
@@ -2818,10 +2854,32 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
   claim.set('reviewedAt', new Date());
   await claim.save(null, { useMasterKey: true });
 
+  let locationLearned = false;
   if (approve) {
     const mosque = claim.get('mosqueId');
     mosque.set('imamId', claim.get('imamId'));
     mosque.set('isClaimed', true);
+
+    // مسجدٌ بلا إحداثيات سجّله إمامه من عنده: فقد عرفنا أين هو. ستة عشر مسجداً
+    // في بيانات الوزارة بلا موقع صالح، وأهلها خارج البحث بالقرب وفرصهم في ذيل
+    // القائمة — فتُتبنّى إحداثيات الطلب بعد اعتماد المشرف لها.
+    //
+    // **ولا تُمسّ إحداثيات موجودة أبداً.** بيانات الوزارة مرجع، وموقع مقدّم
+    // الطلب تقديرٌ بدقّة الجهاز: يملأ فراغاً ولا ينسخ فوق مرجع.
+    const hasCoordinates = geo.validCoordinates(mosque.get('lat'), mosque.get('lng'));
+    const claimed = { lat: claim.get('claimLat'), lng: claim.get('claimLng') };
+    if (!hasCoordinates && geo.validCoordinates(claimed.lat, claimed.lng)) {
+      mosque.set('lat', claimed.lat);
+      mosque.set('lng', claimed.lng);
+      mosque.set('location', new Parse.GeoPoint({
+        latitude: claimed.lat, longitude: claimed.lng,
+      }));
+      mosque.set('hasLocation', true);
+      // المصدر يُقال: من يقرأ الحقل لاحقاً يعرف أنه تقديرٌ لا بيانات وزارة
+      mosque.set('locationSource', 'claim');
+      locationLearned = true;
+    }
+
     await mosque.save(null, { useMasterKey: true });
   }
 
@@ -2833,7 +2891,16 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
     toStatus: claim.get('status'),
   });
 
-  return { status: claim.get('status') };
+  if (locationLearned) {
+    await audit.record({
+      action: audit.ACTIONS.LOCATION_LEARNED,
+      target: claim.get('mosqueId'),
+      mosque: claim.get('mosqueId'),
+      actor: admin,
+    });
+  }
+
+  return { status: claim.get('status'), locationLearned };
 });
 ```
 
@@ -4701,6 +4768,7 @@ const ACTIONS = {
   DONATION_EXPIRED: 'donation_expired',
   PAYOUT_RECORDED: 'payout_recorded',
   CLAIM_REVIEWED: 'claim_reviewed',
+  LOCATION_LEARNED: 'location_learned',
   CONTRACTOR_REVIEWED: 'contractor_reviewed',
   DONATION_REFUNDED: 'donation_refunded',
 };
@@ -5360,10 +5428,32 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
   claim.set('reviewedAt', new Date());
   await claim.save(null, { useMasterKey: true });
 
+  let locationLearned = false;
   if (approve) {
     const mosque = claim.get('mosqueId');
     mosque.set('imamId', claim.get('imamId'));
     mosque.set('isClaimed', true);
+
+    // مسجدٌ بلا إحداثيات سجّله إمامه من عنده: فقد عرفنا أين هو. ستة عشر مسجداً
+    // في بيانات الوزارة بلا موقع صالح، وأهلها خارج البحث بالقرب وفرصهم في ذيل
+    // القائمة — فتُتبنّى إحداثيات الطلب بعد اعتماد المشرف لها.
+    //
+    // **ولا تُمسّ إحداثيات موجودة أبداً.** بيانات الوزارة مرجع، وموقع مقدّم
+    // الطلب تقديرٌ بدقّة الجهاز: يملأ فراغاً ولا ينسخ فوق مرجع.
+    const hasCoordinates = geo.validCoordinates(mosque.get('lat'), mosque.get('lng'));
+    const claimed = { lat: claim.get('claimLat'), lng: claim.get('claimLng') };
+    if (!hasCoordinates && geo.validCoordinates(claimed.lat, claimed.lng)) {
+      mosque.set('lat', claimed.lat);
+      mosque.set('lng', claimed.lng);
+      mosque.set('location', new Parse.GeoPoint({
+        latitude: claimed.lat, longitude: claimed.lng,
+      }));
+      mosque.set('hasLocation', true);
+      // المصدر يُقال: من يقرأ الحقل لاحقاً يعرف أنه تقديرٌ لا بيانات وزارة
+      mosque.set('locationSource', 'claim');
+      locationLearned = true;
+    }
+
     await mosque.save(null, { useMasterKey: true });
   }
 
@@ -5375,7 +5465,16 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
     toStatus: claim.get('status'),
   });
 
-  return { status: claim.get('status') };
+  if (locationLearned) {
+    await audit.record({
+      action: audit.ACTIONS.LOCATION_LEARNED,
+      target: claim.get('mosqueId'),
+      mosque: claim.get('mosqueId'),
+      actor: admin,
+    });
+  }
+
+  return { status: claim.get('status'), locationLearned };
 });
 
 
@@ -10280,7 +10379,26 @@ function makeRunner(binDir, asUser) {
  * يُشغّل قاعدة بيانات وخادماً، ويعيد `{ serverURL, stop }`.
  * الاستدعاء يفترض أن `unavailableReason()` أعادت `null`.
  */
+/**
+ * خادمٌ واحد لكل عملية.
+ *
+ * `directAccess` يربط نسخة Parse المفردة بأوّل خادمٍ يُنشأ، فخادمان في ملفٍ
+ * واحد يجعلان الثاني يخاطب قاعدة الأوّل بعد إغلاقها — ويظهر ذلك بـ
+ * `relation "_User" does not exist`، وهي رسالةٌ لا تدلّ على سببها إطلاقاً.
+ * وقعتُ فيها ثلاث مرّات وكتبتُ درسها مرّتين في رؤوس الملفات؛ الدرس المكتوب لا
+ * يُقرأ إن لم يُبحث عنه، فالحارس هنا.
+ */
+let started = false;
+
 async function startStack() {
+  if (started) {
+    throw new Error(
+      'خادمٌ ثانٍ في العملية نفسها: `directAccess` يربط Parse بأوّل خادم، '
+      + 'فالثاني يخاطب قاعدة الأوّل. ضع الاختبار في ملفٍّ مستقلّ — لكل ملفٍ عمليته.',
+    );
+  }
+  started = true;
+
   const binDir = findPostgresBin();
   const asUser = rootFallbackUser();
 

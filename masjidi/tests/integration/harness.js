@@ -101,7 +101,26 @@ function makeRunner(binDir, asUser) {
  * يُشغّل قاعدة بيانات وخادماً، ويعيد `{ serverURL, stop }`.
  * الاستدعاء يفترض أن `unavailableReason()` أعادت `null`.
  */
+/**
+ * خادمٌ واحد لكل عملية.
+ *
+ * `directAccess` يربط نسخة Parse المفردة بأوّل خادمٍ يُنشأ، فخادمان في ملفٍ
+ * واحد يجعلان الثاني يخاطب قاعدة الأوّل بعد إغلاقها — ويظهر ذلك بـ
+ * `relation "_User" does not exist`، وهي رسالةٌ لا تدلّ على سببها إطلاقاً.
+ * وقعتُ فيها ثلاث مرّات وكتبتُ درسها مرّتين في رؤوس الملفات؛ الدرس المكتوب لا
+ * يُقرأ إن لم يُبحث عنه، فالحارس هنا.
+ */
+let started = false;
+
 async function startStack() {
+  if (started) {
+    throw new Error(
+      'خادمٌ ثانٍ في العملية نفسها: `directAccess` يربط Parse بأوّل خادم، '
+      + 'فالثاني يخاطب قاعدة الأوّل. ضع الاختبار في ملفٍّ مستقلّ — لكل ملفٍ عمليته.',
+    );
+  }
+  started = true;
+
   const binDir = findPostgresBin();
   const asUser = rootFallbackUser();
 
