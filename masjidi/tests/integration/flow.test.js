@@ -36,10 +36,16 @@ test('الرحلة الكاملة على خادم حقيقي', options, async (t
     return user;
   }
 
-  await t.test('المخطط يُطبَّق كاملاً', async () => {
-    await applySchema(Parse);
+  await t.test('المخطط يُطبَّق كاملاً — بفهارسه', async () => {
+    const indexed = await applySchema(Parse);
     const schema = await new Parse.Schema('AuditLog').get();
     assert.ok(schema.fields.action, 'AuditLog لم تُنشأ');
+
+    // كانت هذه الدالة تُسقط كتلة `indexes` كلّها، فيشهد الاختبار لبيئةٍ ليست
+    // هي التي تُنشر — والاستعلامات المضبوطة على الفهارس تمسح المجموعة
+    assert.ok(indexed >= 14, `طُبّق ${indexed} فهرساً فقط — راجع «جولة عاشرة»`);
+    assert.ok((await new Parse.Schema('Mosques').get()).indexes.name_tokens,
+      'فهرس الكلمات غائب — البحث المفهرس يمسح المجموعة');
   });
 
   // ⚠️ هذا ما فشل على أول خادم حقيقي: `isVerifiedContractor` له قيمة افتراضية

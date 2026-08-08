@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل محلياً على 400 مسجداً. ❌ لم يُشغّل على الاستيراد الكامل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسار التطوّع، القرب، خريطة جوجل (بمفتاح اختياري)، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 170 حالة على بديل Parse (`npm test`) + 7 اختبارات تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
+| الاختبارات | ✅ 170 حالة على بديل Parse (`npm test`) + 34 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`). ❌ لا اختبار متصفّح آلي |
 
 ---
 
@@ -138,6 +138,7 @@ scripts/
   seed_mosques.js      استيراد إلى Parse (idempotent)
   apply_schema.js      تطبيق schema.json — الحقول والصلاحيات والفهارس
   lib/index-plan.js    تخطيط الفهارس الناقصة وفرز المكانيّ — تحت الاختبار
+  lib/tokenize.js      كلمات البحث — يشترك فيها الاستيراد واختبار التكامل
   build_single_file.py توليد cloud/main.bundle.js من ملفات cloud/
   build_single_doc.py  توليد MASJIDI.md من المستودع كله
 tests/
@@ -150,7 +151,12 @@ tests/
   schema.test.js       الصلاحيات، وتطابق النسختين المجزّأة والمدمجة
   indexes.test.js      تخطيط الفهارس وسلامة تعريفها في المخطط
   notifications.test.js صندوق الوارد: الوصول والخصوصية والتقليم
-  integration/         خادم parse-server حقيقي — `npm run test:integration`
+  integration/
+    harness.js         يُشغّل PostgreSQL وparse-server، ويطبّق المخطط ويستورد المساجد
+    flow.test.js       الرحلة كاملة: التسجيل والصلاحيات والـACL
+    search.test.js     البحث المفهرس على بيانات الوزارة — يرصد فروق المحوّل
+    limits.test.js     الحدود وسحب التكليف
+    inbox.test.js      صندوق الوارد بصفر Installation مسجَّل
 data/
   mosques.json         18,214 سجلاً جاهزاً
   cleaning_report.json تقرير جودة البيانات
@@ -557,6 +563,35 @@ if (user.dirty('isVerifiedContractor')) {
 
 ---
 
+### 🟠 جولة ثانية عشرة — التحقّق الذي لا يبقى ليس تحقّقاً
+
+كل ما بُني في الجولات الأخيرة تُحقّق منه على خادم حقيقي — لكن بسكربتات في مجلّد
+مؤقّت خارج المستودع. سبع وثلاثون خطوة تختفي مع الحاوية، بينما التغطية المحفوظة
+في المستودع سبع حالات على مسارٍ واحد.
+
+هذا ليس نقصاً في التغطية بل **وهمٌ بها**: من يقرأ `npm run test:integration`
+يظنّ أن البحث والحدود والوارد محميّة، وهي ليست كذلك في أي جهازٍ غير هذا.
+
+نُقلت إلى `tests/integration/`: `search.test.js` و`limits.test.js`
+و`inbox.test.js` — فصارت 34 حالة بدل 7، تعمل في 7 ثوانٍ.
+
+**واختبار البحث يستحقّ وجوده هناك:** أعدتُ صياغة `equalTo` المتكرّرة فسقطت خمس
+حالات منه. هذه بالضبط ما لا يستطيع البديل في الذاكرة رصده مهما كثرت حالاته —
+الفرق في المحوّل لا في المنطق.
+
+**وانحرافٌ كُشف في أثناء النقل:** `harness.applySchema` كانت نسخةً مستقلّة من
+`apply_schema.js`، فلمّا أُصلح السكربت ليطبّق الفهارس بقيت هي على حالها. أي أن
+اختبار التكامل كان — بعد الإصلاح مباشرةً — يشهد لبيئةٍ بلا فهارس ليست هي التي
+تُنشر. صارت تستدعي `index-plan` نفسه، وتُعيد عدد ما طبّقت، و`flow.test.js`
+يتحقّق منه. وكذلك `tokenize` انتُزعت إلى `scripts/lib/` وتشترك فيها الاثنتان:
+لولا ذلك لتحقّق اختبار البحث من كلماتٍ ليست هي التي تُستورَد فعلاً.
+
+**والبيانات حقيقية لا مخترَعة.** `seedMosques` يستورد من `data/mosques.json`:
+أسماء المساجد العُمانية لها بنيتها («مصلى التدريب بعيدم»)، واختبارُ بحثٍ على
+«مسجد ١» و«مسجد ٢» يشهد لنفسه ولا يشهد للبحث.
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB.** `npm run test:integration`
@@ -578,6 +613,11 @@ if (user.dirty('isVerifiedContractor')) {
 - **التفرّد الحقيقي على `externalId` يبقى يدوياً.** مخطط Parse لا يعبّر عنه،
   فأضِف فهرساً فريداً من لوحة Back4app. حتى ذلك الحين الحماية كشفٌ بعد الوقوع
   (`seed_mosques.js --verify`) لا منعٌ قبله.
+- **لا اختبار متصفّح في المستودع.** الرحلة كاملة عبر واجهة حقيقية جُرّبت
+  بـPlaywright — التسجيل، الطلب، الاهتمام، التكليف، السحب، الصور، التنبيهات —
+  لكن السكربت بقي خارج المستودع: إضافته تعني اعتماد Playwright وتشغيل خادم
+  معاينة في الاختبار. `npm run verify:pwa` يغطّي التثبيت والعمل بلا إنترنت
+  وحدهما. **الواجهة تحت التحقّق اليدوي لا الآلي.**
 - **الفهرسان المكانيّان (`geo`, `volunteer_geo`) لم يُطبَّقا محلياً** — يحتاجان
   MongoDB أو PostGIS. القرب يعمل بدونهما على `geo_box`، فهما تحسينٌ لا شرط.
 - **كلفة الاستيراد على باقة Back4app المجانية.** قِيس محلياً: SDK يجمع عشرين
@@ -6142,26 +6182,10 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const Parse = require('parse/node');
+const { tokenize } = require('./lib/tokenize');
 
 const BATCH_SIZE = 200; // Parse.Object.saveAll يتعامل داخلياً بدفعات — نبقيها معتدلة
 const DATA_FILE = path.join(__dirname, '..', 'data', 'mosques.json');
-
-/**
- * كلمات الاسم والقرية للبحث المفهرس.
- *
- * تُحسب هنا لا في `clean_mosques.py`: مشتقّة بالكامل من `nameNormalized`
- * الموجود أصلاً، فحسابها عند الاستيراد يُجنّب إعادة توليد 11 ميغابايت من
- * البيانات لأجل حقل مشتقّ. الكلمات القصيرة تُستبعد لأنها أدوات لا تُميّز.
- */
-function tokenize(...values) {
-  const words = values
-    .filter(Boolean)
-    .flatMap((value) => String(value).split(/\s+/))
-    .map((word) => word.trim())
-    .filter((word) => word.length >= 2);
-
-  return [...new Set(words)].slice(0, 12);
-}
 
 const args = process.argv.slice(2);
 const limit = args.includes('--limit') ? Number(args[args.indexOf('--limit') + 1]) : Infinity;
@@ -6684,7 +6708,8 @@ app/dist/
     "schema": "node scripts/apply_schema.js",
     "test": "node --test tests/*.test.js",
     "lint": "eslint cloud scripts tests --ext .js",
-    "test:integration": "node --test tests/integration/*.test.js"
+    "test:integration": "node --test tests/integration/*.test.js",
+    "seed:verify": "node scripts/seed_mosques.js --verify"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -8778,6 +8803,9 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 
+const { planIndexes, splitByKind } = require('../../scripts/lib/index-plan');
+const { tokenize } = require('../../scripts/lib/tokenize');
+
 const CLOUD_MAIN = path.join(__dirname, '..', '..', 'cloud', 'main.js');
 
 const APP_ID = 'masjidi-integration';
@@ -8911,10 +8939,18 @@ async function startStack() {
   return { Parse, serverURL, appId: APP_ID, masterKey: MASTER_KEY, stop };
 }
 
-/** تطبيق `cloud/schema.json` كما يفعل `scripts/apply_schema.js`. */
+/**
+ * تطبيق `cloud/schema.json` كما يفعل `scripts/apply_schema.js`.
+ *
+ * الفهارس تمرّ بـ`index-plan` نفسه الذي يستعمله السكربت: كانت هذه الدالة نسخةً
+ * مستقلّة فانحرفت — طبّقت الحقول والصلاحيات وأسقطت كتلة `indexes` كلّها، فكان
+ * اختبار التكامل يشهد لبيئةٍ ليست هي التي تُنشر.
+ * @returns {number} عدد الفهارس غير المكانية المطبَّقة
+ */
 async function applySchema(Parse) {
   const schema = JSON.parse(
     fs.readFileSync(path.join(__dirname, '..', '..', 'cloud', 'schema.json'), 'utf8'));
+  let indexed = 0;
 
   for (const definition of schema.classes) {
     const parseSchema = new Parse.Schema(definition.className);
@@ -8932,12 +8968,56 @@ async function applySchema(Parse) {
       else parseSchema[`add${spec.type}`](name, options);
     }
 
+    const { plain } = splitByKind(
+      planIndexes(definition.indexes, existing && existing.indexes));
+    for (const { name, spec } of plain) parseSchema.addIndex(name, spec);
+    indexed += plain.length;
+
     if (definition.classLevelPermissions) parseSchema.setCLP(definition.classLevelPermissions);
     existing ? await parseSchema.update() : await parseSchema.save();
+    // المكانيّ يُترك: يحتاج PostGIS، والقرب يعمل بدونه على `geo_box`
   }
+
+  return indexed;
 }
 
-module.exports = { startStack, applySchema, unavailableReason, APP_ID, MASTER_KEY, JS_KEY };
+/**
+ * استيراد مساجد حقيقية من بيانات الوزارة — لا مساجد مخترَعة.
+ *
+ * أسماء المساجد العُمانية لها بنيتها: «مصلى التدريب بعيدم»، «جامع السلطان
+ * قابوس». اختبارُ بحثٍ على «مسجد ١» و«مسجد ٢» يشهد لنفسه ولا يشهد للبحث.
+ */
+async function seedMosques(Parse, limit = 300) {
+  const file = path.join(__dirname, '..', '..', 'data', 'mosques.json');
+  const rows = JSON.parse(fs.readFileSync(file, 'utf8')).slice(0, limit);
+  const Mosque = Parse.Object.extend('Mosques');
+
+  for (let i = 0; i < rows.length; i += 100) {
+    const batch = rows.slice(i, i + 100).map((row) => {
+      const mosque = new Mosque();
+      mosque.set('externalId', row.externalId);
+      mosque.set('name', row.name);
+      mosque.set('nameNormalized', row.nameNormalized);
+      mosque.set('nameTokens', tokenize(row.nameNormalized, row.village));
+      mosque.set('governorate', row.governorate);
+      mosque.set('wilayat', row.wilayat);
+      mosque.set('village', row.village);
+      mosque.set('hasLocation', row.hasLocation);
+      if (row.location) {
+        mosque.set('lat', row.location.latitude);
+        mosque.set('lng', row.location.longitude);
+      }
+      return mosque;
+    });
+    await Parse.Object.saveAll(batch, { useMasterKey: true });
+  }
+
+  return rows.length;
+}
+
+module.exports = {
+  startStack, applySchema, seedMosques, unavailableReason, APP_ID, MASTER_KEY, JS_KEY,
+};
 ```
 
 #### `tests/integration/flow.test.js` — الرحلة الكاملة على خادم حقيقي
@@ -8981,10 +9061,16 @@ test('الرحلة الكاملة على خادم حقيقي', options, async (t
     return user;
   }
 
-  await t.test('المخطط يُطبَّق كاملاً', async () => {
-    await applySchema(Parse);
+  await t.test('المخطط يُطبَّق كاملاً — بفهارسه', async () => {
+    const indexed = await applySchema(Parse);
     const schema = await new Parse.Schema('AuditLog').get();
     assert.ok(schema.fields.action, 'AuditLog لم تُنشأ');
+
+    // كانت هذه الدالة تُسقط كتلة `indexes` كلّها، فيشهد الاختبار لبيئةٍ ليست
+    // هي التي تُنشر — والاستعلامات المضبوطة على الفهارس تمسح المجموعة
+    assert.ok(indexed >= 14, `طُبّق ${indexed} فهرساً فقط — راجع «جولة عاشرة»`);
+    assert.ok((await new Parse.Schema('Mosques').get()).indexes.name_tokens,
+      'فهرس الكلمات غائب — البحث المفهرس يمسح المجموعة');
   });
 
   // ⚠️ هذا ما فشل على أول خادم حقيقي: `isVerifiedContractor` له قيمة افتراضية

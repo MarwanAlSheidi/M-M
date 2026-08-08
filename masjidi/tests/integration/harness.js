@@ -16,6 +16,9 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 
+const { planIndexes, splitByKind } = require('../../scripts/lib/index-plan');
+const { tokenize } = require('../../scripts/lib/tokenize');
+
 const CLOUD_MAIN = path.join(__dirname, '..', '..', 'cloud', 'main.js');
 
 const APP_ID = 'masjidi-integration';
@@ -149,10 +152,18 @@ async function startStack() {
   return { Parse, serverURL, appId: APP_ID, masterKey: MASTER_KEY, stop };
 }
 
-/** تطبيق `cloud/schema.json` كما يفعل `scripts/apply_schema.js`. */
+/**
+ * تطبيق `cloud/schema.json` كما يفعل `scripts/apply_schema.js`.
+ *
+ * الفهارس تمرّ بـ`index-plan` نفسه الذي يستعمله السكربت: كانت هذه الدالة نسخةً
+ * مستقلّة فانحرفت — طبّقت الحقول والصلاحيات وأسقطت كتلة `indexes` كلّها، فكان
+ * اختبار التكامل يشهد لبيئةٍ ليست هي التي تُنشر.
+ * @returns {number} عدد الفهارس غير المكانية المطبَّقة
+ */
 async function applySchema(Parse) {
   const schema = JSON.parse(
     fs.readFileSync(path.join(__dirname, '..', '..', 'cloud', 'schema.json'), 'utf8'));
+  let indexed = 0;
 
   for (const definition of schema.classes) {
     const parseSchema = new Parse.Schema(definition.className);
@@ -170,9 +181,53 @@ async function applySchema(Parse) {
       else parseSchema[`add${spec.type}`](name, options);
     }
 
+    const { plain } = splitByKind(
+      planIndexes(definition.indexes, existing && existing.indexes));
+    for (const { name, spec } of plain) parseSchema.addIndex(name, spec);
+    indexed += plain.length;
+
     if (definition.classLevelPermissions) parseSchema.setCLP(definition.classLevelPermissions);
     existing ? await parseSchema.update() : await parseSchema.save();
+    // المكانيّ يُترك: يحتاج PostGIS، والقرب يعمل بدونه على `geo_box`
   }
+
+  return indexed;
 }
 
-module.exports = { startStack, applySchema, unavailableReason, APP_ID, MASTER_KEY, JS_KEY };
+/**
+ * استيراد مساجد حقيقية من بيانات الوزارة — لا مساجد مخترَعة.
+ *
+ * أسماء المساجد العُمانية لها بنيتها: «مصلى التدريب بعيدم»، «جامع السلطان
+ * قابوس». اختبارُ بحثٍ على «مسجد ١» و«مسجد ٢» يشهد لنفسه ولا يشهد للبحث.
+ */
+async function seedMosques(Parse, limit = 300) {
+  const file = path.join(__dirname, '..', '..', 'data', 'mosques.json');
+  const rows = JSON.parse(fs.readFileSync(file, 'utf8')).slice(0, limit);
+  const Mosque = Parse.Object.extend('Mosques');
+
+  for (let i = 0; i < rows.length; i += 100) {
+    const batch = rows.slice(i, i + 100).map((row) => {
+      const mosque = new Mosque();
+      mosque.set('externalId', row.externalId);
+      mosque.set('name', row.name);
+      mosque.set('nameNormalized', row.nameNormalized);
+      mosque.set('nameTokens', tokenize(row.nameNormalized, row.village));
+      mosque.set('governorate', row.governorate);
+      mosque.set('wilayat', row.wilayat);
+      mosque.set('village', row.village);
+      mosque.set('hasLocation', row.hasLocation);
+      if (row.location) {
+        mosque.set('lat', row.location.latitude);
+        mosque.set('lng', row.location.longitude);
+      }
+      return mosque;
+    });
+    await Parse.Object.saveAll(batch, { useMasterKey: true });
+  }
+
+  return rows.length;
+}
+
+module.exports = {
+  startStack, applySchema, seedMosques, unavailableReason, APP_ID, MASTER_KEY, JS_KEY,
+};

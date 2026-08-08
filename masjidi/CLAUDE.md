@@ -21,7 +21,7 @@
 | سكربت الاستيراد | ✅ شُغّل محلياً على 400 مسجداً. ❌ لم يُشغّل على الاستيراد الكامل |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسار التطوّع، القرب، خريطة جوجل (بمفتاح اختياري)، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 170 حالة على بديل Parse (`npm test`) + 7 اختبارات تكامل على `parse-server` حقيقي فوق PostgreSQL (`npm run test:integration`) |
+| الاختبارات | ✅ 170 حالة على بديل Parse (`npm test`) + 34 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`). ❌ لا اختبار متصفّح آلي |
 
 ## البنية
 
@@ -50,6 +50,7 @@ scripts/
   seed_mosques.js      استيراد إلى Parse (idempotent)
   apply_schema.js      تطبيق schema.json — الحقول والصلاحيات والفهارس
   lib/index-plan.js    تخطيط الفهارس الناقصة وفرز المكانيّ — تحت الاختبار
+  lib/tokenize.js      كلمات البحث — يشترك فيها الاستيراد واختبار التكامل
   build_single_file.py توليد cloud/main.bundle.js من ملفات cloud/
   build_single_doc.py  توليد MASJIDI.md من المستودع كله
 tests/
@@ -62,7 +63,12 @@ tests/
   schema.test.js       الصلاحيات، وتطابق النسختين المجزّأة والمدمجة
   indexes.test.js      تخطيط الفهارس وسلامة تعريفها في المخطط
   notifications.test.js صندوق الوارد: الوصول والخصوصية والتقليم
-  integration/         خادم parse-server حقيقي — `npm run test:integration`
+  integration/
+    harness.js         يُشغّل PostgreSQL وparse-server، ويطبّق المخطط ويستورد المساجد
+    flow.test.js       الرحلة كاملة: التسجيل والصلاحيات والـACL
+    search.test.js     البحث المفهرس على بيانات الوزارة — يرصد فروق المحوّل
+    limits.test.js     الحدود وسحب التكليف
+    inbox.test.js      صندوق الوارد بصفر Installation مسجَّل
 data/
   mosques.json         18,214 سجلاً جاهزاً
   cleaning_report.json تقرير جودة البيانات

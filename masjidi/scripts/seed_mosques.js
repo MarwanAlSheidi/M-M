@@ -15,26 +15,10 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const Parse = require('parse/node');
+const { tokenize } = require('./lib/tokenize');
 
 const BATCH_SIZE = 200; // Parse.Object.saveAll يتعامل داخلياً بدفعات — نبقيها معتدلة
 const DATA_FILE = path.join(__dirname, '..', 'data', 'mosques.json');
-
-/**
- * كلمات الاسم والقرية للبحث المفهرس.
- *
- * تُحسب هنا لا في `clean_mosques.py`: مشتقّة بالكامل من `nameNormalized`
- * الموجود أصلاً، فحسابها عند الاستيراد يُجنّب إعادة توليد 11 ميغابايت من
- * البيانات لأجل حقل مشتقّ. الكلمات القصيرة تُستبعد لأنها أدوات لا تُميّز.
- */
-function tokenize(...values) {
-  const words = values
-    .filter(Boolean)
-    .flatMap((value) => String(value).split(/\s+/))
-    .map((word) => word.trim())
-    .filter((word) => word.length >= 2);
-
-  return [...new Set(words)].slice(0, 12);
-}
 
 const args = process.argv.slice(2);
 const limit = args.includes('--limit') ? Number(args[args.indexOf('--limit') + 1]) : Infinity;
