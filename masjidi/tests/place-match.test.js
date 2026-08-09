@@ -16,6 +16,7 @@ const {
   chooseLocation, nameMatches, distinctiveWords, PLAUSIBLE_KM, TAKEN_KM,
 } = require('../scripts/lib/place-match');
 const { prepare } = require('../scripts/lib/mosque-record');
+const { parseOverpass, QUERY, MIN_SANE } = require('../scripts/resolve_locations');
 
 /** مساجد معلومة في الولاية — بها تُقاس معقولية المرشّح. */
 const KNOWN = [{ lat: 23.60, lng: 58.50 }, { lat: 23.62, lng: 58.52 }];
@@ -260,5 +261,66 @@ test('ترتيب المصادر في الاستيراد', async (t) => {
     const list = seed.match(/const IMPORT_SOURCES = \[(.*?)\];/);
     const sources = [...list[1].matchAll(/'([^']+)'/g)].map((hit) => hit[1]);
     assert.deepEqual(sources.sort(), ['ministry', 'osm']);
+  });
+});
+
+/**
+ * قراءة ردّ Overpass.
+ *
+ * **الشبكة محجوبة في بيئة تطوير هذا المستودع**، فلا سبيل إلى تشغيل `--fetch`
+ * هنا. وأكثرُ ما يُخطئ في مثل هذا شكلُ العنصر: `node` يحمل الإحداثيّ مباشرةً،
+ * و`way` و`relation` يحملانه في `center`. فيبقى خارج التغطية النقلُ وحده،
+ * لا فهمُ ما نُقل.
+ */
+test('قراءة ردّ Overpass', async (t) => {
+  await t.test('العقدة تحمل الإحداثيّ مباشرةً', () => {
+    assert.deepEqual(parseOverpass({
+      elements: [{ type: 'node', lat: 23.6, lon: 58.5, tags: { name: 'مسجد النور' } }],
+    }), [{ name: 'مسجد النور', lat: 23.6, lng: 58.5 }]);
+  });
+
+  await t.test('والمساحة والعلاقة تحملانه في `center`', () => {
+    const places = parseOverpass({
+      elements: [
+        { type: 'way', center: { lat: 23.61, lon: 58.51 }, tags: { name: 'جامع أ' } },
+        { type: 'relation', center: { lat: 23.62, lon: 58.52 }, tags: { name: 'جامع ب' } },
+      ],
+    });
+    assert.deepEqual(places.map((place) => place.lat), [23.61, 23.62]);
+    assert.deepEqual(places.map((place) => place.lng), [58.51, 58.52]);
+  });
+
+  await t.test('والاستعلام يطلب `out center` — وبدونه لا إحداثيّ لمساحة', () => {
+    // بلا هذه الكلمة يعود `way` بلا `center` فتسقط كل المساجد المرسومة مساحاتٍ
+    assert.match(QUERY, /out center/);
+  });
+
+  await t.test('و`name:ar` يُقدَّم على الاسم العامّ', () => {
+    const [place] = parseOverpass({
+      elements: [{ lat: 23.6, lon: 58.5, tags: { name: 'Al Noor Mosque', 'name:ar': 'مسجد النور' } }],
+    });
+    assert.equal(place.name, 'مسجد النور');
+  });
+
+  await t.test('وما لا اسم له أو لا إحداثيّ يُسقَط لا يُمرَّر', () => {
+    assert.deepEqual(parseOverpass({
+      elements: [
+        { lat: 23.6, lon: 58.5, tags: {} },                       // بلا اسم
+        { lat: 23.6, lon: 58.5 },                                 // بلا وسوم أصلاً
+        { tags: { name: 'مسجد بلا موضع' } },                       // بلا إحداثيّ
+        { type: 'way', tags: { name: 'مساحة بلا مركز' } },         // `out center` غاب
+        { lat: 999, lon: 58.5, tags: { name: 'خارج المدى' } },
+      ],
+    }), []);
+  });
+
+  await t.test('وردٌّ فارغ لا يرمي', () => {
+    assert.deepEqual(parseOverpass({}), []);
+    assert.deepEqual(parseOverpass({ elements: [] }), []);
+  });
+
+  await t.test('وحدُّ التصديق أكبر من صفر بكثير', () => {
+    // ردٌّ مبتورٌ فيه عشرُ نقاطٍ يُكتب فيُردّ الجميع في المطابقة بلا سببٍ ظاهر
+    assert.ok(MIN_SANE >= 100, `حدّ التصديق ${MIN_SANE} أضعفُ من أن يكشف ردّاً مبتوراً`);
   });
 });

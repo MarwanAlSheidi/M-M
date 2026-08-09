@@ -68,6 +68,31 @@ const median = (values) => {
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 
+/**
+ * ردُّ Overpass → نقاطٌ مُقلَّمة إلى ما نحتاجه: اسمٌ وإحداثيّ.
+ *
+ * منفصلةٌ عن التنزيل قصداً: **الشبكة محجوبة في بيئة تطوير هذا المستودع**، فلا
+ * سبيل إلى تشغيل `--fetch` هنا. وأكثرُ ما يُخطئ في مثل هذا هو شكلُ العنصر —
+ * فـ`node` يحمل `lat`/`lon` مباشرةً، و`way` و`relation` يحملانهما في `center`
+ * (ولا يحملانهما إطلاقاً بلا `out center`). فصارت هذه دالّةً نقيّةً تحت
+ * الاختبار، ليبقى خارج التغطية النقلُ وحده لا الفهم.
+ */
+function parseOverpass(body) {
+  return (body.elements || [])
+    .map((element) => {
+      const tags = element.tags || {};
+      const centre = element.center || {};
+      return {
+        // `name:ar` أدقّ حين يوجد: كثيرٌ من المساجد مسجَّلٌ بالإنجليزية أيضاً
+        name: tags['name:ar'] || tags.name || '',
+        lat: element.lat != null ? element.lat : centre.lat,
+        lng: element.lon != null ? element.lon : centre.lon,
+      };
+    })
+    // بلا اسمٍ لا مطابقة، وبلا إحداثيٍّ لا موقع — وكلاهما يقع في OSM
+    .filter((place) => place.name && geo.validCoordinates(place.lat, place.lng));
+}
+
 /** تنزيلٌ واحد، مُقلَّمٌ إلى ما نحتاجه: اسمٌ ونقطة. */
 async function download() {
   let lastError = null;
@@ -82,15 +107,7 @@ async function download() {
       });
       if (!response.ok) throw new Error(`ردّ ${response.status}`);
 
-      const body = await response.json();
-      const places = (body.elements || [])
-        .map((element) => ({
-          // `name:ar` أدقّ حين يوجد: كثيرٌ من المساجد مسجَّلٌ بالإنجليزية أيضاً
-          name: (element.tags && (element.tags['name:ar'] || element.tags.name)) || '',
-          lat: element.lat != null ? element.lat : element.center && element.center.lat,
-          lng: element.lon != null ? element.lon : element.center && element.center.lon,
-        }))
-        .filter((place) => place.name && geo.validCoordinates(place.lat, place.lng));
+      const places = parseOverpass(await response.json());
 
       console.log(`${places.length} مسجداً`);
       // ملفٌّ ناقصٌ أسوأ من لا ملفّ: المطابقة عليه تردّ الجميع بلا سببٍ ظاهر
@@ -246,7 +263,12 @@ async function main() {
   return match();
 }
 
-main().catch((error) => {
-  console.error('\n✗ فشل:', error.message);
-  process.exit(1);
-});
+// تُصدَّر للاختبار وحده — السكربت يعمل بالتشغيل المباشر لا بالاستيراد
+module.exports = { parseOverpass, candidatesByWilayat, QUERY, MIRRORS, MIN_SANE };
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error('\n✗ فشل:', error.message);
+    process.exit(1);
+  });
+}

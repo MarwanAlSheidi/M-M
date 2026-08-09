@@ -408,6 +408,18 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     });
   });
 
+  await t.test('ونسبةُ البيانات إلى أصحابها ظاهرةٌ على الشاشة', async () => {
+    // ليست تجميلاً: مواقعُ المساجد المستخرَجة من OpenStreetMap مرخَّصةٌ بـODbL،
+    // وهو **يشترط ذكر المصدر** عند الاستعمال العلنيّ. فالتزامٌ لا يصحّ أن يقوم
+    // على سطرٍ في الشيفرة لم يره أحدٌ يُعرَض.
+    await onScreen(salim, 'نسبة البيانات', async () => {
+      const shown = await salim.locator('main').innerText();
+      assert.match(shown, /OpenStreetMap/);
+      assert.match(shown, /ODbL/);
+      assert.match(shown, /وزارة الأوقاف/);
+    });
+  });
+
   /**
    * مسجدٌ بلا موقع، وإمامه يثبّته من عنده.
    *
