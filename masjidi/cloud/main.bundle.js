@@ -68,10 +68,23 @@ const ROLE_LABEL = {
  */
 const withLam = (label) => `ل${label.startsWith('ال') ? label.slice(1) : label}`;
 
-/** يتحقق من وجود جلسة صالحة ويعيد المستخدم. */
+/**
+ * يتحقق من وجود جلسة صالحة **ومن أن الحساب لم يُوقَف**، ويعيد المستخدم.
+ *
+ * `isActive` كان يُضبط عند التسجيل ولا يُقرأ إلا في تصفية من يصله بثُّ
+ * الإشعارات — أي أن إيقاف الحساب، وهو **الأداة الوحيدة** بيد الإدارة لكفّ
+ * مسيء، لم يكن يكفّ شيئاً: الموقوف ينشئ الطلبات ويسجّل الاهتمام ويتسلّم
+ * التكليف ويُبلّغ بالإنجاز كما كان.
+ *
+ * والشرط `=== false` لا `!isActive`: حسابٌ قديمٌ بلا الحقل ليس موقوفاً،
+ * **وغيابُ البيانات لا يُقرأ إدانةً.**
+ */
 function requireUser(request) {
   const user = request.user;
   if (!user) E.unauthenticated();
+  if (user.get('isActive') === false) {
+    E.forbidden('حسابك موقوف حالياً. راسل الإدارة إن كنت ترى ذلك خطأً.');
+  }
   return user;
 }
 
@@ -596,6 +609,22 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
   }
 
   if (user.isNew()) user.set('isActive', true);
+});
+
+/**
+ * الموقوف يُردّ عند الباب.
+ *
+ * `requireUser` يكفّه عن كل فعل، لكنه يدخل فيرى الشاشات ويصطدم بالمنع في كل
+ * ضغطة. والردُّ هنا أصدق وأرحم: **يُقال له مرّةً واحدة، عند المحاولة، بلا
+ * جلسةٍ تُفتح أصلاً.**
+ */
+Parse.Cloud.beforeLogin(async (request) => {
+  if (request.object.get('isActive') === false) {
+    throw new Parse.Error(
+      Parse.Error.OPERATION_FORBIDDEN,
+      'حسابك موقوف حالياً. راسل الإدارة إن كنت ترى ذلك خطأً.',
+    );
+  }
 });
 
 /**

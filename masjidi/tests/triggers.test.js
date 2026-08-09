@@ -133,3 +133,45 @@ test('المُشغّلات', async (t) => {
     }
   });
 });
+
+/**
+ * إيقاف الحساب — الأداة الوحيدة بيد الإدارة لكفّ مسيء.
+ *
+ * `isActive` كان يُضبط عند التسجيل ولا يُقرأ إلا في تصفية من يصله بثُّ
+ * الإشعارات. أي أن الموقوف كان ينشئ الطلبات ويسجّل الاهتمام ويتسلّم التكليف
+ * ويُبلّغ بالإنجاز كما كان — **والرايةُ زينة.**
+ */
+test('الحساب الموقوف', async (t) => {
+  const api = loadCloud('modular');
+  const as = (attributes) => ({ id: 'u_1', get: (key) => attributes[key] });
+
+  await t.test('يُردّ عند الباب فلا تُفتح له جلسة', async () => {
+    await assert.rejects(
+      () => api.trigger('beforeLogin:_User', { object: as({ isActive: false }) }),
+      /موقوف/,
+    );
+  });
+
+  await t.test('والنشِط يمرّ', async () => {
+    await api.trigger('beforeLogin:_User', { object: as({ isActive: true }) });
+  });
+
+  await t.test('وجلسةٌ قائمة لا تنفعه — كل فعلٍ يُكفّ', async () => {
+    // الإيقاف يقع والجلسة مفتوحة، فلا يُنتظر خروجُه ليُكفّ
+    const { error } = await api.call('getMyNotifications', {},
+      { user: as({ role: 'volunteer', isActive: false }) });
+    assert.match(error.message, /موقوف/);
+  });
+
+  await t.test('والنشِط يمرّ من الدوال كذلك', async () => {
+    const { error } = await api.call('getMyNotifications', {},
+      { user: as({ role: 'volunteer', isActive: true }) });
+    assert.equal(error, undefined);
+  });
+
+  await t.test('وحسابٌ قديمٌ بلا الحقل ليس موقوفاً — غيابُ البيانات لا يُدين', async () => {
+    const { error } = await api.call('getMyNotifications', {},
+      { user: as({ role: 'volunteer' }) });
+    assert.equal(error, undefined);
+  });
+});

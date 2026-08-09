@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 275 حالة على بديل Parse (`npm test`) + 90 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 23 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 281 حالة على بديل Parse (`npm test`) + 97 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 23 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -98,7 +98,10 @@
 13. الكود بالإنجليزية، التعليقات ورسائل المستخدم بالعربية الفصحى. **ورسائل
     Parse نفسه إنجليزية**، فتُترجَم في `messageOf` — والفصل بينها وبين رسائلنا
     **بالحرف لا بالكود**: كودٌ واحد يأتي من الطرفين (209 من الخادم ومن حارسنا).
-14. **الكود 209 يعني أن الجلسة زالت** — يُعالَج مركزياً في `api.js`: يُمحى
+14. **`isActive === false` يعني حساباً موقوفاً** — يُردّ عند الدخول
+    (`beforeLogin`) وعند كل فعلٍ بجلسةٍ قائمة (`requireUser`). والشرط
+    `=== false` لا `!isActive`: **غيابُ البيانات لا يُقرأ إدانةً.**
+15. **الكود 209 يعني أن الجلسة زالت** — يُعالَج مركزياً في `api.js`: يُمحى
     المحلّي ويُطلق `SESSION_EXPIRED`، فيعيد `App` شاشة الدخول. لا تلتقطه في
     شاشة، ولا تعرضه كخطأٍ عاديّ.
 
@@ -152,7 +155,7 @@ scripts/
   clean_mosques.py     Excel → JSON نظيف
   seed_mosques.js      استيراد إلى Parse (idempotent)
   apply_schema.js      تطبيق schema.json — الحقول والصلاحيات والفهارس
-  promote_admin.js     ترقية حساب إلى مشرف — بدونه لا تُعتمد طلبات الملكية
+  promote_admin.js     ترقية حساب إلى مشرف، وإيقاف حسابٍ وإعادته
   resolve_locations.js استخراج مواقع المساجد المجهولة من OpenStreetMap — مجاناً، ويكتب تراكباً لا قاعدة
   lib/place-match.js   قبول موقعٍ من الخرائط أو ردُّه — نتيجتُه مرشَّحٌ لا حقيقة
   lib/mosque-record.js تحضير السجلّ للاستيراد — المصدر الواحد للاستيراد والمِرقاة
@@ -183,6 +186,7 @@ tests/
     photos.test.js     رفع صورة حقيقية والتحقّق من محتواها وحارس المضيف
     limits.test.js     الحدود وسحب التكليف
     inbox.test.js      صندوق الوارد بصفر Installation مسجَّل
+    suspended.test.js  الحساب الموقوف: يُردّ عند الباب وعند كل فعل
     unlocated.test.js  فرصٌ في مساجد بلا إحداثيات — آخراً لا محذوفة، وفي محافظته
     proximity.test.js  البحث يرتّب بالأقرب — الموقع يميّز متطابقي الاسم
     claim.test.js      تأكيد الموقع عند التسجيل، وصفة مقدّم الطلب
@@ -1603,6 +1607,44 @@ PostgreSQL كاملاً وخادماً**. ستة معاً تُنهك الجها�
 
 ---
 
+### 🔴 الرايةُ زينة: إيقافُ الحساب لا يوقف شيئاً
+
+**كيف ظهر:** بمتابعة الفئة التي فتحها عطبُ الجلسة — **زوالُ شرطٍ كان قائماً**.
+والحالة الأولى في القائمة: مستخدمٌ يُوقَف حسابه.
+
+**السبب:** `isActive` يُضبط `true` عند التسجيل في `beforeSave`، ثم **لا يُقرأ
+في مكانٍ واحد** إلا تصفية من يصله بثُّ الإشعارات القريبة. لا `requireUser`
+يقرؤه، ولا `requireRole`، ولا دالّةٌ من الثلاثين.
+
+فالموقوف — وهو **الأداة الوحيدة** بيد الإدارة لكفّ مسيء — كان يدخل ويُنشئ
+الطلبات ويسجّل الاهتمام ويتسلّم التكليف ويُبلّغ بالإنجاز، ولا يُمنع من شيء إلا
+أن إشعارَ الفرص القريبة لا يصله. **رايةٌ تُرفع ولا تحجب.**
+
+**الإصلاح في موضعين، وكلاهما لازم:**
+
+- **`beforeLogin`** يردّه عند الباب فلا تُفتح له جلسة أصلاً — أصدقُ وأرحم من
+  أن يدخل ويصطدم بالمنع في كل ضغطة.
+- **`requireUser`** يكفّه عن كل فعل. فالإيقاف يقع **والجلسة مفتوحة**، ولو
+  انتُظر خروجُه ليُكفّ لبقي يعمل ما شاء حتى ينتهي رمزُه.
+
+**والشرط `=== false` لا `!isActive`.** حساباتٌ سجّلت قبل وجود الحقل لا تحمله،
+و`!undefined` صادقة — فكانت الصيغة المختصرة ستُقصيها كلَّها. **غيابُ البيانات
+لا يُقرأ إدانةً.**
+
+**ولا يكشفه البديل في الذاكرة:** `beforeLogin` لا يُشغّله إلا خادمٌ حقيقي عند
+تسجيل دخولٍ حقيقي، وجلسةٌ قائمة لموقوفٍ لا تُحاكى بكائن. فالاختبار على خادم.
+
+**ولأن الأداة لا تنفع إن لم يكن لها مقبض:** `promote_admin.js` صار يحمل
+`--suspend` و`--restore` و`--suspended`. وتركُ ذلك لتحرير حقلٍ يدوياً في لوحة
+Back4app يجعل كفَّ المسيء عرضةً لخطأ ضغطة.
+
+**والدرس:** حقلٌ يُكتب ولا يُقرأ ليس سياسةً بل نيّة. وقد رصدتُ من قبل في هذا
+المستودع حقولاً تُقرأ ولا تُكتب (`skills`، `governorate`)، وهذه نقيضها — ولم
+أكن أفتّش عنها. **فليكن السؤال قائماً في الاتجاهين: ما يُكتب هل يُقرأ؟ وما
+يُقرأ هل يُكتب؟**
+
+---
+
 ### 🟠 شرطٌ صدق طرفاه في لحظتين لم تجتمعا
 
 **العَرَض:** اختبار المتصفّح «التنبيهات تصل الإمام» يسقط مرّةً كل ثلاث تشغيلات،
@@ -2382,6 +2424,22 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
 });
 
 /**
+ * الموقوف يُردّ عند الباب.
+ *
+ * `requireUser` يكفّه عن كل فعل، لكنه يدخل فيرى الشاشات ويصطدم بالمنع في كل
+ * ضغطة. والردُّ هنا أصدق وأرحم: **يُقال له مرّةً واحدة، عند المحاولة، بلا
+ * جلسةٍ تُفتح أصلاً.**
+ */
+Parse.Cloud.beforeLogin(async (request) => {
+  if (request.object.get('isActive') === false) {
+    throw new Parse.Error(
+      Parse.Error.OPERATION_FORBIDDEN,
+      'حسابك موقوف حالياً. راسل الإدارة إن كنت ترى ذلك خطأً.',
+    );
+  }
+});
+
+/**
  * إقفال المستخدم الجديد على نفسه.
  *
  * الـ CLP وحده لا يكفي: افتراض Parse أن يمنح المستخدم الجديد قراءة عامة، فيصبح
@@ -2509,10 +2567,23 @@ const ROLE_LABEL = {
  */
 const withLam = (label) => `ل${label.startsWith('ال') ? label.slice(1) : label}`;
 
-/** يتحقق من وجود جلسة صالحة ويعيد المستخدم. */
+/**
+ * يتحقق من وجود جلسة صالحة **ومن أن الحساب لم يُوقَف**، ويعيد المستخدم.
+ *
+ * `isActive` كان يُضبط عند التسجيل ولا يُقرأ إلا في تصفية من يصله بثُّ
+ * الإشعارات — أي أن إيقاف الحساب، وهو **الأداة الوحيدة** بيد الإدارة لكفّ
+ * مسيء، لم يكن يكفّ شيئاً: الموقوف ينشئ الطلبات ويسجّل الاهتمام ويتسلّم
+ * التكليف ويُبلّغ بالإنجاز كما كان.
+ *
+ * والشرط `=== false` لا `!isActive`: حسابٌ قديمٌ بلا الحقل ليس موقوفاً،
+ * **وغيابُ البيانات لا يُقرأ إدانةً.**
+ */
 function requireUser(request) {
   const user = request.user;
   if (!user) E.unauthenticated();
+  if (user.get('isActive') === false) {
+    E.forbidden('حسابك موقوف حالياً. راسل الإدارة إن كنت ترى ذلك خطأً.');
+  }
   return user;
 }
 
@@ -5208,10 +5279,23 @@ const ROLE_LABEL = {
  */
 const withLam = (label) => `ل${label.startsWith('ال') ? label.slice(1) : label}`;
 
-/** يتحقق من وجود جلسة صالحة ويعيد المستخدم. */
+/**
+ * يتحقق من وجود جلسة صالحة **ومن أن الحساب لم يُوقَف**، ويعيد المستخدم.
+ *
+ * `isActive` كان يُضبط عند التسجيل ولا يُقرأ إلا في تصفية من يصله بثُّ
+ * الإشعارات — أي أن إيقاف الحساب، وهو **الأداة الوحيدة** بيد الإدارة لكفّ
+ * مسيء، لم يكن يكفّ شيئاً: الموقوف ينشئ الطلبات ويسجّل الاهتمام ويتسلّم
+ * التكليف ويُبلّغ بالإنجاز كما كان.
+ *
+ * والشرط `=== false` لا `!isActive`: حسابٌ قديمٌ بلا الحقل ليس موقوفاً،
+ * **وغيابُ البيانات لا يُقرأ إدانةً.**
+ */
 function requireUser(request) {
   const user = request.user;
   if (!user) E.unauthenticated();
+  if (user.get('isActive') === false) {
+    E.forbidden('حسابك موقوف حالياً. راسل الإدارة إن كنت ترى ذلك خطأً.');
+  }
   return user;
 }
 
@@ -5736,6 +5820,22 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
   }
 
   if (user.isNew()) user.set('isActive', true);
+});
+
+/**
+ * الموقوف يُردّ عند الباب.
+ *
+ * `requireUser` يكفّه عن كل فعل، لكنه يدخل فيرى الشاشات ويصطدم بالمنع في كل
+ * ضغطة. والردُّ هنا أصدق وأرحم: **يُقال له مرّةً واحدة، عند المحاولة، بلا
+ * جلسةٍ تُفتح أصلاً.**
+ */
+Parse.Cloud.beforeLogin(async (request) => {
+  if (request.object.get('isActive') === false) {
+    throw new Parse.Error(
+      Parse.Error.OPERATION_FORBIDDEN,
+      'حسابك موقوف حالياً. راسل الإدارة إن كنت ترى ذلك خطأً.',
+    );
+  }
 });
 
 /**
@@ -9436,6 +9536,8 @@ function createMock() {
       job: (name, handler) => { jobs[name] = handler; },
       beforeSave: (target, handler) => { triggers[triggerKey(target, 'beforeSave')] = handler; },
       afterSave: (target, handler) => { triggers[triggerKey(target, 'afterSave')] = handler; },
+      // `beforeLogin` بلا هدف — Parse يربطه بـ`_User` وحده
+      beforeLogin: (handler) => { triggers['beforeLogin:_User'] = handler; },
       httpRequest: async ({ method }) => (method === 'POST'
         ? { data: { data: { session_id: `sess_${++gateway.sessions}` } } }
         : {
@@ -9870,6 +9972,48 @@ test('المُشغّلات', async (t) => {
         (error) => error.code === api.ParseError.OPERATION_FORBIDDEN,
         `${className} مفتوحة للكتابة من العميل`);
     }
+  });
+});
+
+/**
+ * إيقاف الحساب — الأداة الوحيدة بيد الإدارة لكفّ مسيء.
+ *
+ * `isActive` كان يُضبط عند التسجيل ولا يُقرأ إلا في تصفية من يصله بثُّ
+ * الإشعارات. أي أن الموقوف كان ينشئ الطلبات ويسجّل الاهتمام ويتسلّم التكليف
+ * ويُبلّغ بالإنجاز كما كان — **والرايةُ زينة.**
+ */
+test('الحساب الموقوف', async (t) => {
+  const api = loadCloud('modular');
+  const as = (attributes) => ({ id: 'u_1', get: (key) => attributes[key] });
+
+  await t.test('يُردّ عند الباب فلا تُفتح له جلسة', async () => {
+    await assert.rejects(
+      () => api.trigger('beforeLogin:_User', { object: as({ isActive: false }) }),
+      /موقوف/,
+    );
+  });
+
+  await t.test('والنشِط يمرّ', async () => {
+    await api.trigger('beforeLogin:_User', { object: as({ isActive: true }) });
+  });
+
+  await t.test('وجلسةٌ قائمة لا تنفعه — كل فعلٍ يُكفّ', async () => {
+    // الإيقاف يقع والجلسة مفتوحة، فلا يُنتظر خروجُه ليُكفّ
+    const { error } = await api.call('getMyNotifications', {},
+      { user: as({ role: 'volunteer', isActive: false }) });
+    assert.match(error.message, /موقوف/);
+  });
+
+  await t.test('والنشِط يمرّ من الدوال كذلك', async () => {
+    const { error } = await api.call('getMyNotifications', {},
+      { user: as({ role: 'volunteer', isActive: true }) });
+    assert.equal(error, undefined);
+  });
+
+  await t.test('وحسابٌ قديمٌ بلا الحقل ليس موقوفاً — غيابُ البيانات لا يُدين', async () => {
+    const { error } = await api.call('getMyNotifications', {},
+      { user: as({ role: 'volunteer' }) });
+    assert.equal(error, undefined);
   });
 });
 ```
@@ -11293,7 +11437,7 @@ test('نقاط الدخول', async (t) => {
   ];
 
   const EXPECTED_TRIGGERS = [
-    'beforeSave:_User', 'afterSave:_User', 'beforeSave:Mosques',
+    'beforeSave:_User', 'afterSave:_User', 'beforeLogin:_User', 'beforeSave:Mosques',
     'beforeSave:ServiceRequests', 'beforeSave:Transactions',
     'afterSave:ServiceRequests',
   ];

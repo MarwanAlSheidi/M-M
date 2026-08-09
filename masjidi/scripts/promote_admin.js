@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ترقية حسابٍ قائم إلى `admin`.
+ * إدارة الحسابات بالمفتاح الرئيسي: الترقية إلى `admin`، وإيقاف حسابٍ وإعادته.
  *
  * **بدون هذا لا تعمل المنصّة أصلاً على خادمٍ جديد:** الأئمة يسجّلون ويطلبون
  * ملكية مساجدهم، وطلباتهم تبقى `pending` إلى الأبد لأن اعتمادها يحتاج مشرفاً
@@ -13,6 +13,13 @@
  *   node scripts/promote_admin.js --username abu_salim
  *   node scripts/promote_admin.js --username abu_salim --demote   # إلغاء الترقية
  *   node scripts/promote_admin.js --list                          # من هم المشرفون
+ *
+ * والإيقاف كذلك من هنا: هو الأداة الوحيدة بيد الإدارة لكفّ مسيء، وتركُه
+ * لتحرير الحقل يدوياً في لوحة Back4app يجعله عرضةً لخطأ ضغطة.
+ *
+ *   node scripts/promote_admin.js --username abu_salim --suspend
+ *   node scripts/promote_admin.js --username abu_salim --restore
+ *   node scripts/promote_admin.js --suspended                     # من هم الموقوفون
  */
 
 require('dotenv').config();
@@ -49,11 +56,30 @@ async function listAdmins() {
   }
 }
 
+async function listSuspended() {
+  const stopped = await new Parse.Query(Parse.User)
+    .equalTo('isActive', false).limit(100).find({ useMasterKey: true });
+
+  if (stopped.length === 0) {
+    console.log('لا حساب موقوف.');
+    return;
+  }
+  console.log(`الموقوفون (${stopped.length}):`);
+  for (const user of stopped) {
+    console.log(`  ${user.get('username')}  ${user.get('fullName') || ''}  (${user.get('role')})`);
+  }
+}
+
 async function main() {
   initParse();
 
   if (has('list')) {
     await listAdmins();
+    return;
+  }
+
+  if (has('suspended')) {
+    await listSuspended();
     return;
   }
 
@@ -69,6 +95,26 @@ async function main() {
   if (!user) {
     console.error(`✗ لا حساب باسم «${username}». على صاحبه أن يسجّل من التطبيق أولاً.`);
     process.exit(1);
+  }
+
+  /**
+   * الإيقاف والإعادة — قبل الترقية، فهما فعلٌ مستقلّ عنها.
+   *
+   * والموقوف يُردّ عند الدخول (`beforeLogin`) وعند كل فعلٍ بجلسةٍ قائمة
+   * (`requireUser`)، فلا يحتاج الإيقافُ إلى إخراجه أوّلاً.
+   */
+  if (has('suspend') || has('restore')) {
+    const stop = has('suspend');
+    if (user.get('isActive') === !stop) {
+      console.log(`✓ «${username}» ${stop ? 'موقوف أصلاً' : 'نشِطٌ أصلاً'} — لا تغيير.`);
+      return;
+    }
+    user.set('isActive', !stop);
+    await user.save(null, { useMasterKey: true });
+    console.log(stop
+      ? `✓ أُوقف «${username}» — لا يدخل ولا يفعل شيئاً حتى تُعاد إتاحته.`
+      : `✓ أُعيدت إتاحة «${username}».`);
+    return;
   }
 
   const demote = has('demote');

@@ -38,6 +38,22 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
 });
 
 /**
+ * الموقوف يُردّ عند الباب.
+ *
+ * `requireUser` يكفّه عن كل فعل، لكنه يدخل فيرى الشاشات ويصطدم بالمنع في كل
+ * ضغطة. والردُّ هنا أصدق وأرحم: **يُقال له مرّةً واحدة، عند المحاولة، بلا
+ * جلسةٍ تُفتح أصلاً.**
+ */
+Parse.Cloud.beforeLogin(async (request) => {
+  if (request.object.get('isActive') === false) {
+    throw new Parse.Error(
+      Parse.Error.OPERATION_FORBIDDEN,
+      'حسابك موقوف حالياً. راسل الإدارة إن كنت ترى ذلك خطأً.',
+    );
+  }
+});
+
+/**
  * إقفال المستخدم الجديد على نفسه.
  *
  * الـ CLP وحده لا يكفي: افتراض Parse أن يمنح المستخدم الجديد قراءة عامة، فيصبح

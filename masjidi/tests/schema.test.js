@@ -92,7 +92,7 @@ test('نقاط الدخول', async (t) => {
   ];
 
   const EXPECTED_TRIGGERS = [
-    'beforeSave:_User', 'afterSave:_User', 'beforeSave:Mosques',
+    'beforeSave:_User', 'afterSave:_User', 'beforeLogin:_User', 'beforeSave:Mosques',
     'beforeSave:ServiceRequests', 'beforeSave:Transactions',
     'afterSave:ServiceRequests',
   ];
