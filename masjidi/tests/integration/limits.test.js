@@ -141,6 +141,24 @@ test('الحدود وسحب التكليف على خادم حقيقي', options,
     assert.equal(salim.phone, undefined, 'الهاتف لا يُكشف قبل التكليف');
   });
 
+  /**
+   * السجلّ يُظهر الوصول ويُخفي الانصراف.
+   *
+   * `interest_expressed` يُقيَّد بمسجده، و`interest_withdrawn` كان يُقيَّد بلا
+   * مسجد — و`getMosqueAuditTrail` تستعلم بالمسجد وهي القارئ الوحيد. فيقرأ
+   * الإمام في سجلّ مسجده خمسةَ اهتماماتٍ سُجّلت ولا يرى أن أربعةً منها سُحبت:
+   * **عددٌ صحيحٌ في كل سطرٍ منه، وخبرٌ كاذبٌ في مجموعه.**
+   */
+  await t.test('وسحبُ الاهتمام يبلغ سجلّ المسجد كما بلغه تسجيلُه', async () => {
+    // `requests[4]` من مساجد الأوّل، وعليه وقع السحب في الاختبار قبله
+    const trail = await as(imam, 'getMosqueAuditTrail', { mosqueId: mosques[0].id, limit: 100 });
+    const count = (action) => trail.filter((entry) => entry.action === action).length;
+
+    assert.ok(count('interest_expressed') > 0, 'المسح لا يصل — لا تسجيل في السجلّ أصلاً');
+    assert.ok(count('interest_withdrawn') > 0,
+      'سُحبت اهتماماتٌ ولا أثر لها في سجلّ المسجد — والسجلّ يُقرأ عدداً ليس عدده');
+  });
+
   await t.test('المنفّذ ينسحب بنفسه بلا أن يُقيَّد عليه', async () => {
     const before = await field(volunteer, 'abandonedJobs');
     const result = await as(volunteer, 'releaseAssignment', { requestId: requests[1].objectId });

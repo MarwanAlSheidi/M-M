@@ -30,8 +30,75 @@ Parse.Cloud.define('listPendingContractors', async (request) => {
     crNumber: contractor.get('crNumber'), // السجل التجاري — أساس الاعتماد
     phone: contractor.get('phone'),
     createdAt: contractor.get('createdAt'),
+    // مسحوبةُ الاعتماد تعود إلى هذا الطابور، فتُشبه من لم يُراجَع قطّ.
+    // والمشرف قد يعتمد اليوم من سحب اعتماده أمسِ وهو لا يدري.
+    previouslyReviewed: Boolean(contractor.get('contractorReviewedAt')),
+    reviewedAt: contractor.get('contractorReviewedAt') || null,
   }));
 });
+
+/**
+ * حال اعتماد الشركة: `verified` أو `pending` أو `revoked` — و`null` لغيرها.
+ *
+ * `isVerifiedContractor` وحدها لا تفرّق بين من لم يُراجَع بعدُ ومن رُوجع فسُحب
+ * اعتماده، وكلاهما `false`. فكان يُقال للثاني «حسابكم بانتظار اعتماد الإدارة»
+ * وهو انتظارٌ لا يأتي: قرارُه صدر، وليس عليه إلا مراسلة الإدارة.
+ */
+function contractorStatusOf(user) {
+  if (user.get('role') !== 'contractor') return null;
+  if (user.get('isVerifiedContractor')) return 'verified';
+  return user.get('contractorReviewedAt') ? 'revoked' : 'pending';
+}
+
+/** أعمالٌ قائمة: ما لم يُعتمد بعد. السحب يمسّ أصحابها لا الشركة وحدها. */
+const LIVE_STATUSES = ['assigned', 'in_progress', 'pending_imam_approval'];
+
+/**
+ * إبلاغ أئمّة المساجد التي عند الشركة فيها عملٌ قائم.
+ *
+ * سحبُ الاعتماد كان يقع في صمت: يُبلَّغ به المسحوب منه وحده، ويبقى إمامُ
+ * المسجد — وهو من يتحمّل نتيجة عملٍ يجري في مسجده — لا يعلم. والمشرف يظنّ
+ * أنه أوقف شيئاً ولا يُعاد إليه ما أوقف.
+ *
+ * ولا يُسحب التكليف تلقائياً: عملٌ قد يكون نصفَ منجَز، وإسقاطه بلا معاينةٍ
+ * يُضيّع جهداً بُذل في المسجد. تُعطى البيّنة ويبقى القرار للإمام — وله
+ * `releaseAssignment` قبل بدء التنفيذ.
+ */
+async function warnImamsOfSuspension(contractor, admin) {
+  const live = await new Parse.Query('ServiceRequests')
+    .equalTo('assignedContractorId', contractor)
+    .containedIn('status', LIVE_STATUSES)
+    .include('mosqueId')
+    .limit(100)
+    .find({ useMasterKey: true });
+
+  const company = contractor.get('companyName') || contractor.get('fullName') || 'الشركة المكلَّفة';
+
+  for (const serviceRequest of live) {
+    const mosque = serviceRequest.get('mosqueId');
+    if (!mosque) continue;
+
+    // القيد على المسجد ليُقرأ في سجلّه — لا على الشركة حيث لا قارئ له
+    await audit.record({
+      action: audit.ACTIONS.CONTRACTOR_SUSPENDED,
+      target: serviceRequest,
+      mosque,
+      actor: admin,
+      note: `${company} — "${serviceRequest.get('title')}"`,
+    });
+
+    const imam = mosque.get('imamId');
+    if (imam) {
+      await pushToUsers(imam, {
+        alert: `سُحب اعتماد ${company} المكلَّفة بـ "${serviceRequest.get('title')}" `
+          + `في ${mosque.get('name')}. عاين العمل، ولك سحب التكليف إن لم يبدأ.`,
+        requestId: serviceRequest.id,
+      });
+    }
+  }
+
+  return live.length;
+}
 
 /** اعتماد شركة أو سحب اعتمادها — مشرف فقط. */
 Parse.Cloud.define('reviewContractor', async (request) => {
@@ -51,6 +118,10 @@ Parse.Cloud.define('reviewContractor', async (request) => {
   }
 
   contractor.set('isVerifiedContractor', verified);
+  // يميّز المسحوب اعتمادُه ممّن لم يُراجَع بعد — وهما في `isVerifiedContractor`
+  // سواء. وبلا هذا التمييز يُقال للأوّل «بانتظار اعتماد الإدارة» وهو خبرٌ
+  // غير صحيح، ويعود إلى طابور المنتظرين كأنه لم يُراجَع قطّ.
+  contractor.set('contractorReviewedAt', new Date());
   await contractor.save(null, { useMasterKey: true });
 
   await audit.record({
@@ -60,11 +131,15 @@ Parse.Cloud.define('reviewContractor', async (request) => {
     toStatus: verified ? 'verified' : 'unverified',
   });
 
+  const affectedRequests = verified ? 0 : await warnImamsOfSuspension(contractor, admin);
+
   await pushToUsers(contractor, {
     alert: verified ? 'تم اعتماد شركتكم في منصة مسجدي.' : 'أُوقف اعتماد شركتكم مؤقتاً.',
   });
 
-  return { isVerifiedContractor: verified };
+  // يُعاد إلى المشرف ما ترتّب على فعله: سحبٌ يمسّ ثلاثة أعمالٍ قائمة ليس
+  // كسحبٍ لا يمسّ شيئاً، ولا يعرف الفرقَ إلا إن قيل له
+  return { isVerifiedContractor: verified, affectedRequests };
 });
 
 /**
@@ -182,6 +257,9 @@ Parse.Cloud.define('getMyProfile', async (request) => {
     companyName: user.get('companyName'),
     crNumber: user.get('crNumber'),
     isVerifiedContractor: Boolean(user.get('isVerifiedContractor')),
+    // ثلاث حالاتٍ لا اثنتان: معتمدة، ولم تُراجَع بعد، وسُحب اعتمادها.
+    // والحساب يُشتقّ هنا لا في الواجهة — الشرط واحدٌ فليكن في موضعٍ واحد.
+    contractorStatus: contractorStatusOf(user),
     completedJobs: user.get('completedJobs') || 0,
     avgRating: user.get('avgRating'),
     favoriteMosqueId: favorite ? favorite.id : null,

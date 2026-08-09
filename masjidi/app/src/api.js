@@ -65,6 +65,7 @@ export const AUDIT_LABEL = {
   request_cancelled: 'أُلغي الطلب',
   claim_reviewed: 'روجعت ملكية المسجد',
   contractor_reviewed: 'روجع اعتماد شركة',
+  contractor_suspended: 'سُحب اعتماد الشركة المكلَّفة بالعمل',
   donation_captured: 'قُيّد تبرّع',
   donation_expired: 'انتهت مهلة تبرّع',
   donation_refunded: 'استُرد تبرّع',

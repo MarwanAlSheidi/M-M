@@ -10,6 +10,12 @@ import { daysSince, sinceLabel } from './time';
  */
 const STALE_ASSIGNED_DAYS = 7;
 
+/** حال اعتماد الشركة كما يشتقّه الخادم — ثلاثٌ لا اثنتان. */
+const CONTRACTOR_LABEL = {
+  verified: 'معتمدة', pending: 'بانتظار المراجعة', revoked: 'سُحب الاعتماد',
+};
+const CONTRACTOR_TAG = { verified: 'done', pending: 'warn', revoked: 'off' };
+
 /* ————— لبنات مشتركة ————— */
 
 let fieldSeq = 0;
@@ -636,7 +642,9 @@ function ReportWork({ request, onDone }) {
 export function MyTasks() {
   const isVolunteer = api.currentRole() === 'volunteer';
   const profile = useList(async () => [await api.getMyProfile()]);
-  const pending = profile.rows[0] && profile.rows[0].isVerifiedContractor === false;
+  // ثلاث حالات لا اثنتان: «بانتظار المراجعة» تُقال لمن لم يُراجَع بعد، ولا
+  // تُقال لمن رُوجع فسُحب اعتماده — انتظارُه لا يأتي، وقرارُه قد صدر.
+  const contractorStatus = profile.rows[0] && profile.rows[0].contractorStatus;
   // الاستدعاء لا يُشترط: `getMyInterests` مقصورة على المتطوّعين فتردّ الشركة
   const interests = useList(async () => (isVolunteer ? api.getMyInterests() : []));
   const tasks = useList(api.assignedToMe);
@@ -659,10 +667,20 @@ export function MyTasks() {
       {error && <div className="error">{error}</div>}
 
       {/* الشركة غير المعتمدة كانت ترى قائمة فارغة إلى الأبد بلا سبب معروف */}
-      {!isVolunteer && pending && (
+      {contractorStatus === 'pending' && (
         <div className="notice">
           حسابكم بانتظار اعتماد الإدارة للسجل التجاري. لا تُسنَد إليكم أعمال
           قبل الاعتماد.
+        </div>
+      )}
+      {/*
+        وكانت هذه تقرأ «بانتظار الاعتماد» أيضاً، وتحتها الأعمالُ المكلَّفة
+        معروضة — فالشاشة تناقض نفسها، وتَعِد بانتظارٍ لا يأتي.
+      */}
+      {contractorStatus === 'revoked' && (
+        <div className="error" data-testid="contractor-revoked">
+          سُحب اعتماد شركتكم. ما بدأتموه من عملٍ تُبلّغون بإنجازه، ولا يُبدأ
+          عملٌ جديد — راسلوا الإدارة.
         </div>
       )}
 
@@ -1323,6 +1341,16 @@ export function AdminHome() {
             <article className="card" key={row.id}>
               <h3>{row.companyName || row.fullName}</h3>
               <p>السجل التجاري: {row.crNumber || '— غير مُدخَل'}</p>
+              {/*
+                المسحوب اعتمادها تعود إلى هذا الطابور كأنها لم تُراجَع قطّ،
+                فيعتمد المشرف اليوم من سحب اعتماده أمسِ وهو لا يدري.
+              */}
+              {row.previouslyReviewed && (
+                <p className="warn">
+                  سُبق أن رُوجعت وسُحب اعتمادها
+                  {row.reviewedAt ? ` ${sinceLabel(row.reviewedAt)}` : ''}.
+                </p>
+              )}
               <div className="row">
                 <button onClick={() => review(row.id, true)}>اعتماد</button>
                 <button className="ghost" onClick={() => review(row.id, false)}>رفض</button>
@@ -1421,8 +1449,8 @@ export function Profile({ onLogOut }) {
               <p>السجل التجاري: {profile.crNumber || '— غير مُدخَل، راسل الإدارة'}</p>
               <p>
                 الاعتماد:{' '}
-                <span className={`tag ${profile.isVerifiedContractor ? 'done' : 'warn'}`}>
-                  {profile.isVerifiedContractor ? 'معتمدة' : 'بانتظار المراجعة'}
+                <span className={`tag ${CONTRACTOR_TAG[profile.contractorStatus] || 'warn'}`}>
+                  {CONTRACTOR_LABEL[profile.contractorStatus] || 'بانتظار المراجعة'}
                 </span>
               </p>
               <p>أعمال منجزة: {profile.completedJobs}</p>

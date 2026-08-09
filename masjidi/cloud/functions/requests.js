@@ -232,9 +232,16 @@ Parse.Cloud.define('withdrawInterest', async (request) => {
   interest.set('status', 'withdrawn');
   await interest.save(null, { useMasterKey: true });
 
+  // بلا المسجد لا يبلغ القيدُ عيناً: `getMosqueAuditTrail` تستعلم بالمسجد وهي
+  // القارئ الوحيد. وكان نظيرُه `interest_expressed` يُقيَّد بمسجده — فالسجلّ
+  // يُظهر كلّ من سجّل اهتمامه ويُخفي من انصرف، **فيُقرأ عدداً ليس عدده.**
+  const stored = await new Parse.Query('ServiceRequests')
+    .get(requestId, { useMasterKey: true }).catch(() => null);
+
   await audit.record({
     action: audit.ACTIONS.INTEREST_WITHDRAWN,
     target: interest,
+    mosque: stored ? stored.get('mosqueId') : null,
     actor: volunteer,
   });
 
@@ -486,11 +493,24 @@ Parse.Cloud.define('releaseAssignment', async (request) => {
   return { status: backTo, noShowRecorded: noShow };
 });
 
-/** المنفّذ يبدأ العمل. */
+/**
+ * المنفّذ يبدأ العمل.
+ *
+ * الاعتماد يُفحص هنا ثانيةً لا في `assignWorker` وحدها: الشرط الذي يُفحص مرّةً
+ * عند الدخول ثم يُنسى ليس شرطاً. شركةٌ سُحب اعتمادها بعد تكليفها لا تبدأ عملاً
+ * جديداً في مسجد — والطلب يبقى `assigned` فيملك الإمام سحبه.
+ *
+ * ولا يُمنع `markWorkDone` بالمثل: عملٌ بدأ في المسجد فعلاً، ومنعُ الإبلاغ عنه
+ * يترك الطلب معلّقاً بلا صورةٍ ولا ملاحظة ويُضيّع على الإمام معاينة ما أُنجز.
+ * **يُمنع الابتداء لا يُقطع الطريق على البيّنة.**
+ */
 Parse.Cloud.define('startWork', async (request) => {
   const user = requireRole(request, 'volunteer', 'contractor');
   const serviceRequest = await loadAssignedRequest(request.params.requestId, user);
 
+  if (user.get('role') === 'contractor' && !user.get('isVerifiedContractor')) {
+    E.forbidden('سُحب اعتماد شركتكم، فلا يُبدأ عملٌ جديد. راسلوا الإدارة.');
+  }
   if (serviceRequest.get('status') !== STATUS.ASSIGNED) E.invalid('الطلب ليس في حالة تكليف.');
   serviceRequest.set('status', STATUS.IN_PROGRESS);
   serviceRequest.set('startedAt', new Date());

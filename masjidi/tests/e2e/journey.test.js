@@ -437,8 +437,9 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
 
   // من يسجّل بصفةٍ لا يستطيع بها شيئاً ينصرف — والشركة كانت ترى قائمةً فارغة
   // إلى الأبد بلا سبب، والمشرف يرى «السجل التجاري: غير مُدخَل» بلا ما يتحقّق منه
+  let company;
   await t.test('الشركة تُخبَر بأنها بانتظار الاعتماد، وبياناتها تصل المشرف', async () => {
-    const company = await browser.newUserPage();
+    company = await browser.newUserPage();
     await onScreen(company, 'الشركة تُخبَر بأنها بانتظار الاعتماد', async () => {
       await company.goto(site.url, { waitUntil: 'networkidle' });
       await company.getByRole('button', { name: /سجّل الآن/ }).click();
@@ -463,6 +464,34 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       const card = await company.locator('.card').innerText();
       assert.match(card, /1234567/, 'السجل التجاري لم يُحفظ عند التسجيل');
       assert.match(card, /بانتظار المراجعة/);
+    });
+  });
+
+  /**
+   * ومن سُحب اعتماده ليس كمن لم يُراجَع بعد.
+   *
+   * `isVerifiedContractor` وحدها لا تفرّق بينهما — كلاهما `false` — فكانت
+   * الشاشة تقول للمسحوب اعتمادُه «حسابكم بانتظار اعتماد الإدارة»: انتظارٌ لا
+   * يأتي، وقرارُه قد صدر. والخبر الكاذب أسوأ من الصمت.
+   */
+  await t.test('والمسحوب اعتمادها يُقال لها ذلك لا «بانتظار المراجعة»', async () => {
+    const account = await new stack.Parse.Query(stack.Parse.User)
+      .equalTo('username', `co_${stamp}`).first({ useMasterKey: true });
+    account.set({ isVerifiedContractor: false, contractorReviewedAt: new Date() });
+    await account.save(null, { useMasterKey: true });
+
+    await onScreen(company, 'والمسحوب اعتمادها يُقال لها ذلك', async () => {
+      await company.reload({ waitUntil: 'networkidle' });
+      await company.getByRole('button', { name: 'مهامّي' }).click();
+      await company.waitForSelector('[data-testid="contractor-revoked"]');
+      const text = await company.locator('main').innerText();
+      assert.match(text, /سُحب اعتماد شركتكم/);
+      assert.doesNotMatch(text, /بانتظار اعتماد الإدارة/,
+        'قيل لمن صدر قرارُه إنه ينتظر — وهو انتظارٌ لا يأتي');
+
+      await company.getByRole('button', { name: 'حسابي' }).click();
+      await company.waitForSelector('.card');
+      assert.match(await company.locator('.card').innerText(), /سُحب الاعتماد/);
     });
   });
 

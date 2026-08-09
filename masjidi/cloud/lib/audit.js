@@ -33,6 +33,10 @@ const ACTIONS = {
   LOCATION_LEARNED: 'location_learned',
   LOCATION_CORRECTED: 'location_corrected',
   CONTRACTOR_REVIEWED: 'contractor_reviewed',
+  // مقيَّدٌ على المسجد لا على الشركة: `contractor_reviewed` بلا `mosqueId`،
+  // و`getMosqueAuditTrail` هي القارئ الوحيد وتستعلم بالمسجد — فقيدٌ بلا مسجد
+  // لا يبلغ عيناً أبداً ثم يحذفه التقليم بعد 180 يوماً.
+  CONTRACTOR_SUSPENDED: 'contractor_suspended',
   DONATION_REFUNDED: 'donation_refunded',
 };
 

@@ -543,6 +543,9 @@
           "type": "Boolean",
           "defaultValue": false
         },
+        "contractorReviewedAt": {
+          "type": "Date"
+        },
         "companyName": {
           "type": "String"
         },
