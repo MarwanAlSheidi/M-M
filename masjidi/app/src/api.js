@@ -232,6 +232,11 @@ async function listRequests(build) {
       workerNotes: row.get('workerNotes'),
       completionPhotos: row.get('completionPhotos') || [],
       createdAt: row.get('createdAt'),
+      // متى كُلِّف ومتى بدأ. كانا يُكتبان على الخادم ولا يُقرآن في أي موضع،
+      // فطلبٌ مكلَّفٌ منذ يومٍ وآخرُ منذ ثلاثة أشهر يظهران للإمام سواءً — وهو
+      // يقرّر بينهما سحبَ تكليفٍ يُقيَّد غياباً على المنفّذ.
+      assignedAt: row.get('assignedAt') || null,
+      startedAt: row.get('startedAt') || null,
       mosqueId: mosque ? mosque.id : null,
       mosqueName: mosque ? mosque.get('name') : null,
       wilayat: mosque ? mosque.get('wilayat') : null,

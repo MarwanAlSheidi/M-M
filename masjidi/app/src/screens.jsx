@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as api from './api';
 import { MAPS_KEY, VIEWS, loadGoogleMaps } from './maps';
+import { daysSince, sinceLabel } from './time';
+
+/**
+ * بعدها يُنبَّه الإمام إلى طول انتظاره — تقديريٌّ يُراجَع بعد أول موسم تشغيل،
+ * كحدّي الاهتمامات والتكليفات. ولا يمنع شيئاً ولا يسحب تكليفاً من تلقائه:
+ * الغياب مرّةً له أسبابه، والقرار للإمام وحده كما هو في سائر المنصّة.
+ */
+const STALE_ASSIGNED_DAYS = 7;
 
 /* ————— لبنات مشتركة ————— */
 
@@ -688,6 +696,15 @@ export function MyTasks() {
               {row.mosqueLat == null && (
                 <p className="hint">موقع هذا المسجد غير مسجَّل — اهتدِ بالولاية والقرية أعلاه.</p>
               )}
+              {/*
+                نظيرُ ما يراه الإمام، وموجَّهٌ إلى من عليه الفعل: من يُقيَّد عليه
+                الغياب أولى الناس بأن يرى كم مضى قبل أن يُقيَّد عليه.
+              */}
+              {row.status === 'assigned' && sinceLabel(row.assignedAt) && (
+                <p className={daysSince(row.assignedAt) >= STALE_ASSIGNED_DAYS ? 'warn' : 'hint'}>
+                  كُلِّفت به {sinceLabel(row.assignedAt)} ولم تبدأ بعد.
+                </p>
+              )}
               {row.status === 'assigned' && (
                 <div className="row">
                   <button onClick={() => act(api.startWork, row.id)}>بدأت العمل</button>
@@ -993,6 +1010,11 @@ function RequestDetail({ request, onBack }) {
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
 
+  // الصفحة تُركَّب مع كل دخول، فالمدّة محسوبةٌ من وقت الجلب لا مخزّنة
+  const waited = daysSince(request.assignedAt);
+  const assignedLabel = sinceLabel(request.assignedAt);
+  const startedLabel = sinceLabel(request.startedAt);
+
   async function act(action, ...args) {
     setError('');
     try {
@@ -1050,9 +1072,19 @@ function RequestDetail({ request, onBack }) {
       {status === 'assigned' && (
         <>
           <h2>بانتظار المنفّذ</h2>
-          <p className="notice">
-            كُلِّف المنفّذ ولمّا يبدأ بعد. إن لم يحضر فاسحب التكليف ليعود الطلب
-            متاحاً لغيره — لا حاجة إلى إلغائه وإنشاء طلب جديد.
+          {/*
+            «لم يحضر» حكمٌ يُقيَّد على المنفّذ في `abandonedJobs` ويراه كل إمامٍ
+            بعده. وكان يُعرض بلا مدّة، فيستوي عند الإمام منفّذٌ كُلِّف أمسِ وآخرُ
+            كُلِّف قبل شهرين — فإمّا سحبٌ من قادمٍ غداً، وإمّا انتظارٌ لمن انصرف.
+            والمدّة مكتوبةٌ في `assignedAt` منذ أول يوم، ولم تكن تُقرأ.
+          */}
+          <p className={waited != null && waited >= STALE_ASSIGNED_DAYS ? 'warn' : 'notice'}>
+            {assignedLabel
+              ? `كُلِّف المنفّذ ${assignedLabel} ولمّا يبدأ بعد. `
+              : 'كُلِّف المنفّذ ولمّا يبدأ بعد. '}
+            {waited != null && waited >= STALE_ASSIGNED_DAYS
+              ? 'وقد طال الأمر: إن كنت على تواصلٍ معه فانتظاره أولى، وإلا فاسحب التكليف ليعود الطلب متاحاً لغيره.'
+              : 'إن لم يحضر فاسحب التكليف ليعود الطلب متاحاً لغيره — لا حاجة إلى إلغائه وإنشاء طلب جديد.'}
           </p>
           <button className="danger" onClick={() => act(api.releaseAssignment, request.id, 'no_show')}>
             سحب التكليف — لم يحضر
@@ -1083,8 +1115,15 @@ function RequestDetail({ request, onBack }) {
         </>
       )}
 
-      {['assigned', 'in_progress'].includes(status) && (
-        <p className="notice">العمل جارٍ — يُبلّغك المنفّذ عند الإنجاز.</p>
+      {/*
+        كانت تُعرض على `assigned` أيضاً، وهي تناقض ما فوقها: في `assigned` لم
+        يبدأ العمل بعد — بل الشكوى أنه لم يبدأ.
+      */}
+      {status === 'in_progress' && (
+        <p className="notice">
+          {startedLabel ? `بدأ العمل ${startedLabel}. ` : ''}
+          يُبلّغك المنفّذ عند الإنجاز.
+        </p>
       )}
     </>
   );

@@ -220,6 +220,47 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     });
   });
 
+  /**
+   * الحكم بالغياب يحتاج المدّة التي يقوم عليها.
+   *
+   * `assignedAt` كان يُكتب عند كل تكليف ولا يُقرأ في موضع واحد — فيستوي عند
+   * الإمام منفّذٌ كُلِّف أمسِ وآخرُ كُلِّف قبل شهرين، وتحتهما زرٌّ واحد يُقيِّد
+   * غياباً يراه كل إمامٍ بعده. وهذا لا يظهر إلا في متصفّح: الحقل كان يصل
+   * الخادم صحيحاً، والعطب أنه لا يصل العين.
+   */
+  await t.test('الإمام يرى كم طال انتظاره قبل أن يحكم بالغياب', async () => {
+    const stale = await new stack.Parse.Query('ServiceRequests')
+      .equalTo('title', 'تصليح إنارة الصحن').first({ useMasterKey: true });
+    const twelveDaysAgo = new Date(Date.now() - (12 * 24 * 60 * 60 * 1000));
+    stale.set('assignedAt', twelveDaysAgo);
+    await stale.save(null, { useMasterKey: true });
+
+    await onScreen(imam, 'الإمام يرى كم طال انتظاره قبل أن يحكم بالغياب', async () => {
+      await imam.reload({ waitUntil: 'networkidle' });
+      await imam.getByRole('button', { name: 'طلبات الصيانة' }).click();
+      await imam.getByRole('button', { name: 'التفاصيل' }).first().click();
+      await imam.waitForSelector('button:has-text("سحب التكليف")');
+
+      const text = await imam.locator('main').innerText();
+      assert.match(text, /منذ 12 يوماً/,
+        'زرّ «لم يحضر» معروضٌ بلا مدّة — والمدّة مكتوبةٌ في القاعدة منذ التكليف');
+      assert.match(text, /طال الأمر/, 'مضى ضعفُ الحدّ ولا تنبيه');
+      assert.doesNotMatch(text, /العمل جارٍ/,
+        'قيل «العمل جارٍ» وفوقه «ولمّا يبدأ بعد» — والحالتان لا تجتمعان');
+    });
+
+    // والمنفّذ يرى مثلها: من يُقيَّد عليه الغياب أولى بأن يعلم كم مضى
+    await onScreen(salim, 'والمنفّذ يرى المدّة نفسها', async () => {
+      await salim.reload({ waitUntil: 'networkidle' });
+      await salim.getByRole('button', { name: 'مهامّي' }).click();
+      await salim.waitForSelector('button:has-text("بدأت العمل")');
+      assert.match(await salim.locator('main').innerText(), /كُلِّفت به منذ 12 يوماً/);
+    });
+
+    stale.set('assignedAt', new Date());
+    await stale.save(null, { useMasterKey: true });
+  });
+
   await t.test('المنفّذ يملك مخرجاً مُعلناً إلى جانب «بدأت العمل»', async () => {
     await onScreen(salim, 'المنفّذ يملك مخرجاً مُعلناً إلى جانب «بدأت العمل»', async () => {
     await salim.getByRole('button', { name: 'مهامّي' }).click();
