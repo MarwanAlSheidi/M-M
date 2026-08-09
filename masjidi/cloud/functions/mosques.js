@@ -437,6 +437,10 @@ Parse.Cloud.define('getMyMosques', async (request) => {
     // بلا هذا الحقل لا تعرف الواجهة أن المسجد مجهول الموقع، فلا تعرض للإمام
     // زرّ التثبيت — وتبقى `confirmMosqueLocation` دالّةً لا طريق إليها
     hasLocation: geo.validCoordinates(mosque.get('lat'), mosque.get('lng')),
+    // ومصدرُ الموقع: التصويب متاحٌ للجميع، لكنّ الحاجة إليه ليست واحدة.
+    // موقعٌ مستخرَجٌ من الخرائط تقديرٌ يُنبَّه إمامُه إليه، وإحداثيّ وزارةٍ
+    // اجتاز فحوصنا أقربُ إلى الصواب فلا يُشغَل به.
+    locationSource: mosque.get('locationSource') || null,
   }));
 });
 

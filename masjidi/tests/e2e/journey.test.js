@@ -313,11 +313,24 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     await imam.getByRole('button', { name: 'طلبات الصيانة' }).click();
     await imam.getByRole('button', { name: 'التفاصيل' }).first().click();
 
-    // الصورة معروضة قبل زرّ الاعتماد لا بعده
+    /*
+     * الصورة معروضة قبل زرّ الاعتماد لا بعده.
+     *
+     * و`waitForSelector` تنتظر **ظهور العنصر** لا تحميلَ الصورة: بايتاتها
+     * تصل بعده وقد تتأخّر. فقياسُ `naturalWidth` فور ظهور الوسم يقرأ حالةً
+     * عابرة — وهو ما كان يُسقط هذا الاختبار مرّةً كل بضع تشغيلات، ويُسقط معه
+     * ما بعده لأن الإمام يبقى على شاشةٍ غير التي تليها.
+     *
+     * فيُنتظر `complete` أوّلاً — وهي تصدق بعد النجاح **وبعد الفشل** — ثم
+     * يُقاس العرض. فصورةٌ مكسورة تسقط برسالتها، ولا تسقط بطيئةٌ سليمة.
+     */
     await imam.waitForSelector('[data-testid="gallery"] img');
-    const shown = await imam.locator('[data-testid="gallery"] img').first()
-      .evaluate((img) => img.naturalWidth > 0 && img.complete);
-    assert.ok(shown, 'الصورة في السجل ولا تُحمَّل — فالإمام يعتمد على ثقةٍ لا بيّنة');
+    const photo = imam.locator('[data-testid="gallery"] img').first();
+    await waitUntil(imam, 'اكتمال تحميل الصورة',
+      async () => photo.evaluate((img) => img.complete));
+
+    assert.ok(await photo.evaluate((img) => img.naturalWidth > 0),
+      'الصورة في السجل ولا تُحمَّل — فالإمام يعتمد على ثقةٍ لا بيّنة');
 
     await imam.getByRole('button', { name: 'اعتماد العمل' }).click();
     await imam.waitForSelector('.tag:has-text("منجَز")');
@@ -468,6 +481,19 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       await page.waitForSelector('text=غير صحيح؟');
       await page.getByRole('button', { name: /غير صحيح؟/ }).click();
       await page.waitForSelector('text=صوّب الموقع من هنا');
+    });
+
+    // والتصويب يُقرأ في سجلّ المسجد **ومعه ما كان قبله**: «صُوّب الموقع» وحدها
+    // لا تقول ماذا تغيّر، والسجلّ أداةُ مراجعةٍ لا سطرٌ يُثبت أن شيئاً وقع.
+    await onScreen(page, 'التصويب في السجلّ ومعه ما كان', async () => {
+      await page.getByRole('button', { name: /صوّب الموقع من هنا/ }).click();
+      await waitUntil(page, 'اكتمال التصويب',
+        async () => await page.locator('.notice').count() === 0);
+
+      await page.getByRole('button', { name: 'سجلّ المسجد' }).click();
+      await page.waitForSelector('text=صوّب إمام المسجد موقعه');
+      assert.match(await page.locator('main').innerText(), /من 22\.93/,
+        'السجلّ يقول «صُوّب» ولا يقول ماذا كان — فلا يُراجَع');
     });
   });
 

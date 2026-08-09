@@ -369,6 +369,11 @@ export function MosqueTrail({ mosqueId, mosqueName }) {
               <p style={{ margin: 0 }}>
                 {api.AUDIT_LABEL[entry.action] || entry.action}
               </p>
+              {/*
+                التفصيل حيث يوجد: «صوّب الإمام الموقع» لا يقول ماذا كان قبله،
+                والسجلّ أداةُ مراجعةٍ لا سطرٌ يُثبت أن شيئاً وقع.
+              */}
+              {entry.note && <p style={{ margin: '4px 0 0' }}>{entry.note}</p>}
               <p className="when">
                 {new Date(entry.createdAt).toLocaleString('ar')}
                 {entry.actorRole ? ` · ${api.ACTOR_LABEL[entry.actorRole] || entry.actorRole}` : ''}
@@ -828,8 +833,15 @@ function LocateMosque({ mosque, onDone }) {
     }
   };
 
-  // موقعٌ معروف: لا يُقحَم الزرّ بل يُفتح بطلبٍ من الإمام، فلا يُضغط سهواً
-  if (known && !open) {
+  /**
+   * موقعٌ **مستخرَجٌ من الخرائط** تقديرٌ لا يقين، فيُنبَّه إمامُه إليه صراحةً
+   * ويُفتح له الزرّ. وهو الفرق بين إتاحة التصويب وطلبه: من لا يعلم أن موقع
+   * مسجده مُخمَّن لا يخطر له أن يتحقّق منه.
+   */
+  const guessed = mosque.locationSource === 'osm';
+
+  // وموقعٌ معروفٌ موثوق: لا يُقحَم الزرّ بل يُفتح بطلبٍ من الإمام، فلا يُضغط سهواً
+  if (known && !guessed && !open) {
     return (
       <button className="link" onClick={() => setOpen(true)}>
         موقع المسجد على الخريطة غير صحيح؟
@@ -840,8 +852,14 @@ function LocateMosque({ mosque, onDone }) {
   return (
     <div className="notice">
       {known ? (
-        <p>قِف <strong>عند المسجد</strong> واضغط الزرّ ليحلّ موقعُك محلَّ الموقع المسجَّل.
-          ويُقيَّد التصويب في سجلّ المسجد.</p>
+        <>
+          {guessed && (
+            <p><strong>موقع هذا المسجد مأخوذ من خريطةٍ مفتوحة وقد لا يكون دقيقاً.</strong>
+              {' '}تحقّق منه، وصوّبه إن أخطأ.</p>
+          )}
+          <p>قِف <strong>عند المسجد</strong> واضغط الزرّ ليحلّ موقعُك محلَّ الموقع المسجَّل.
+            ويُقيَّد التصويب في سجلّ المسجد.</p>
+        </>
       ) : (
         <>
           <p>موقع هذا المسجد غير معروف، فلا يجده المتطوّعون فيما حولهم.</p>
@@ -854,7 +872,7 @@ function LocateMosque({ mosque, onDone }) {
           {busy ? 'جارٍ تحديد موقعك…'
             : (known ? 'صوّب الموقع من هنا' : 'ثبّت موقع المسجد من هنا')}
         </button>
-        {known && (
+        {known && !guessed && (
           <button className="ghost" onClick={() => setOpen(false)} disabled={busy}>إلغاء</button>
         )}
       </div>

@@ -182,4 +182,22 @@ test('تثبيت موقع المسجد', options, async (t) => {
     assert.equal(find(blind).hasLocation, false);
     assert.equal(find(located).hasLocation, true);
   });
+
+  await t.test('وتقول من أين جاء الموقع — فمن لا يعلم أنه مُخمَّن لا يتحقّق منه', async () => {
+    // التصويب متاحٌ للجميع، لكنّ الحاجة إليه ليست واحدة: موقعٌ مستخرَجٌ من
+    // خريطةٍ مفتوحة تقديرٌ يُنبَّه إمامُه إليه، وإحداثيّ وزارةٍ اجتاز فحوصنا
+    // أقربُ إلى الصواب فلا يُشغَل به.
+    const imam = await signUp('imam');
+    const guessed = await claimedBy(imam, 'المُخمَّن', {
+      lat: 23.6, lng: 58.5, hasLocation: true, locationSource: 'osm',
+    });
+    const official = await claimedBy(imam, 'الرسمي', {
+      lat: 23.61, lng: 58.51, hasLocation: true, locationSource: 'ministry',
+    });
+
+    const rows = await as(imam, 'getMyMosques');
+    const find = (mosque) => rows.find((row) => row.id === mosque.id);
+    assert.equal(find(guessed).locationSource, 'osm');
+    assert.equal(find(official).locationSource, 'ministry');
+  });
 });
