@@ -214,6 +214,9 @@ async function listRequests(build) {
       village: mosque ? mosque.get('village') : null,
       mosqueLat: mosque ? mosque.get('lat') : null,
       mosqueLng: mosque ? mosque.get('lng') : null,
+      // مصدرُ الموقع يصل مع الطلب: المنفّذ هو من يقود إلى هناك، ومن يُساق إلى
+      // نقطةٍ مُخمَّنة بلا أن يُقال له يتّهم المنصّة لا الخريطة
+      mosqueLocationSource: mosque ? mosque.get('locationSource') || null : null,
     };
   });
 }

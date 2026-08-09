@@ -674,7 +674,19 @@ export function MyTasks() {
                     href={api.mapsLink(row.mosqueLat, row.mosqueLng, row.mosqueName)}>
                     الطريق إلى المسجد
                   </a>
+                  {/*
+                    نظيرُ التنبيه الذي يراه الإمام، وموجَّهٌ إلى من يقود فعلاً:
+                    430 مسجداً موقعُها مُخمَّنٌ أو مجهول، ومن يُساق إلى نقطةٍ
+                    تقديرية بلا أن يُقال له يتّهم المنصّة لا الخريطة — ويقف
+                    عند مكانٍ ليس مسجده فيظنّ العمل وهماً.
+                  */}
+                  {row.mosqueLocationSource === 'osm' && (
+                    <span className="hint"> · الموقع تقديريّ — استرشد بالولاية والقرية</span>
+                  )}
                 </p>
+              )}
+              {row.mosqueLat == null && (
+                <p className="hint">موقع هذا المسجد غير مسجَّل — اهتدِ بالولاية والقرية أعلاه.</p>
               )}
               {row.status === 'assigned' && (
                 <div className="row">

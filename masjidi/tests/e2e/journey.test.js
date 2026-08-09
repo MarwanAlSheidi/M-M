@@ -266,6 +266,27 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     assert.equal(await route.count(), 1, 'لا طريق إلى المسجد');
     assert.match(await route.getAttribute('href'), /23\.6.*58\.5|58\.5.*23\.6/,
       'الرابط لا يحمل إحداثيات المسجد');
+
+    /*
+     * وموضعٌ مُخمَّن يُقال للمنفّذ صراحةً.
+     *
+     * 430 مسجداً موقعُها مُخمَّنٌ أو مجهول. ومن يُساق إلى نقطةٍ تقديرية بلا أن
+     * يُقال له يقف عند مكانٍ ليس مسجده، فيظنّ العمل وهماً ويتّهم المنصّة لا
+     * الخريطة. وهو نظيرُ التنبيه الذي يراه الإمام، لكنّ هذا لمن يقود فعلاً.
+     */
+    await new stack.Parse.Query('Mosques').get(mosque.id, { useMasterKey: true })
+      .then((row) => row.save({ locationSource: 'osm' }, { useMasterKey: true }));
+    await khalid.reload({ waitUntil: 'networkidle' });
+    await khalid.getByRole('button', { name: 'مهامّي' }).click();
+    await khalid.waitForSelector('text=الموقع تقديريّ');
+
+    // ثم يعود إلى ما كان، فلا يُغيّر هذا الفحصُ ما بعده
+    await new stack.Parse.Query('Mosques').get(mosque.id, { useMasterKey: true })
+      .then((row) => { row.unset('locationSource'); return row.save(null, { useMasterKey: true }); });
+    await khalid.reload({ waitUntil: 'networkidle' });
+    await khalid.getByRole('button', { name: 'مهامّي' }).click();
+    await khalid.waitForSelector('button:has-text("بدأت العمل")');
+
     await khalid.getByRole('button', { name: 'بدأت العمل' }).click();
     await khalid.waitForSelector('button:has-text("أنجزتُ العمل")');
     // صورةٌ حقيقية تمرّ بـ`Parse.File` ثم بحارس المضيف في `validatePhotos`:
