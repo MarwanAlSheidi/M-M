@@ -834,7 +834,7 @@ Parse.Cloud.define('searchMosques', async (request) => {
 
   const withDistance = (rows) => {
     const shaped = rows.map((mosque) => mosque.toJSON());
-    if (!from) return shaped;
+    if (!from) return shaped.slice(0, cap);
 
     return shaped
       .map((mosque) => ({
@@ -845,16 +845,29 @@ Parse.Cloud.define('searchMosques', async (request) => {
       }))
       // الأقرب أوّلاً، ومجهولُ الموقع آخراً لا محذوفاً — القاعدة نفسها في الفرص
       .sort((a, b) => (a.distanceKm == null ? Infinity : a.distanceKm)
-        - (b.distanceKm == null ? Infinity : b.distanceKm));
+        - (b.distanceKm == null ? Infinity : b.distanceKm))
+      // القطعُ **بعد** الفرز لا قبله — انظر `scoped`
+      .slice(0, cap);
   };
 
-  /** قيود المحافظة والولاية مشتركة بين المحاولتين. */
+  /**
+   * قيود المحافظة والولاية مشتركة بين المحاولات الثلاث.
+   *
+   * **السقف هنا سقفُ مرشّحين لا سقفُ نتائج.** القاعدة تقطع قبل أن نفرز بالقرب،
+   * فلو طلبنا ثلاثين صفاً أعطتنا ثلاثين **بأي ترتيب** ثم رتّبناها — ومسجد
+   * الإمام قد لا يكون فيها أصلاً. و«مصلى العيدين» في شمال الباطنة 123 مسجداً،
+   * وفي شمال الشرقية 82: أربعمئةٍ وواحدٌ وستون مسجداً تقع في مجموعاتٍ أكبر من
+   * ثلاثين، فأئمّتها لا يجدون مساجدهم مهما وقفوا عندها.
+   *
+   * قِيس على البيانات كاملةً: 132 من 200 كان مسجدُهم أوّلَ النتائج قبل الفرز
+   * بالقرب، و198 بعده — ولم يكتمل ذلك إلا بعد رفع السقف هنا.
+   */
   const scoped = () => {
     const query = new Parse.Query('Mosques');
     if (governorate) query.equalTo('governorate', governorate);
     if (wilayat) query.equalTo('wilayat', wilayat);
     query.select(...PUBLIC_FIELDS, 'lat', 'lng');
-    query.limit(cap);
+    query.limit(from ? BOX_CANDIDATE_CAP : cap);
     return query;
   };
 

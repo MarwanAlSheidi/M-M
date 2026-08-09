@@ -96,4 +96,49 @@ test('البحث يرتّب بالأقرب', options, async (t) => {
     const rows = await search({ term: 'مسجد الغبي', lat: 23.25, lng: 56.5 });
     for (const row of rows) assert.match(row.mosqueNumber, /^27\//);
   });
+
+  /**
+   * القطعُ بعد الفرز لا قبله.
+   *
+   * سقف النتائج ثلاثون. وكانت القاعدة تقطع عندها **قبل** أن نفرز بالقرب، فتردّ
+   * ثلاثين صفاً بأي ترتيبٍ ثم نرتّبها — ومسجدُ الإمام قد لا يكون فيها أصلاً.
+   * و«مصلى العيدين» في شمال الباطنة 123 مسجداً: 461 مسجداً في بيانات الوزارة
+   * تقع في مجموعاتٍ أكبر من ثلاثين، فأئمّتها لا يجدون مساجدهم مهما وقفوا عندها.
+   *
+   * قِيس على البيانات كاملةً (200 مسجد من كل المحافظات، الإمام واقفٌ عند مسجده):
+   * قبل الإصلاح 198 وُجدت و132 كانت الأولى؛ بعده **200 من 200 كلُّها الأولى**.
+   */
+  await t.test('ومسجدٌ خلف سقف النتائج يجده إمامه إن وقف عنده', async () => {
+    const Many = Parse.Object.extend('Mosques');
+    const stamp = Date.now();
+    // أربعون متطابقة — أكثر من السقف (30). والإمام عند الأخيرة إدخالاً، فهي
+    // آخر ما تعيده قاعدةٌ تقطع بلا ترتيب.
+    const crowd = Array.from({ length: 40 }, (unused, i) => {
+      const mosque = new Many();
+      mosque.set({
+        externalId: `crowd_${stamp}_${i}`,
+        name: 'مصلى العيدين',
+        nameNormalized: 'مصلي العيدين',
+        nameTokens: ['مصلي', 'العيدين'],
+        governorate: 'شمال الباطنة', wilayat: 'صحار', village: `قرية ${i}`,
+        mosqueNumber: `07/${2000 + i}`,
+        hasLocation: true,
+        lat: 24.3 + i * 0.02, lng: 56.7,
+      });
+      return mosque;
+    });
+    await Parse.Object.saveAll(crowd, { useMasterKey: true });
+
+    const mine = crowd[crowd.length - 1];
+    const rows = await search({
+      term: 'مصلى العيدين',
+      governorate: 'شمال الباطنة',
+      lat: mine.get('lat'),
+      lng: mine.get('lng'),
+    });
+
+    assert.equal(rows[0].mosqueNumber, mine.get('mosqueNumber'),
+      'مسجد الإمام خلف السقف: قُطعت النتائج قبل الفرز بالقرب فلم يبلغها');
+    assert.ok(rows.length <= 30, `عاد ${rows.length} صفاً — السقف لم يُطبَّق بعد الفرز`);
+  });
 });

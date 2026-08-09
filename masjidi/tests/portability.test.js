@@ -106,6 +106,48 @@ test('قوائم المحافظات تطابق البيانات', async (t) => {
   });
 });
 
+/**
+ * القوائم المغلقة المكتوبة مرّتين — مرّةً للخادم ومرّةً للقارئ العربي.
+ *
+ * وقع هذا مرّتين في هذا المستودع: مهارةٌ يقبلها الخادم ولا اسم عربيَّ لها في
+ * الواجهة فظهرت للمستخدم بمفتاحها الإنجليزي `electrical`؛ وفعلٌ في سجلّ
+ * التدقيق بلا ترجمة فظهر `location_learned` في شاشةٍ عربية. وكلاهما لا يُسقط
+ * شيئاً — يُعرض فحسب، بلغةٍ ليست لغة قارئه.
+ */
+test('القوائم المغلقة مترجَمة كاملةً', async (t) => {
+  const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+
+  /** مفاتيح كائنٍ معلَن حرفياً — تقريبٌ نصّي يكفي لسلك التعثّر. */
+  const keysIn = (source, declaration) => {
+    const block = source.match(new RegExp(`${declaration} = \\{(.*?)\\n\\};`, 's'));
+    assert.ok(block, `لم يُعثر على ${declaration}`);
+    return new Set([...block[1].matchAll(/^\s*([a-zA-Z_]+):/gm)].map((hit) => hit[1]));
+  };
+
+  await t.test('كل فعلٍ في سجلّ التدقيق له اسمٌ عربي', () => {
+    const actions = new Set([...read('cloud/lib/audit.js')
+      .matchAll(/^\s*[A-Z_]+: '([a-z_]+)',/gm)].map((hit) => hit[1]));
+    const labels = keysIn(read('app/src/api.js'), 'export const AUDIT_LABEL');
+
+    assert.ok(actions.size >= 15, `قُرئ ${actions.size} فعلاً فقط — المسح لا يصل`);
+    assert.deepEqual([...actions].filter((action) => !labels.has(action)), [],
+      'فعلٌ يُقيَّد في السجلّ ويُعرض للقارئ بمفتاحه الإنجليزي');
+    assert.deepEqual([...labels].filter((label) => !actions.has(label)), [],
+      'ترجمةٌ لفعلٍ لم يعد يُقيَّد — تُوهم بأنه ما زال يُسجَّل');
+  });
+
+  await t.test('وكل مهارةٍ يقبلها الخادم لها اسمٌ عربي', () => {
+    const source = read('cloud/functions/users.js');
+    const block = source.match(/const SKILLS = \[(.*?)\];/s);
+    assert.ok(block, 'لم يُعثر على SKILLS');
+    const skills = new Set([...block[1].matchAll(/'([^']+)'/g)].map((hit) => hit[1]));
+    const categories = keysIn(read('app/src/api.js'), 'export const CATEGORIES');
+
+    assert.deepEqual([...skills].sort(), [...categories].sort(),
+      'مهارةٌ يقبلها الخادم بلا اسمٍ عربي، أو اسمٌ عربي لمهارةٍ يرفضها');
+  });
+});
+
 test('محمولية الاستعلامات', async (t) => {
   const files = cloudSources();
 

@@ -181,6 +181,37 @@ test('الحكم موصولٌ بما يدخل القاعدة', async (t) => {
   });
 });
 
+/**
+ * سقفُ المرشّحين يجب أن يفوق أكبر مجموعةٍ متطابقة الاسم في محافظتها.
+ *
+ * البحث يجلب المرشّحين ثم يفرزهم بالقرب ثم يقطع. فإن كانت المجموعة أكبر من
+ * السقف عاد الخللُ نفسه: القاعدة تقطع قبل الفرز، فمسجد الإمام لا يبلغ النتيجة.
+ * والرقم يُقاس على البيانات لا يُخمَّن.
+ */
+test('سقف المرشّحين يسع أكبر مجموعة', async (t) => {
+  const rows = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '..', 'data', 'mosques.json'), 'utf8'),
+  );
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', 'cloud', 'functions', 'mosques.js'), 'utf8');
+
+  await t.test('أكبر مجموعة أصغر من السقف بهامشٍ معتبر', () => {
+    const cap = Number((source.match(/BOX_CANDIDATE_CAP = (\d+)/) || [])[1]);
+    assert.ok(cap > 0, 'لم يُقرأ سقف المرشّحين');
+
+    const groups = new Map();
+    for (const row of rows) {
+      const key = `${row.governorate}|${row.nameNormalized}`;
+      groups.set(key, (groups.get(key) || 0) + 1);
+    }
+    const largest = Math.max(...groups.values());
+
+    assert.ok(largest < cap, `أكبر مجموعة ${largest} والسقف ${cap} — `
+      + 'أئمّة ما زاد على السقف لا يجدون مساجدهم مهما وقفوا عندها');
+    assert.ok(largest * 2 < cap, `الهامش ضيّق: ${largest} من ${cap}`);
+  });
+});
+
 test('البيانات الحقيقية', async (t) => {
   const rows = JSON.parse(
     fs.readFileSync(path.join(__dirname, '..', 'data', 'mosques.json'), 'utf8'),
