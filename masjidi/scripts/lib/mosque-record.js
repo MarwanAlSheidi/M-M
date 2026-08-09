@@ -24,8 +24,24 @@ const path = require('path');
 const { tokenize } = require('./tokenize');
 const { stripTatweel } = require('../../cloud/lib/arabic');
 const { assessCoordinates, withdrawUntrusted } = require('./coord-trust');
+const { nearestKm, PLAUSIBLE_KM } = require('./place-match');
+const geo = require('../../cloud/lib/geo');
 
 const OVERLAY_FILE = path.join(__dirname, '..', '..', 'data', 'resolved_locations.json');
+
+/**
+ * رقمٌ من مدخلةٍ محرَّرة بيد — أو `NaN`.
+ *
+ * `Number(null)` يساوي **صفراً** لا `NaN`، و`Number('')` كذلك. فحقلٌ حُذفت
+ * قيمتُه في التحرير يصير إحداثيّ (0,0) — نقطةً في المحيط الأطلسي قبالة غانا،
+ * وهي إحداثيٌّ «صالح» في كل فحصٍ للمدى. والمصادفةُ وحدها تُنجينا منها هنا
+ * (تردّها قاعدةُ البُعد عن الولاية)، والاعتماد على المصادفة ليس فحصاً.
+ */
+const asNumber = (value) => {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && value.trim() !== '') return Number(value);
+  return NaN;
+};
 
 /**
  * ما استُخرج من خرائط جوجل للمساجد المجهولة — إن وُجد.
@@ -48,25 +64,65 @@ function readOverlay(file = OVERLAY_FILE) {
  */
 function prepare(rows, overlay = readOverlay()) {
   const verdicts = assessCoordinates(rows);
+  const judgedAll = rows.map((row) => withdrawUntrusted(row, verdicts.get(row.externalId)));
 
-  const records = rows.map((row) => {
-    const judged = withdrawUntrusted(row, verdicts.get(row.externalId));
-    if (judged.location) return { ...judged, locationSource: 'ministry' };
+  /** نقاط المساجد الموثوقة، مجمّعةً بالولاية — بها يُعاد فحص التراكب. */
+  const knownByWilayat = new Map();
+  for (const row of judgedAll) {
+    if (!row.location) continue;
+    const key = `${row.governorate}|${row.wilayat}`;
+    if (!knownByWilayat.has(key)) knownByWilayat.set(key, []);
+    knownByWilayat.get(key).push({ lat: row.location.latitude, lng: row.location.longitude });
+  }
 
+  /**
+   * فحصُ مدخلة التراكب من جديد عند الاستيراد.
+   *
+   * `resolve_locations.js` فحصها ساعةَ استخرجها، لكنّ الملفّ **يُراجَع بيدٍ
+   * بشرية** قبل إيداعه — وهذا ما نوصي به صراحةً — وقد يُحرَّر. ومدخلةٌ محرَّرة
+   * تُكتب في `Mosques.location` مباشرةً بلا مارٍّ آخر عليها: رقمان مقلوبان أو
+   * فاصلةٌ زائدة تضع مسجداً في البحر.
+   *
+   * فيُعاد الفحص هنا بالقاعدة نفسها، كما يُعاد قياس طلب الملكية لحظةَ اعتماده
+   * لا لحظةَ تقديمه. **آخرُ من يلمس البيانات قبل القاعدة يفحصها.**
+   */
+  const acceptOverlay = (row, found) => {
+    if (!found) return null;
+    const lat = asNumber(found.lat);
+    const lng = asNumber(found.lng);
+    if (!geo.validCoordinates(lat, lng)) return { reason: 'إحداثيات غير صالحة' };
+
+    const known = knownByWilayat.get(`${row.governorate}|${row.wilayat}`) || [];
+    if (known.length === 0) return { reason: 'لا مسجد معلوم في الولاية يُقاس إليه' };
+    if (nearestKm({ lat, lng }, known) > PLAUSIBLE_KM) {
+      return { reason: `بعيد عن ولاية ${row.wilayat}` };
+    }
+    return { lat, lng };
+  };
+
+  const overlayRejected = [];
+  const records = judgedAll.map((judged) => {
     // ما استُخرج من جوجل يملأ الفراغ وحده — لا ينسخ فوق إحداثيٍّ موثوق.
     // والمصدر يُقال، فمن يقرأ الحقل لاحقاً يعرف من أين جاء الموقع.
-    const found = overlay[row.externalId];
-    if (!found) return judged;
+    if (judged.location) return { ...judged, locationSource: 'ministry' };
+
+    const verdict = acceptOverlay(judged, overlay[judged.externalId]);
+    if (!verdict) return judged;
+    if (verdict.reason) {
+      overlayRejected.push({ externalId: judged.externalId, name: judged.name, ...verdict });
+      return judged;
+    }
+
     return {
       ...judged,
-      location: { __type: 'GeoPoint', latitude: found.lat, longitude: found.lng },
+      location: { __type: 'GeoPoint', latitude: verdict.lat, longitude: verdict.lng },
       hasLocation: true,
       locationSource: 'google',
       dataQuality: { ...(judged.dataQuality || {}), coordinates: 'resolved_from_places' },
     };
   });
 
-  return { verdicts, records };
+  return { verdicts, records, overlayRejected };
 }
 
 /**

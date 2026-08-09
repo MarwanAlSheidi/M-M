@@ -124,7 +124,7 @@ test('اختيار الموقع', async (t) => {
 });
 
 test('التراكب يدخل الاستيراد بمصدره', async (t) => {
-  const rows = [{
+  const blind = {
     externalId: 'x1',
     name: 'مسجد النور',
     nameNormalized: 'مسجد النور',
@@ -133,16 +133,26 @@ test('التراكب يدخل الاستيراد بمصدره', async (t) => {
     hasLocation: false,
     location: null,
     dataQuality: { number: 'ok', coordinates: 'missing' },
-  }];
+  };
+  /** جارٌ معلوم في الولاية — بلا واحدٍ منه لا مقياسَ يُفحص به التراكب. */
+  const neighbour = {
+    ...blind,
+    externalId: 'x2',
+    name: 'مسجد الجار',
+    hasLocation: true,
+    location: { __type: 'GeoPoint', latitude: 23.60, longitude: 58.50 },
+  };
+  const rows = [blind, neighbour];
+  const first = (result) => result.records[0];
 
   await t.test('بلا ملفّ تراكب يبقى المسجد مجهولاً', () => {
-    const [record] = prepare(rows, {}).records;
+    const record = first(prepare(rows, {}));
     assert.equal(record.location, null);
     assert.equal(record.locationSource, undefined);
   });
 
   await t.test('ومع التراكب يأخذ موقعه، والمصدر مكتوب', () => {
-    const [record] = prepare(rows, { x1: { lat: 23.61, lng: 58.51 } }).records;
+    const record = first(prepare(rows, { x1: { lat: 23.61, lng: 58.51 } }));
     assert.equal(record.location.latitude, 23.61);
     assert.equal(record.hasLocation, true);
     assert.equal(record.locationSource, 'google',
@@ -151,14 +161,51 @@ test('التراكب يدخل الاستيراد بمصدره', async (t) => {
   });
 
   await t.test('ولا ينسخ فوق إحداثيٍّ موثوق', () => {
-    const located = [{
-      ...rows[0],
+    const record = first(prepare([{
+      ...blind,
       hasLocation: true,
       location: { __type: 'GeoPoint', latitude: 23.5, longitude: 58.4 },
-    }];
-    const [record] = prepare(located, { x1: { lat: 23.61, lng: 58.51 } }).records;
+    }, neighbour], { x1: { lat: 23.61, lng: 58.51 } }));
     assert.equal(record.location.latitude, 23.5);
     assert.equal(record.locationSource, 'ministry');
+  });
+
+  /**
+   * الملفّ يُراجَع بيدٍ بشرية قبل إيداعه — وهذا ما يوصي به `DEPLOY.md`. ومدخلةٌ
+   * محرَّرة تُكتب في `Mosques.location` مباشرةً: رقمان مقلوبان أو فاصلةٌ زائدة
+   * تضع مسجداً في البحر. فآخرُ من يلمس البيانات قبل القاعدة يفحصها.
+   */
+  await t.test('وإحداثيٌّ فاسد في الملفّ يُردّ لا يُكتب', () => {
+    for (const bad of [
+      { lat: 'شمالاً', lng: 58.51 },
+      { lat: 623.61, lng: 58.51 },
+      { lat: null, lng: null },
+      {},
+    ]) {
+      const result = prepare(rows, { x1: bad });
+      assert.equal(first(result).location, null, JSON.stringify(bad));
+      assert.equal(result.overlayRejected.length, 1);
+      assert.match(result.overlayRejected[0].reason, /غير صالحة/);
+    }
+  });
+
+  await t.test('وموقعٌ بعيدٌ عن الولاية يُردّ ولو كان إحداثياً صالحاً', () => {
+    // ظفار من مسقط ~850 كم — تحريرٌ خاطئ للملفّ يضع مسجد بوشر هناك
+    const result = prepare(rows, { x1: { lat: 17.0, lng: 54.1 } });
+    assert.equal(first(result).location, null);
+    assert.match(result.overlayRejected[0].reason, /بعيد عن ولاية بوشر/);
+  });
+
+  await t.test('والردّ يُذكر لا يُبتلع', () => {
+    // مدخلةٌ رُدّت بصمتٍ تعني مسجداً ظنّ المُشغّل أنه استعاد موقعه ولم يستعده
+    const { overlayRejected } = prepare(rows, { x1: { lat: 0, lng: 0 } });
+    assert.equal(overlayRejected.length, 1);
+    assert.equal(overlayRejected[0].externalId, 'x1');
+    assert.equal(overlayRejected[0].name, 'مسجد النور');
+  });
+
+  await t.test('والمقبول لا يُذكر في المردود', () => {
+    assert.deepEqual(prepare(rows, { x1: { lat: 23.61, lng: 58.51 } }).overlayRejected, []);
   });
 });
 

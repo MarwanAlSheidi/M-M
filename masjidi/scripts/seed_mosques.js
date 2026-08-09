@@ -119,7 +119,7 @@ async function main() {
 
   // التحضير على الملفّ كاملاً قبل أي تصفية — و`prepare` هي نفسها التي تستعملها
   // مِرقاة اختبار التكامل، فلا تزرع القاعدةَ بما لا يزرعه الاستيراد
-  const { verdicts, records: all } = prepare(raw);
+  const { verdicts, records: all, overlayRejected } = prepare(raw);
 
   if (coordReport) {
     const counts = new Map();
@@ -168,6 +168,16 @@ async function main() {
     console.log(`→ سُحبت الثقة من إحداثيات ${withdrawn} مسجداً (--coord-report للتفصيل)`);
   }
   console.log(`→ مجهول الموقع بعد الفحص: ${unlocated} — يظهر بالاسم ويتعلّم موقعه من إمامه`);
+
+  // الصمتُ هنا أخطر من الضجيج: مدخلةٌ رُدّت بلا خبر تعني مسجداً ظنّ المُشغّل
+  // أنه استعاد موقعه وهو لم يستعده
+  if (overlayRejected.length > 0) {
+    console.log(`→ رُدّ من ملفّ التراكب: ${overlayRejected.length}`);
+    for (const entry of overlayRejected.slice(0, 10)) {
+      console.log(`   ${entry.name} — ${entry.reason}`);
+    }
+    if (overlayRejected.length > 10) console.log(`   … و${overlayRejected.length - 10} غيرها`);
+  }
 
   if (dryRun) {
     console.log(JSON.stringify(records[0], null, 2));
