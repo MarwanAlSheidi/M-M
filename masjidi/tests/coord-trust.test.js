@@ -175,9 +175,26 @@ test('الحكم موصولٌ بما يدخل القاعدة', async (t) => {
     assert.match(seed, /unset\('location'\)/);
   });
 
-  await t.test('ولا يمحو موقعاً تعلّمه المسجد من إمامه', () => {
-    assert.match(seed, /learnedLocation/,
-      'إعادة الاستيراد تُعيد المسجد مجهولاً كلّما شُغّلت، وتُضيّع ما أثبته إمامه');
+  await t.test('ولا يمحو موقعاً أثبته إنسان — بأيّ مسارٍ أثبته', () => {
+    // وقع هذا فعلاً: الحارس كان يعرف `claim` وحدها، فلمّا أُضيفت
+    // `confirmMosqueLocation` تكتب `imam` صارت إعادةُ الاستيراد تمحو موقع كل
+    // مسجدٍ وقف عنده إمامه. فالقائمة معكوسة الآن: تُعدّد ما يكتبه الاستيراد،
+    // وما عداه محفوظٌ افتراضياً.
+    assert.match(seed, /isHumanConfirmed\(/);
+    assert.equal(/locationSource'\) === '/.test(seed), false,
+      'عاد الحارس يقارن بمصدرٍ واحدٍ بعينه، فما جاء بغيره يُمحى');
+
+    const list = seed.match(/const IMPORT_SOURCES = \[(.*?)\];/);
+    assert.ok(list, 'لم يُعثر على IMPORT_SOURCES');
+    const sources = [...list[1].matchAll(/'([^']+)'/g)].map((hit) => hit[1]);
+
+    // كل مصدرٍ تكتبه دوال السحابة إنسانيٌّ بالضرورة — لا يجوز أن يظهر هنا
+    const cloudSources = new Set([...fs
+      .readFileSync(path.join(__dirname, '..', 'cloud', 'functions', 'mosques.js'), 'utf8')
+      .matchAll(/set\('locationSource', '([a-z]+)'\)/g)].map((hit) => hit[1]));
+    assert.ok(cloudSources.size >= 2, `قُرئ ${cloudSources.size} مصدراً — المسح لا يصل`);
+    assert.deepEqual(sources.filter((source) => cloudSources.has(source)), [],
+      'مصدرٌ يكتبه إنسانٌ عُدّ من مصادر الاستيراد، فيُمحى في التشغيلة التالية');
   });
 });
 

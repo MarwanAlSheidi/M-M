@@ -20,6 +20,18 @@ const path = require('path');
 const Parse = require('parse/node');
 const { prepare, descriptiveFields } = require('./lib/mosque-record');
 
+/**
+ * مصادر الموقع التي يكتبها الاستيراد نفسه — وما عداها أثبته إنسان.
+ *
+ * القائمة **معكوسة قصداً**: لو عدّدنا المصادر البشرية (`claim`, `imam`) لنسي
+ * مَن يضيف ثالثاً أن يزيدها هنا، فيمحو الاستيرادُ ما أثبته صاحبه. وقد وقع ذلك
+ * فعلاً: أُضيفت `confirmMosqueLocation` تكتب `imam`، وبقي الحارس يعرف `claim`
+ * وحدها — فكانت إعادةُ الاستيراد تمحو موقع كل مسجدٍ وقف عنده إمامه.
+ * وبهذه الصيغة يكون المصدر الجديد محفوظاً افتراضياً، والخطأ في جانب الحفظ.
+ */
+const IMPORT_SOURCES = ['ministry', 'google'];
+const isHumanConfirmed = (source) => Boolean(source) && !IMPORT_SOURCES.includes(source);
+
 const BATCH_SIZE = 200; // Parse.Object.saveAll يتعامل داخلياً بدفعات — نبقيها معتدلة
 const DATA_FILE = path.join(__dirname, '..', 'data', 'mosques.json');
 
@@ -77,7 +89,10 @@ async function existingIds() {
         seen.push(mosque.id);
         duplicates.set(key, seen);
       } else {
-        found.set(key, { id: mosque.id, learnedLocation: mosque.get('locationSource') === 'claim' });
+        found.set(key, {
+          id: mosque.id,
+          learnedLocation: isHumanConfirmed(mosque.get('locationSource')),
+        });
       }
     }
     cursor = page[page.length - 1].id;
@@ -189,13 +204,17 @@ async function main() {
 
       mosque.set(descriptiveFields(row));
 
-      // موقعٌ تعلّمه المسجد من إمامه أصدق من فراغٍ خلّفه سحبُ الثقة، فلا تمسحه
-      // إعادةُ الاستيراد — وإلا عاد المسجد مجهولاً كلّما شُغّل السكربت، وضاع ما
-      // أثبته إمامه بوقوفه عنده. أمّا إن جاءت الوزارة بإحداثيٍّ موثوقٍ فهو
-      // المرجع ويحلّ محلّ التقدير.
-      const keepLearned = prior && prior.learnedLocation && !row.location;
+      /**
+       * ترتيب المصادر عند التعارض: **الوزارة، ثم الإنسان، ثم جوجل.**
+       *
+       * موقعٌ أثبته إنسانٌ وقف عند المسجد أصدق من دبّوسٍ وضعه غريبٌ في خرائط
+       * جوجل، فلا يُنسخ فوقه. ولا يُمحى بفراغٍ خلّفه سحبُ الثقة، وإلا عاد
+       * المسجد مجهولاً كلّما شُغّل السكربت. أمّا إحداثيّ الوزارة الموثوق فهو
+       * المرجع ويحلّ محلّ الاثنين.
+       */
+      const keepLearned = prior && prior.learnedLocation && row.locationSource !== 'ministry';
 
-      if (row.location) {
+      if (row.location && !keepLearned) {
         mosque.set('hasLocation', true);
         mosque.set('location', new Parse.GeoPoint({
           latitude: row.location.latitude,
@@ -205,7 +224,7 @@ async function main() {
         // على فهرس 2dsphere الذي يُضاف يدوياً — انظر cloud/lib/geo.js
         mosque.set('lat', row.location.latitude);
         mosque.set('lng', row.location.longitude);
-        mosque.set('locationSource', 'ministry');
+        mosque.set('locationSource', row.locationSource || 'ministry');
       } else if (!keepLearned) {
         // الحذف لا الترك: استيرادٌ سابق ربما كتب الإحداثيّ الخاطئ في القاعدة،
         // فتركُ الحقل على حاله يُبقي مسجد صلالة في مسقط إلى الأبد
