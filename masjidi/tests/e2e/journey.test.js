@@ -461,6 +461,14 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     assert.equal(fresh.get('locationSource'), 'imam');
     assert.ok(Math.abs(fresh.get('lat') - 22.93) < 0.001,
       'ثُبّت موقعٌ غير موقع الجهاز');
+
+    // وبعد أن صار له موقع: طريقُ التصويب يبقى مفتوحاً — موقعٌ مسجَّلٌ قد يكون
+    // خاطئاً، ومن يقف عند المسجد أعلمُ بموضعه من أيّ مصدر.
+    await onScreen(page, 'طريق التصويب بعد التثبيت', async () => {
+      await page.waitForSelector('text=غير صحيح؟');
+      await page.getByRole('button', { name: /غير صحيح؟/ }).click();
+      await page.waitForSelector('text=صوّب الموقع من هنا');
+    });
   });
 
   /**

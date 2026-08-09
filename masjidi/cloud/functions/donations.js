@@ -521,6 +521,9 @@ Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
     toStatus: entry.get('toStatus'),
     actorRole: entry.get('actorRole'),
     amount: entry.get('amount'),
+    // ما كان قبل التغيير — بلا هذا يقرأ المصلّي «صوّب الإمام الموقع» ولا يعرف
+    // ماذا صوّب. والسجلّ أداةُ الشفافية لا سطرٌ يُثبت أن شيئاً وقع.
+    note: entry.get('note') || null,
     createdAt: entry.get('createdAt'),
   }));
 });

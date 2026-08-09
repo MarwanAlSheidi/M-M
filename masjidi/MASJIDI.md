@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 275 حالة على بديل Parse (`npm test`) + 88 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 22 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 275 حالة على بديل Parse (`npm test`) + 89 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 22 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -182,7 +182,7 @@ tests/
     proximity.test.js  البحث يرتّب بالأقرب — الموقع يميّز متطابقي الاسم
     claim.test.js      تأكيد الموقع عند التسجيل، وصفة مقدّم الطلب
     learned-location.test.js  المسجد يتعلّم موقعه من طلب ملكيته — ومعقولية الموقع
-    confirm-location.test.js  الإمام يثبّت موقع مسجده وهو عنده
+    confirm-location.test.js  الإمام يثبّت موقع مسجده أو يصوّبه وهو عنده
   e2e/                 متصفّح حقيقي فوق خادم حقيقي — `npm run test:e2e`
     harness.js         يبني الواجهة على منفذ الاختبار، ويقدّمها، ويفتح Chromium
     journey.test.js    الرحلة كاملة: التسجيل، الطلب، الاهتمام، السحب، التنبيهات
@@ -1465,6 +1465,41 @@ PostgreSQL كاملاً وخادماً**. ستة معاً تُنهك الجها�
 
 ---
 
+### 🟢 من وقف عند المسجد أعلمُ بموضعه من أيّ مصدر
+
+**التوجيه:** «سيتم تصحيحها لاحقاً، والإمام أو وكيل المسجد سيصوّب الموقع.»
+
+وهو تصحيحٌ لقرارٍ اتّخذتُه أنا: `confirmMosqueLocation` كانت **ترفض** المسجدَ
+الذي له موقع — «لهذا المسجد موقعٌ مسجّل، لتصحيحه راسل الإدارة». بنيتُها على أن
+بيانات الوزارة مرجعٌ لا يُنسخ فوقه، والإمام يملأ الفراغ لا غير.
+
+**وقد أبطلتُ ذلك المبدأ بنفسي قبل عشر دفعات** حين أثبتُّ أن **414 إحداثياً في
+بيانات الوزارة كاذب** — نقطةٌ واحدة تحمل 154 مسجداً في 45 ولاية. فالمرجع ليس
+معصوماً، وما يُستخرج من الخرائط تقديرٌ لا يقين، والواقف عند مسجده أصدق منهما.
+لكنّي تركتُ القاعدة القديمة قائمةً على مقدّمةٍ سقطت.
+
+**الإصلاح:**
+
+- الإمام أو الوكيل **يصوّب** موقعاً مسجَّلاً، لا يملأ الفارغ فحسب.
+- والتصويب يُقاس إلى مساجد الولاية كما يُقاس موضعُ طلب الملكية. **والفحص ليس
+  شكّاً في الإمام بل في الجهاز:** إشارةٌ ضعيفة داخل البناء تعطي إحداثياً بعيداً
+  بكيلومترات ولا يظهر ذلك لصاحبه، وتصويبٌ يضع المسجد في محافظةٍ أخرى أسوأ من
+  الخطأ الذي جاء يصلحه.
+- ويُقيَّد بفعلٍ يميّزه (`location_corrected`) **ومعه ما كان قبله**: «سُجّل
+  موقع» لا يقول ماذا تغيّر، ومن يملك تغيير البيانات يجب أن يُرى وهو يغيّرها.
+  ولذلك أُضيف حقل `note` إلى سجلّ التدقيق ويصل إلى الشاشة.
+
+**والأثر الذي كاد يُفلت:** ترتيب المصادر في الاستيراد كان «الوزارة، ثم الإنسان،
+ثم الخرائط» — أي أن إعادة الاستيراد **تنسخ إحداثيّ الوزارة فوق تصويب الإمام**.
+فتصويبٌ يمحوه السكربتُ في تشغيلته التالية ليس تصويباً. صار ما مصدرُه إنسانٌ لا
+يُنسخ فوقه ولا يُمحى، مهما جاء به الاستيراد.
+
+**والدرس:** حين تسقط مقدّمةٌ، فتّش عن كل ما بُني عليها. أثبتُّ كذبَ بيانات
+الوزارة في موضع، وتركتُ في موضعٍ آخر قاعدةً تقول إنها مرجعٌ لا يُمسّ — ولم
+يكشف التناقضَ اختبارٌ ولا مراجعة، بل كشفه صاحبُ المنتج بجملةٍ واحدة.
+
+---
+
 ### 🟠 شرطٌ صدق طرفاه في لحظتين لم تجتمعا
 
 **العَرَض:** اختبار المتصفّح «التنبيهات تصل الإمام» يسقط مرّةً كل ثلاث تشغيلات،
@@ -1993,6 +2028,9 @@ await page.locator('.card').count() > 0
         },
         "amount": {
           "type": "Number"
+        },
+        "note": {
+          "type": "String"
         }
       },
       "indexes": {
@@ -2681,6 +2719,7 @@ const ACTIONS = {
   PAYOUT_RECORDED: 'payout_recorded',
   CLAIM_REVIEWED: 'claim_reviewed',
   LOCATION_LEARNED: 'location_learned',
+  LOCATION_CORRECTED: 'location_corrected',
   CONTRACTOR_REVIEWED: 'contractor_reviewed',
   DONATION_REFUNDED: 'donation_refunded',
 };
@@ -2696,8 +2735,9 @@ const ACTIONS = {
  * @param {string=} entry.fromStatus
  * @param {string=} entry.toStatus
  * @param {number=} entry.amount
+ * @param {string=} entry.note      تفصيلٌ يقرؤه إنسان — ما كان قبل التغيير مثلاً
  */
-async function record({ action, target, mosque, actor, fromStatus, toStatus, amount }) {
+async function record({ action, target, mosque, actor, fromStatus, toStatus, amount, note }) {
   try {
     const Entry = Parse.Object.extend('AuditLog');
     const entry = new Entry();
@@ -2715,6 +2755,9 @@ async function record({ action, target, mosque, actor, fromStatus, toStatus, amo
     if (fromStatus) entry.set('fromStatus', fromStatus);
     if (toStatus) entry.set('toStatus', toStatus);
     if (typeof amount === 'number') entry.set('amount', amount);
+    // «سُجّل موقع» لا يقول ما كان قبله. ومن يملك تغيير البيانات يجب أن يُرى
+    // وهو يغيّرها — وما لا يُقارَن بما قبله لا يُراجَع.
+    if (note) entry.set('note', String(note).slice(0, 300));
 
     await entry.save(null, { useMasterKey: true });
   } catch (error) {
@@ -3442,31 +3485,62 @@ Parse.Cloud.define('confirmMosqueLocation', async (request) => {
   const { mosqueId, lat, lng } = request.params;
 
   const mosque = await mosqueForImam(imam, mosqueId);
-
-  if (geo.validCoordinates(mosque.get('lat'), mosque.get('lng'))) {
-    E.invalid('لهذا المسجد موقعٌ مسجّل. لتصحيحه راسل الإدارة.');
-  }
-  if (!geo.validCoordinates(Number(lat), Number(lng))) {
+  const point = { lat: Number(lat), lng: Number(lng) };
+  if (!geo.validCoordinates(point.lat, point.lng)) {
     E.invalid('أكّد موقعك عند المسجد — فعّل إذن الموقع وأعد المحاولة.');
   }
 
-  mosque.set('lat', Number(lat));
-  mosque.set('lng', Number(lng));
-  mosque.set('location', new Parse.GeoPoint({ latitude: Number(lat), longitude: Number(lng) }));
+  const previous = geo.validCoordinates(mosque.get('lat'), mosque.get('lng'))
+    ? { lat: mosque.get('lat'), lng: mosque.get('lng'), source: mosque.get('locationSource') }
+    : null;
+
+  /**
+   * الموضع الجديد يُقاس إلى مساجد الولاية كما يُقاس موضعُ طلب الملكية.
+   *
+   * الفحص هنا **ليس شكّاً في الإمام** بل في الجهاز: إشارةٌ ضعيفة داخل البناء
+   * تعطي إحداثياً بعيداً بكيلومترات، ولا يظهر ذلك لصاحبه. وتصويبٌ يضع المسجد
+   * في محافظةٍ أخرى أسوأ من الخطأ الذي جاء يصلحه.
+   */
+  const plausible = await nearestKnownInWilayat(mosque, point);
+  if (!plausible) {
+    E.invalid(`الموقع المُرسل بعيدٌ عن مساجد ولاية ${mosque.get('wilayat')} المعروفة. `
+      + 'تأكّد أنك عند المسجد وأن إشارة الموقع جيّدة، ثم أعد المحاولة.');
+  }
+
+  mosque.set('lat', point.lat);
+  mosque.set('lng', point.lng);
+  mosque.set('location', new Parse.GeoPoint({ latitude: point.lat, longitude: point.lng }));
   mosque.set('hasLocation', true);
   // المصدر يُقال: من يقرأ الحقل لاحقاً يعرف أنه تقدير جهازٍ لا بيانات وزارة —
   // وعليه يعتمد سكربت الاستيراد فلا يمسحه في تشغيلةٍ تالية
   mosque.set('locationSource', 'imam');
   await mosque.save(null, { useMasterKey: true });
 
+  /**
+   * التصويب يُقيَّد بغير ما يُقيَّد به التثبيت، ومعه الموضع السابق.
+   *
+   * تغييرُ موقعٍ قائم ليس كملء فراغ: من يقرأ سجلّ المسجد بعد شهرٍ يحتاج أن
+   * يعرف **ما كان** لا أنه «سُجّل موقع» فحسب. والشفافية غاية المنصّة، ومن
+   * يملك تغيير البيانات يجب أن يُرى وهو يغيّرها.
+   */
   await audit.record({
-    action: audit.ACTIONS.LOCATION_LEARNED,
+    action: previous ? audit.ACTIONS.LOCATION_CORRECTED : audit.ACTIONS.LOCATION_LEARNED,
     target: mosque,
     mosque,
     actor: imam,
+    note: previous
+      ? `من ${previous.lat.toFixed(5)}, ${previous.lng.toFixed(5)}`
+        + `${previous.source ? ` (${previous.source})` : ''}`
+      : undefined,
   });
 
-  return { located: true, message: 'تم تثبيت موقع المسجد، بارك الله فيكم.' };
+  return {
+    located: true,
+    corrected: Boolean(previous),
+    message: previous
+      ? 'تم تصويب موقع المسجد، بارك الله فيكم.'
+      : 'تم تثبيت موقع المسجد، بارك الله فيكم.',
+  };
 });
 ```
 
@@ -4674,6 +4748,9 @@ Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
     toStatus: entry.get('toStatus'),
     actorRole: entry.get('actorRole'),
     amount: entry.get('amount'),
+    // ما كان قبل التغيير — بلا هذا يقرأ المصلّي «صوّب الإمام الموقع» ولا يعرف
+    // ماذا صوّب. والسجلّ أداةُ الشفافية لا سطرٌ يُثبت أن شيئاً وقع.
+    note: entry.get('note') || null,
     createdAt: entry.get('createdAt'),
   }));
 });
@@ -5335,6 +5412,7 @@ const ACTIONS = {
   PAYOUT_RECORDED: 'payout_recorded',
   CLAIM_REVIEWED: 'claim_reviewed',
   LOCATION_LEARNED: 'location_learned',
+  LOCATION_CORRECTED: 'location_corrected',
   CONTRACTOR_REVIEWED: 'contractor_reviewed',
   DONATION_REFUNDED: 'donation_refunded',
 };
@@ -5350,8 +5428,9 @@ const ACTIONS = {
  * @param {string=} entry.fromStatus
  * @param {string=} entry.toStatus
  * @param {number=} entry.amount
+ * @param {string=} entry.note      تفصيلٌ يقرؤه إنسان — ما كان قبل التغيير مثلاً
  */
-async function record({ action, target, mosque, actor, fromStatus, toStatus, amount }) {
+async function record({ action, target, mosque, actor, fromStatus, toStatus, amount, note }) {
   try {
     const Entry = Parse.Object.extend('AuditLog');
     const entry = new Entry();
@@ -5369,6 +5448,9 @@ async function record({ action, target, mosque, actor, fromStatus, toStatus, amo
     if (fromStatus) entry.set('fromStatus', fromStatus);
     if (toStatus) entry.set('toStatus', toStatus);
     if (typeof amount === 'number') entry.set('amount', amount);
+    // «سُجّل موقع» لا يقول ما كان قبله. ومن يملك تغيير البيانات يجب أن يُرى
+    // وهو يغيّرها — وما لا يُقارَن بما قبله لا يُراجَع.
+    if (note) entry.set('note', String(note).slice(0, 300));
 
     await entry.save(null, { useMasterKey: true });
   } catch (error) {
@@ -6243,31 +6325,62 @@ Parse.Cloud.define('confirmMosqueLocation', async (request) => {
   const { mosqueId, lat, lng } = request.params;
 
   const mosque = await mosqueForImam(imam, mosqueId);
-
-  if (geo.validCoordinates(mosque.get('lat'), mosque.get('lng'))) {
-    E.invalid('لهذا المسجد موقعٌ مسجّل. لتصحيحه راسل الإدارة.');
-  }
-  if (!geo.validCoordinates(Number(lat), Number(lng))) {
+  const point = { lat: Number(lat), lng: Number(lng) };
+  if (!geo.validCoordinates(point.lat, point.lng)) {
     E.invalid('أكّد موقعك عند المسجد — فعّل إذن الموقع وأعد المحاولة.');
   }
 
-  mosque.set('lat', Number(lat));
-  mosque.set('lng', Number(lng));
-  mosque.set('location', new Parse.GeoPoint({ latitude: Number(lat), longitude: Number(lng) }));
+  const previous = geo.validCoordinates(mosque.get('lat'), mosque.get('lng'))
+    ? { lat: mosque.get('lat'), lng: mosque.get('lng'), source: mosque.get('locationSource') }
+    : null;
+
+  /**
+   * الموضع الجديد يُقاس إلى مساجد الولاية كما يُقاس موضعُ طلب الملكية.
+   *
+   * الفحص هنا **ليس شكّاً في الإمام** بل في الجهاز: إشارةٌ ضعيفة داخل البناء
+   * تعطي إحداثياً بعيداً بكيلومترات، ولا يظهر ذلك لصاحبه. وتصويبٌ يضع المسجد
+   * في محافظةٍ أخرى أسوأ من الخطأ الذي جاء يصلحه.
+   */
+  const plausible = await nearestKnownInWilayat(mosque, point);
+  if (!plausible) {
+    E.invalid(`الموقع المُرسل بعيدٌ عن مساجد ولاية ${mosque.get('wilayat')} المعروفة. `
+      + 'تأكّد أنك عند المسجد وأن إشارة الموقع جيّدة، ثم أعد المحاولة.');
+  }
+
+  mosque.set('lat', point.lat);
+  mosque.set('lng', point.lng);
+  mosque.set('location', new Parse.GeoPoint({ latitude: point.lat, longitude: point.lng }));
   mosque.set('hasLocation', true);
   // المصدر يُقال: من يقرأ الحقل لاحقاً يعرف أنه تقدير جهازٍ لا بيانات وزارة —
   // وعليه يعتمد سكربت الاستيراد فلا يمسحه في تشغيلةٍ تالية
   mosque.set('locationSource', 'imam');
   await mosque.save(null, { useMasterKey: true });
 
+  /**
+   * التصويب يُقيَّد بغير ما يُقيَّد به التثبيت، ومعه الموضع السابق.
+   *
+   * تغييرُ موقعٍ قائم ليس كملء فراغ: من يقرأ سجلّ المسجد بعد شهرٍ يحتاج أن
+   * يعرف **ما كان** لا أنه «سُجّل موقع» فحسب. والشفافية غاية المنصّة، ومن
+   * يملك تغيير البيانات يجب أن يُرى وهو يغيّرها.
+   */
   await audit.record({
-    action: audit.ACTIONS.LOCATION_LEARNED,
+    action: previous ? audit.ACTIONS.LOCATION_CORRECTED : audit.ACTIONS.LOCATION_LEARNED,
     target: mosque,
     mosque,
     actor: imam,
+    note: previous
+      ? `من ${previous.lat.toFixed(5)}, ${previous.lng.toFixed(5)}`
+        + `${previous.source ? ` (${previous.source})` : ''}`
+      : undefined,
   });
 
-  return { located: true, message: 'تم تثبيت موقع المسجد، بارك الله فيكم.' };
+  return {
+    located: true,
+    corrected: Boolean(previous),
+    message: previous
+      ? 'تم تصويب موقع المسجد، بارك الله فيكم.'
+      : 'تم تثبيت موقع المسجد، بارك الله فيكم.',
+  };
 });
 
 
@@ -7464,6 +7577,9 @@ Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
     toStatus: entry.get('toStatus'),
     actorRole: entry.get('actorRole'),
     amount: entry.get('amount'),
+    // ما كان قبل التغيير — بلا هذا يقرأ المصلّي «صوّب الإمام الموقع» ولا يعرف
+    // ماذا صوّب. والسجلّ أداةُ الشفافية لا سطرٌ يُثبت أن شيئاً وقع.
+    note: entry.get('note') || null,
     createdAt: entry.get('createdAt'),
   }));
 });
@@ -8528,14 +8644,17 @@ async function main() {
       mosque.set(descriptiveFields(row));
 
       /**
-       * ترتيب المصادر عند التعارض: **الوزارة، ثم الإنسان، ثم OpenStreetMap.**
+       * **من وقف عند المسجد أعلمُ بموضعه من أيّ مصدر.**
        *
-       * موقعٌ أثبته إنسانٌ وقف عند المسجد أصدق من نقطةٍ وضعها متطوّعٌ في
-       * OpenStreetMap، فلا يُنسخ فوقه. ولا يُمحى بفراغٍ خلّفه سحبُ الثقة، وإلا عاد
-       * المسجد مجهولاً كلّما شُغّل السكربت. أمّا إحداثيّ الوزارة الموثوق فهو
-       * المرجع ويحلّ محلّ الاثنين.
+       * كان الترتيب: الوزارة، ثم الإنسان، ثم الخرائط — أي أن إعادة الاستيراد
+       * تنسخ إحداثيّ الوزارة فوق ما أثبته الإمام. وذلك خطأ: **414 إحداثياً
+       * كاذباً في بيانات الوزارة** تشهد أن المرجع ليس معصوماً، وأن الواقف عند
+       * مسجده أصدق منه ومن نقطة الخرائط جميعاً.
+       *
+       * فما مصدرُه إنسانٌ لا يُنسخ فوقه ولا يُمحى، مهما جاء به الاستيراد.
+       * **وتصويبٌ يمحوه السكربتُ في تشغيلته التالية ليس تصويباً.**
        */
-      const keepLearned = prior && prior.learnedLocation && row.locationSource !== 'ministry';
+      const keepLearned = Boolean(prior && prior.learnedLocation);
 
       if (row.location && !keepLearned) {
         mosque.set('hasLocation', true);

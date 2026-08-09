@@ -757,9 +757,7 @@ export function ImamHome() {
               </div>
               <Where wilayat={mosque.wilayat} village={mosque.village}
                 governorate={mosque.governorate} mosqueNumber={mosque.mosqueNumber} />
-              {mosque.hasLocation === false && (
-                <LocateMosque mosque={mosque} onDone={mosques.refresh} />
-              )}
+              <LocateMosque mosque={mosque} onDone={mosques.refresh} />
               <div className="row">
                 <button onClick={() => setOpenMosque({ mosqueId: mosque.id, mosqueName: mosque.name })}>
                   طلبات الصيانة
@@ -799,16 +797,23 @@ export function ImamHome() {
 }
 
 /**
- * تثبيت موقع مسجدٍ مجهول الموقع.
+ * تثبيت موقع المسجد أو تصويبه.
  *
  * لماذا يظهر أصلاً: 430 مسجداً في بيانات الوزارة بلا موقعٍ يُوثق به — ستة عشر
  * بلا إحداثيّ، والبقية بإحداثيٍّ كاذب سُحبت ثقتنا منه. وهذه المساجد لا يجدها
  * المتطوّع في البحث بالقرب، وتجيء في ذيل قائمة الفرص. وإمامها وحده يعرف أين
  * هي، فيُعطى الطريق إلى قولها — لا يُنتظر منه أن يعيد التسجيل.
+ *
+ * **والتصويب كالتثبيت.** موقعٌ مسجَّلٌ قد يكون خاطئاً — أربعمئة وأربعة عشر
+ * إحداثياً كاذباً في بيانات الوزارة تشهد بذلك، وما يُستخرج من الخرائط تقديرٌ
+ * لا يقين. ومن يقف عند المسجد أعلمُ بموضعه من أي مصدر، فله أن يصوّبه.
+ * والتصويب يُقيَّد في سجلّ المسجد ومعه ما كان قبله.
  */
 function LocateMosque({ mosque, onDone }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [open, setOpen] = useState(false);
+  const known = mosque.hasLocation !== false;
 
   const confirm = async () => {
     setBusy(true);
@@ -823,14 +828,36 @@ function LocateMosque({ mosque, onDone }) {
     }
   };
 
+  // موقعٌ معروف: لا يُقحَم الزرّ بل يُفتح بطلبٍ من الإمام، فلا يُضغط سهواً
+  if (known && !open) {
+    return (
+      <button className="link" onClick={() => setOpen(true)}>
+        موقع المسجد على الخريطة غير صحيح؟
+      </button>
+    );
+  }
+
   return (
     <div className="notice">
-      <p>موقع هذا المسجد غير معروف، فلا يجده المتطوّعون فيما حولهم.</p>
-      <p>قِف عند المسجد واضغط الزرّ ليُثبَّت موقعه.</p>
+      {known ? (
+        <p>قِف <strong>عند المسجد</strong> واضغط الزرّ ليحلّ موقعُك محلَّ الموقع المسجَّل.
+          ويُقيَّد التصويب في سجلّ المسجد.</p>
+      ) : (
+        <>
+          <p>موقع هذا المسجد غير معروف، فلا يجده المتطوّعون فيما حولهم.</p>
+          <p>قِف عند المسجد واضغط الزرّ ليُثبَّت موقعه.</p>
+        </>
+      )}
       {error && <div className="error">{error}</div>}
-      <button onClick={confirm} disabled={busy}>
-        {busy ? 'جارٍ تحديد موقعك…' : 'ثبّت موقع المسجد من هنا'}
-      </button>
+      <div className="row">
+        <button onClick={confirm} disabled={busy}>
+          {busy ? 'جارٍ تحديد موقعك…'
+            : (known ? 'صوّب الموقع من هنا' : 'ثبّت موقع المسجد من هنا')}
+        </button>
+        {known && (
+          <button className="ghost" onClick={() => setOpen(false)} disabled={busy}>إلغاء</button>
+        )}
+      </div>
     </div>
   );
 }

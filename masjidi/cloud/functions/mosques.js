@@ -626,29 +626,60 @@ Parse.Cloud.define('confirmMosqueLocation', async (request) => {
   const { mosqueId, lat, lng } = request.params;
 
   const mosque = await mosqueForImam(imam, mosqueId);
-
-  if (geo.validCoordinates(mosque.get('lat'), mosque.get('lng'))) {
-    E.invalid('لهذا المسجد موقعٌ مسجّل. لتصحيحه راسل الإدارة.');
-  }
-  if (!geo.validCoordinates(Number(lat), Number(lng))) {
+  const point = { lat: Number(lat), lng: Number(lng) };
+  if (!geo.validCoordinates(point.lat, point.lng)) {
     E.invalid('أكّد موقعك عند المسجد — فعّل إذن الموقع وأعد المحاولة.');
   }
 
-  mosque.set('lat', Number(lat));
-  mosque.set('lng', Number(lng));
-  mosque.set('location', new Parse.GeoPoint({ latitude: Number(lat), longitude: Number(lng) }));
+  const previous = geo.validCoordinates(mosque.get('lat'), mosque.get('lng'))
+    ? { lat: mosque.get('lat'), lng: mosque.get('lng'), source: mosque.get('locationSource') }
+    : null;
+
+  /**
+   * الموضع الجديد يُقاس إلى مساجد الولاية كما يُقاس موضعُ طلب الملكية.
+   *
+   * الفحص هنا **ليس شكّاً في الإمام** بل في الجهاز: إشارةٌ ضعيفة داخل البناء
+   * تعطي إحداثياً بعيداً بكيلومترات، ولا يظهر ذلك لصاحبه. وتصويبٌ يضع المسجد
+   * في محافظةٍ أخرى أسوأ من الخطأ الذي جاء يصلحه.
+   */
+  const plausible = await nearestKnownInWilayat(mosque, point);
+  if (!plausible) {
+    E.invalid(`الموقع المُرسل بعيدٌ عن مساجد ولاية ${mosque.get('wilayat')} المعروفة. `
+      + 'تأكّد أنك عند المسجد وأن إشارة الموقع جيّدة، ثم أعد المحاولة.');
+  }
+
+  mosque.set('lat', point.lat);
+  mosque.set('lng', point.lng);
+  mosque.set('location', new Parse.GeoPoint({ latitude: point.lat, longitude: point.lng }));
   mosque.set('hasLocation', true);
   // المصدر يُقال: من يقرأ الحقل لاحقاً يعرف أنه تقدير جهازٍ لا بيانات وزارة —
   // وعليه يعتمد سكربت الاستيراد فلا يمسحه في تشغيلةٍ تالية
   mosque.set('locationSource', 'imam');
   await mosque.save(null, { useMasterKey: true });
 
+  /**
+   * التصويب يُقيَّد بغير ما يُقيَّد به التثبيت، ومعه الموضع السابق.
+   *
+   * تغييرُ موقعٍ قائم ليس كملء فراغ: من يقرأ سجلّ المسجد بعد شهرٍ يحتاج أن
+   * يعرف **ما كان** لا أنه «سُجّل موقع» فحسب. والشفافية غاية المنصّة، ومن
+   * يملك تغيير البيانات يجب أن يُرى وهو يغيّرها.
+   */
   await audit.record({
-    action: audit.ACTIONS.LOCATION_LEARNED,
+    action: previous ? audit.ACTIONS.LOCATION_CORRECTED : audit.ACTIONS.LOCATION_LEARNED,
     target: mosque,
     mosque,
     actor: imam,
+    note: previous
+      ? `من ${previous.lat.toFixed(5)}, ${previous.lng.toFixed(5)}`
+        + `${previous.source ? ` (${previous.source})` : ''}`
+      : undefined,
   });
 
-  return { located: true, message: 'تم تثبيت موقع المسجد، بارك الله فيكم.' };
+  return {
+    located: true,
+    corrected: Boolean(previous),
+    message: previous
+      ? 'تم تصويب موقع المسجد، بارك الله فيكم.'
+      : 'تم تثبيت موقع المسجد، بارك الله فيكم.',
+  };
 });

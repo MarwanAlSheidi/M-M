@@ -31,6 +31,7 @@ const ACTIONS = {
   PAYOUT_RECORDED: 'payout_recorded',
   CLAIM_REVIEWED: 'claim_reviewed',
   LOCATION_LEARNED: 'location_learned',
+  LOCATION_CORRECTED: 'location_corrected',
   CONTRACTOR_REVIEWED: 'contractor_reviewed',
   DONATION_REFUNDED: 'donation_refunded',
 };
@@ -46,8 +47,9 @@ const ACTIONS = {
  * @param {string=} entry.fromStatus
  * @param {string=} entry.toStatus
  * @param {number=} entry.amount
+ * @param {string=} entry.note      تفصيلٌ يقرؤه إنسان — ما كان قبل التغيير مثلاً
  */
-async function record({ action, target, mosque, actor, fromStatus, toStatus, amount }) {
+async function record({ action, target, mosque, actor, fromStatus, toStatus, amount, note }) {
   try {
     const Entry = Parse.Object.extend('AuditLog');
     const entry = new Entry();
@@ -65,6 +67,9 @@ async function record({ action, target, mosque, actor, fromStatus, toStatus, amo
     if (fromStatus) entry.set('fromStatus', fromStatus);
     if (toStatus) entry.set('toStatus', toStatus);
     if (typeof amount === 'number') entry.set('amount', amount);
+    // «سُجّل موقع» لا يقول ما كان قبله. ومن يملك تغيير البيانات يجب أن يُرى
+    // وهو يغيّرها — وما لا يُقارَن بما قبله لا يُراجَع.
+    if (note) entry.set('note', String(note).slice(0, 300));
 
     await entry.save(null, { useMasterKey: true });
   } catch (error) {

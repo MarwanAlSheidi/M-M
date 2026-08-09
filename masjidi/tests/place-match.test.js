@@ -306,11 +306,11 @@ test('ترتيب المصادر في الاستيراد', async (t) => {
   const seed = fs.readFileSync(
     path.join(__dirname, '..', 'scripts', 'seed_mosques.js'), 'utf8');
 
-  await t.test('ما أثبته إنسانٌ لا ينسخ فوقه إلا الوزارة', () => {
-    // نقطةُ OSM وضعها متطوّع، والإمام وقف عند المسجد. ولولا هذا الشرط لمحا
-    // ملفُّ التراكب كلَّ موقعٍ ثبّته إمامٌ بنفسه في أوّل إعادة استيراد.
-    assert.match(seed, /keepLearned = prior && prior\.learnedLocation\s*\n?\s*&& row\.locationSource !== 'ministry'/,
-      'شرطُ الحفظ لم يعد يميّز مصدر الوارد، فالخرائط تنسخ فوق الإنسان');
+  await t.test('ما أثبته إنسانٌ لا يُنسخ فوقه ولا يُمحى — مهما جاء الاستيراد', () => {
+    // نقطةُ الخريطة وضعها متطوّع، وإحداثيّ الوزارة كذب في 414 موضعاً. والإمام
+    // وقف عند مسجده. وتصويبٌ يمحوه السكربتُ في تشغيلته التالية ليس تصويباً.
+    assert.match(seed, /keepLearned = Boolean\(prior && prior\.learnedLocation\)/,
+      'عاد الاستيراد ينسخ فوق ما أثبته إنسان');
     assert.match(seed, /if \(row\.location && !keepLearned\)/,
       'الكتابة تسبق الفحص، فالشرط لا أثر له');
   });

@@ -379,6 +379,7 @@ const ACTIONS = {
   PAYOUT_RECORDED: 'payout_recorded',
   CLAIM_REVIEWED: 'claim_reviewed',
   LOCATION_LEARNED: 'location_learned',
+  LOCATION_CORRECTED: 'location_corrected',
   CONTRACTOR_REVIEWED: 'contractor_reviewed',
   DONATION_REFUNDED: 'donation_refunded',
 };
@@ -394,8 +395,9 @@ const ACTIONS = {
  * @param {string=} entry.fromStatus
  * @param {string=} entry.toStatus
  * @param {number=} entry.amount
+ * @param {string=} entry.note      تفصيلٌ يقرؤه إنسان — ما كان قبل التغيير مثلاً
  */
-async function record({ action, target, mosque, actor, fromStatus, toStatus, amount }) {
+async function record({ action, target, mosque, actor, fromStatus, toStatus, amount, note }) {
   try {
     const Entry = Parse.Object.extend('AuditLog');
     const entry = new Entry();
@@ -413,6 +415,9 @@ async function record({ action, target, mosque, actor, fromStatus, toStatus, amo
     if (fromStatus) entry.set('fromStatus', fromStatus);
     if (toStatus) entry.set('toStatus', toStatus);
     if (typeof amount === 'number') entry.set('amount', amount);
+    // «سُجّل موقع» لا يقول ما كان قبله. ومن يملك تغيير البيانات يجب أن يُرى
+    // وهو يغيّرها — وما لا يُقارَن بما قبله لا يُراجَع.
+    if (note) entry.set('note', String(note).slice(0, 300));
 
     await entry.save(null, { useMasterKey: true });
   } catch (error) {
@@ -1287,31 +1292,62 @@ Parse.Cloud.define('confirmMosqueLocation', async (request) => {
   const { mosqueId, lat, lng } = request.params;
 
   const mosque = await mosqueForImam(imam, mosqueId);
-
-  if (geo.validCoordinates(mosque.get('lat'), mosque.get('lng'))) {
-    E.invalid('لهذا المسجد موقعٌ مسجّل. لتصحيحه راسل الإدارة.');
-  }
-  if (!geo.validCoordinates(Number(lat), Number(lng))) {
+  const point = { lat: Number(lat), lng: Number(lng) };
+  if (!geo.validCoordinates(point.lat, point.lng)) {
     E.invalid('أكّد موقعك عند المسجد — فعّل إذن الموقع وأعد المحاولة.');
   }
 
-  mosque.set('lat', Number(lat));
-  mosque.set('lng', Number(lng));
-  mosque.set('location', new Parse.GeoPoint({ latitude: Number(lat), longitude: Number(lng) }));
+  const previous = geo.validCoordinates(mosque.get('lat'), mosque.get('lng'))
+    ? { lat: mosque.get('lat'), lng: mosque.get('lng'), source: mosque.get('locationSource') }
+    : null;
+
+  /**
+   * الموضع الجديد يُقاس إلى مساجد الولاية كما يُقاس موضعُ طلب الملكية.
+   *
+   * الفحص هنا **ليس شكّاً في الإمام** بل في الجهاز: إشارةٌ ضعيفة داخل البناء
+   * تعطي إحداثياً بعيداً بكيلومترات، ولا يظهر ذلك لصاحبه. وتصويبٌ يضع المسجد
+   * في محافظةٍ أخرى أسوأ من الخطأ الذي جاء يصلحه.
+   */
+  const plausible = await nearestKnownInWilayat(mosque, point);
+  if (!plausible) {
+    E.invalid(`الموقع المُرسل بعيدٌ عن مساجد ولاية ${mosque.get('wilayat')} المعروفة. `
+      + 'تأكّد أنك عند المسجد وأن إشارة الموقع جيّدة، ثم أعد المحاولة.');
+  }
+
+  mosque.set('lat', point.lat);
+  mosque.set('lng', point.lng);
+  mosque.set('location', new Parse.GeoPoint({ latitude: point.lat, longitude: point.lng }));
   mosque.set('hasLocation', true);
   // المصدر يُقال: من يقرأ الحقل لاحقاً يعرف أنه تقدير جهازٍ لا بيانات وزارة —
   // وعليه يعتمد سكربت الاستيراد فلا يمسحه في تشغيلةٍ تالية
   mosque.set('locationSource', 'imam');
   await mosque.save(null, { useMasterKey: true });
 
+  /**
+   * التصويب يُقيَّد بغير ما يُقيَّد به التثبيت، ومعه الموضع السابق.
+   *
+   * تغييرُ موقعٍ قائم ليس كملء فراغ: من يقرأ سجلّ المسجد بعد شهرٍ يحتاج أن
+   * يعرف **ما كان** لا أنه «سُجّل موقع» فحسب. والشفافية غاية المنصّة، ومن
+   * يملك تغيير البيانات يجب أن يُرى وهو يغيّرها.
+   */
   await audit.record({
-    action: audit.ACTIONS.LOCATION_LEARNED,
+    action: previous ? audit.ACTIONS.LOCATION_CORRECTED : audit.ACTIONS.LOCATION_LEARNED,
     target: mosque,
     mosque,
     actor: imam,
+    note: previous
+      ? `من ${previous.lat.toFixed(5)}, ${previous.lng.toFixed(5)}`
+        + `${previous.source ? ` (${previous.source})` : ''}`
+      : undefined,
   });
 
-  return { located: true, message: 'تم تثبيت موقع المسجد، بارك الله فيكم.' };
+  return {
+    located: true,
+    corrected: Boolean(previous),
+    message: previous
+      ? 'تم تصويب موقع المسجد، بارك الله فيكم.'
+      : 'تم تثبيت موقع المسجد، بارك الله فيكم.',
+  };
 });
 
 
@@ -2508,6 +2544,9 @@ Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
     toStatus: entry.get('toStatus'),
     actorRole: entry.get('actorRole'),
     amount: entry.get('amount'),
+    // ما كان قبل التغيير — بلا هذا يقرأ المصلّي «صوّب الإمام الموقع» ولا يعرف
+    // ماذا صوّب. والسجلّ أداةُ الشفافية لا سطرٌ يُثبت أن شيئاً وقع.
+    note: entry.get('note') || null,
     createdAt: entry.get('createdAt'),
   }));
 });

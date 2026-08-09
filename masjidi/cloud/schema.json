@@ -437,6 +437,9 @@
         },
         "amount": {
           "type": "Number"
+        },
+        "note": {
+          "type": "String"
         }
       },
       "indexes": {

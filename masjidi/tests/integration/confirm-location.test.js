@@ -94,15 +94,49 @@ test('تثبيت موقع المسجد', options, async (t) => {
       'ثُبّت الموقع ولا يزال المسجد خارج القرب');
   });
 
-  await t.test('ولا يُنسخ فوق موقعٍ قائم', async () => {
+  /**
+   * التصويب، لا التثبيت فحسب.
+   *
+   * موقعٌ مسجَّلٌ قد يكون خاطئاً — 414 إحداثياً كاذباً في بيانات الوزارة تشهد
+   * بذلك، وما يُستخرج من الخرائط تقديرٌ لا يقين. ومن يقف عند المسجد أعلمُ
+   * بموضعه من أيّ مصدر.
+   */
+  await t.test('والإمام يصوّب موقعاً مسجَّلاً، ويُقيَّد ما كان قبله', async () => {
     const imam = await signUp('imam');
-    const mosque = await claimedBy(imam, 'المرجع', { lat: 23.6, lng: 58.5, hasLocation: true });
+    const mosque = await claimedBy(imam, 'المصوَّب', {
+      lat: 23.60, lng: 58.50, hasLocation: true, locationSource: 'ministry',
+    });
+    // جارٌ معلومٌ في الولاية يُقاس إليه الموضع الجديد
+    await claimedBy(imam, 'الجار', { lat: 23.61, lng: 58.51, hasLocation: true });
+
+    const result = await as(imam, 'confirmMosqueLocation',
+      { mosqueId: mosque.id, lat: 23.615, lng: 58.515 });
+    assert.equal(result.corrected, true);
+    assert.match(result.message, /تصويب/);
+
+    const fresh = await reread(mosque);
+    assert.equal(fresh.get('lat'), 23.615);
+    assert.equal(fresh.get('locationSource'), 'imam');
+
+    const trail = await as(imam, 'getMosqueAuditTrail', { mosqueId: mosque.id });
+    const entry = trail.find((row) => row.action === 'location_corrected');
+    assert.ok(entry, 'صُوّب الموقع بلا أثرٍ يميّزه عن تثبيتٍ أوّل');
+    assert.match(entry.note, /23\.60000, 58\.50000/,
+      'السجلّ يقول «صُوّب» ولا يقول ماذا كان — فلا يُراجَع');
+    assert.match(entry.note, /ministry/);
+  });
+
+  await t.test('وتصويبٌ يقع خارج الولاية يُردّ — الجهاز يُخطئ لا الإمام', async () => {
+    const imam = await signUp('imam');
+    const mosque = await claimedBy(imam, 'المحفوظ', { lat: 23.60, lng: 58.50, hasLocation: true });
+    await claimedBy(imam, 'جارُ المحفوظ', { lat: 23.61, lng: 58.51, hasLocation: true });
 
     await assert.rejects(
-      as(imam, 'confirmMosqueLocation', { mosqueId: mosque.id, lat: 20.0, lng: 57.0 }),
-      /موقعٌ مسجّل/,
+      as(imam, 'confirmMosqueLocation', { mosqueId: mosque.id, lat: 17.0, lng: 54.1 }),
+      /بعيدٌ عن مساجد ولاية/,
     );
-    assert.equal((await reread(mosque)).get('lat'), 23.6);
+    assert.equal((await reread(mosque)).get('lat'), 23.60,
+      'قُبل تصويبٌ يضع المسجد في محافظةٍ أخرى — وهو أسوأ من الخطأ الذي جاء يصلحه');
   });
 
   await t.test('وإمامٌ آخر لا يثبّت موقع مسجدٍ ليس له', async () => {

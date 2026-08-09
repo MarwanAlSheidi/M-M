@@ -61,6 +61,7 @@ export const AUDIT_LABEL = {
   work_done: 'أُبلغ بإنجاز العمل',
   request_completed: 'اعتمد الإمام العمل',
   location_learned: 'سُجّل موقع المسجد على الخريطة',
+  location_corrected: 'صوّب إمام المسجد موقعه على الخريطة',
   request_cancelled: 'أُلغي الطلب',
   claim_reviewed: 'روجعت ملكية المسجد',
   contractor_reviewed: 'روجع اعتماد شركة',
