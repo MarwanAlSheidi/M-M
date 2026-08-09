@@ -104,6 +104,98 @@ test('المسجد يتعلّم موقعه من طلب ملكيته', options, a
     assert.equal(fresh.get('locationSource'), undefined);
   });
 
+  /**
+   * الموقع المُقدَّم لمسجدٍ مجهول لا يُقاس إلى المسجد — فلا موقع له — لكنه
+   * يُقاس إلى **مساجد ولايته المعلومة**. وهي القرينة الوحيدة المتاحة، وأشدّ
+   * حالةٍ تحتاجها: ما يُقبل هنا يصير موقع المسجد الدائم على الخريطة.
+   *
+   * والرقم مقيس: على 17,784 مسجداً موثوقاً، أقصى بُعدٍ عن أقرب جارٍ في الولاية
+   * نفسها 73.4 كم — فثمانون فوق أقصى الواقع ولا تُقصي قائماً.
+   */
+  /** مسجدٌ معلوم الموقع في الولاية — القرينة التي يُقاس إليها الموقع المُقدَّم. */
+  const anchorWilayat = async (wilayat, lat, lng) => make(`مرساة ${wilayat}`, {
+    wilayat, lat, lng, hasLocation: true,
+  });
+
+  await t.test('وموقعٌ بعيدٌ عن كل مساجد الولاية يُردّ لحظة التقديم', async () => {
+    await anchorWilayat('بوشر', 23.6, 58.5);
+    const blind = await make('البعيد', { hasLocation: false });
+    const imam = await signUp('imam');
+
+    // المسجد في بوشر بمسقط، والموقع المُرسل في ظفار — 850 كم
+    await assert.rejects(
+      as(imam, 'claimMosque', { mosqueId: blind.id, lat: 17.0, lng: 54.1 }),
+      /بعيدٌ عن كل مساجد ولاية/,
+      'قُبل موقعٌ يستحيل أن يكون مسجدَ تلك الولاية، وسيصير موقعه الدائم',
+    );
+  });
+
+  await t.test('والمشرف يرى بُعد الموقع عن مساجد الولاية', async () => {
+    await anchorWilayat('بوشر', 23.6, 58.5);
+    const blind = await make('المقيس', { hasLocation: false });
+    const imam = await signUp('imam');
+    await as(imam, 'claimMosque', { mosqueId: blind.id, lat: 23.605, lng: 58.505 });
+
+    const [pending] = (await as(admin, 'listPendingClaims'))
+      .filter((row) => row.mosqueName === 'مسجد المقيس');
+    assert.ok(pending.wilayatNearestKm != null,
+      'المشرف يقرّر بلا قرينة في الحالة التي اعتمادُه فيها يمنح موقعاً دائماً');
+    assert.ok(pending.wilayatNearestKm < 5);
+    assert.equal(pending.willSetLocation, true);
+  });
+
+  await t.test('وموقعٌ صار بعيداً بعد التقديم لا يُتبنّى عند الاعتماد', async () => {
+    // الفحص يُعاد لحظة الاعتماد: الطلب قد يكون أُنشئ قبل وجود الفحص أصلاً
+    await anchorWilayat('بوشر', 23.6, 58.5);
+    const blind = await make('المتأخّر', { hasLocation: false });
+    const imam = await signUp('imam');
+    const claim = await as(imam, 'claimMosque',
+      { mosqueId: blind.id, lat: 23.606, lng: 58.506 });
+
+    // يُزوَّر الطلب بموقعٍ بعيد كما لو أُنشئ قبل الفحص
+    const stored = await new Parse.Query('MosqueClaims')
+      .get(claim.claimId, { useMasterKey: true });
+    stored.set('claimLat', 17.0);
+    stored.set('claimLng', 54.1);
+    await stored.save(null, { useMasterKey: true });
+
+    const result = await as(admin, 'reviewMosqueClaim',
+      { claimId: claim.claimId, approve: true });
+
+    assert.equal(result.status, 'approved', 'الإمام يُعتمد — الموقع وحده هو المريب');
+    assert.equal(result.locationLearned, false);
+    assert.equal(result.locationRejected, true);
+    assert.match(result.message, /لم يُعتمد الموقع/);
+
+    const fresh = await reread(blind);
+    assert.equal(fresh.get('hasLocation'), false);
+    assert.equal(fresh.get('lat'), undefined,
+      'تُبنّي موقعٌ يستحيل، وسيقود إليه كل متطوّع');
+    assert.ok(fresh.get('imamId'), 'رُفض الموقع فسقط اعتماد الإمام معه');
+  });
+
+  await t.test('وولايةٌ لا نعرف موقع مسجدٍ فيها لا تُقصي إمامها', async () => {
+    // غيابُ البيّنة ليس بيّنةَ نفي. و`DEPLOY.md` يوصي بالاستيراد على مراحل،
+    // فولايةٌ لم تُستورد بعد حالةٌ متوقّعة — وخلطُها بالموقع المريب يُقصي كل
+    // إمامٍ فيها بلا أن يفهم أحدٌ لماذا.
+    const blind = await make('المعزول', { wilayat: 'ولاية لم تُستورد', hasLocation: false });
+    const imam = await signUp('imam');
+
+    const claim = await as(imam, 'claimMosque',
+      { mosqueId: blind.id, lat: 23.61, lng: 58.51 });
+    assert.ok(claim.claimId, 'رُدّ طلبٌ لا سبيل إلى الحكم عليه أصلاً');
+
+    const [pending] = (await as(admin, 'listPendingClaims'))
+      .filter((row) => row.mosqueName === 'مسجد المعزول');
+    assert.equal(pending.wilayatNearestKm, null, 'رقمٌ يوهم المشرف بقياسٍ لم يقع');
+    assert.equal(pending.willSetLocation, true, 'الاعتماد سيمنح موقعاً والمشرف لا يعلم');
+
+    const result = await as(admin, 'reviewMosqueClaim',
+      { claimId: claim.claimId, approve: true });
+    assert.equal(result.locationLearned, true);
+    assert.equal((await reread(blind)).get('lat'), 23.61);
+  });
+
   await t.test('والرفض لا يمنح موقعاً', async () => {
     const blind = await make('المرفوض', { hasLocation: false });
     const imam = await signUp('imam');

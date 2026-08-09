@@ -163,6 +163,9 @@
         },
         "claimDistanceKm": {
           "type": "Number"
+        },
+        "wilayatNearestKm": {
+          "type": "Number"
         }
       },
       "classLevelPermissions": {

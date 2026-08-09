@@ -852,6 +852,68 @@ const CAPACITIES = { imam: 'إمام المسجد', agent: 'وكيل المسج�
 const AT_MOSQUE_KM = 0.5;
 
 /**
+ * أبعد ما يُقبل بين موقعٍ مُقدَّم وأقرب مسجدٍ معلومٍ في الولاية نفسها.
+ *
+ * الرقم مقيسٌ لا مُخمَّن: على المساجد الموثوق بإحداثياتها (17,784) حُسب لكل
+ * مسجدٍ بُعدُه عن أقرب جارٍ له في ولايته، فكان الوسيط 260 متراً، والمئين
+ * التاسع والتسعون 4.8 كم، **وأقصى ما وُجد 73.4 كم**. فثمانون كيلومتراً فوق
+ * أقصى الواقع، ولا تُقصي قائماً — وتلتقط المستحيل: من يسجّل مسجداً في صلالة
+ * وهو في مسقط يبعد 850 كم.
+ */
+const WILAYAT_PLAUSIBLE_KM = 80;
+
+/**
+ * أقرب مسجدٍ معلوم الموقع في الولاية نفسها، أو `null` إن لم يكن في المدى.
+ *
+ * **لماذا يلزم:** 430 مسجداً بلا موقعٍ يُوثق به، وطلبُ ملكية أحدها يحمل موقعاً
+ * لا يُقاس إلى شيء — فيراه المشرف بلا مسافةٍ ولا حكم، ثم يُتبنّى موقعاً دائماً
+ * للمسجد يقود إليه كل متطوّع. وهذه أشدّ حالةٍ يحتاج فيها إلى قرينة، وهي
+ * الحالة الوحيدة التي كان يُترك فيها بلا واحدة.
+ *
+ * والقرينة من بياناتنا نفسها: مساجد الولاية المعلومة. مسجدٌ في نزوى لا يبعد
+ * عن سائر مساجد نزوى بمئات الكيلومترات.
+ */
+async function nearestKnownInWilayat(mosque, point, radiusKm = WILAYAT_PLAUSIBLE_KM) {
+  const wilayat = mosque.get('wilayat');
+  if (!wilayat) return { km: null, blind: true };
+
+  /** القيود المشتركة: مساجد الولاية نفسها، عدا المسجد المعنيّ. */
+  const inWilayat = () => {
+    const query = new Parse.Query('Mosques');
+    query.equalTo('wilayat', wilayat);
+    query.equalTo('governorate', mosque.get('governorate'));
+    query.notEqualTo('objectId', mosque.id);
+    return query;
+  };
+
+  const query = inWilayat();
+  // الصندوق يقصر المرشّحين على الجوار، فالاستعلام لا يجرّ ولايةً كاملة
+  geo.withinBox(query, geo.boundingBox(point.lat, point.lng, radiusKm));
+  query.select('name', 'lat', 'lng');
+  query.limit(BOX_CANDIDATE_CAP);
+
+  const [nearest] = geo.sortByDistance(
+    await query.find({ useMasterKey: true }), point.lat, point.lng, radiusKm,
+  );
+  if (nearest) return { km: nearest.km, name: nearest.row.get('name'), blind: false };
+
+  /**
+   * لا مسجد قريباً — أهو موقعٌ مريب، أم ولايةٌ لا نعرف موقع أيّ مسجدٍ فيها؟
+   *
+   * الفرق حاسم: **غيابُ البيّنة ليس بيّنةَ نفي**. لو خلطنا بينهما لأُقصي كل
+   * إمامٍ في ولايةٍ لم تُستورد بعد — و`DEPLOY.md` يوصي بالاستيراد على مراحل،
+   * فهذه حالةٌ متوقّعة لا نادرة. وفي بيانات الوزارة اليوم كل ولاية فيها خمسة
+   * مساجد معلومة فأكثر، لكن ذلك خاصّةُ البيانات لا ضمانةُ الكود.
+   */
+  const anyKnown = await inWilayat()
+    .equalTo('hasLocation', true)
+    .select('objectId')
+    .first({ useMasterKey: true });
+
+  return anyKnown ? null : { km: null, blind: true };
+}
+
+/**
  * طلب ملكية مسجد، ومعه تأكيد موقع مقدّمه.
  *
  * السؤال المفتوح منذ أوّل يوم: كيف يُثبت الإمام أنه إمام هذا المسجد؟ لا جواب
@@ -859,8 +921,15 @@ const AT_MOSQUE_KM = 0.5;
  * فيُطلب موقعه لحظة التقديم وتُحسب مسافته من المسجد وتُعرض للمشرف: طلبٌ من
  * داخل المسجد ليس دليلاً قاطعاً، لكنه أقوى بكثير من طلبٍ من مدينة أخرى.
  *
- * ولا يُرفض البعيد تلقائياً — القرار للمشرف: قد يُسجّل الإمام مساءً من بيته،
- * وقد يكون المسجد بلا إحداثيات أصلاً. الرفض الآلي يُقصي محقّاً بلا مراجعة.
+ * ولا يُرفض البعيد تلقائياً — القرار للمشرف: قد يُسجّل الإمام مساءً من بيته.
+ * الرفض الآلي يُقصي محقّاً بلا مراجعة.
+ *
+ * **إلا في حالةٍ واحدة:** مسجدٌ بلا موقعٍ معلوم. فالموقع المُقدَّم هناك ليس
+ * قرينةً على الهوية فحسب، بل يصير **موقع المسجد الدائم** إن اعتُمد الطلب —
+ * يقود إليه كل متطوّع بعدها. فيُقاس إلى مساجد ولايته المعلومة، ويُردّ ما جاوز
+ * ثمانين كيلومتراً منها: ذاك ليس تسجيلاً من البيت، بل موقعٌ لا يمكن أن يكون
+ * مسجدَ تلك الولاية. وردُّه هنا أرحم من قبوله: يُقال للإمام الآن، لا بعد
+ * انتظار مراجعةٍ ثم رفض.
  */
 Parse.Cloud.define('claimMosque', async (request) => {
   const claimant = requireRole(request, 'imam');
@@ -905,6 +974,16 @@ Parse.Cloud.define('claimMosque', async (request) => {
       claim.set('claimDistanceKm', Math.round(geo.distanceKm(
         here.lat, here.lng, mosque.get('lat'), mosque.get('lng'),
       ) * 1000) / 1000);
+    } else {
+      // مسجدٌ بلا موقع: الموقع المُقدَّم سيصير موقعه الدائم إن اعتُمد الطلب،
+      // فيُقاس إلى مساجد ولايته المعلومة — وهي القرينة الوحيدة المتاحة هنا
+      const near = await nearestKnownInWilayat(mosque, here);
+      if (!near) {
+        E.invalid(`الموقع الذي أُرسل بعيدٌ عن كل مساجد ولاية ${mosque.get('wilayat')} `
+          + 'المعروفة. سجّل وأنت عند المسجد — موقعك سيصير موقعه على الخريطة.');
+      }
+      // `blind` يعني: لا نعرف موقع أيّ مسجدٍ في الولاية، فلا قياس ولا اتّهام
+      if (!near.blind) claim.set('wilayatNearestKm', Math.round(near.km * 1000) / 1000);
     }
   }
   await claim.save(null, { useMasterKey: true });
@@ -1019,6 +1098,11 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
       claimDistanceKm: claim.get('claimDistanceKm') ?? null,
       atMosque: claim.get('claimDistanceKm') != null
         && claim.get('claimDistanceKm') <= AT_MOSQUE_KM,
+      // مسجدٌ بلا موقع لا مسافة له تُقاس، فكان المشرف يقرّر بلا قرينة —
+      // وهي أشدّ حالةٍ يحتاجها: اعتمادُه يمنح المسجد موقعاً دائماً. البديل
+      // بُعدُ الموقع المُقدَّم عن أقرب مسجدٍ معلومٍ في الولاية نفسها.
+      wilayatNearestKm: claim.get('wilayatNearestKm') ?? null,
+      willSetLocation: claim.get('claimLat') != null && claim.get('claimDistanceKm') == null,
       imamName: imam ? imam.get('fullName') : null,
       imamPhone: imam ? imam.get('phone') : null, // المشرف يتحقّق بالاتصال
     };
@@ -1042,6 +1126,7 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
   await claim.save(null, { useMasterKey: true });
 
   let locationLearned = false;
+  let locationRejected = false;
   if (approve) {
     const mosque = claim.get('mosqueId');
     mosque.set('imamId', claim.get('imamId'));
@@ -1055,7 +1140,19 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
     // الطلب تقديرٌ بدقّة الجهاز: يملأ فراغاً ولا ينسخ فوق مرجع.
     const hasCoordinates = geo.validCoordinates(mosque.get('lat'), mosque.get('lng'));
     const claimed = { lat: claim.get('claimLat'), lng: claim.get('claimLng') };
-    if (!hasCoordinates && geo.validCoordinates(claimed.lat, claimed.lng)) {
+    const offersLocation = !hasCoordinates && geo.validCoordinates(claimed.lat, claimed.lng);
+
+    // القياس يُعاد هنا ولا يُكتفى بما حُفظ لحظة التقديم: الاعتماد هو اللحظة
+    // التي يصير فيها الموقع دائماً، فليكن الفحص عندها. وقد يكون الطلب أُنشئ
+    // قبل وجود هذا الفحص أصلاً، فلا يحمل قياساً.
+    const plausible = offersLocation ? await nearestKnownInWilayat(mosque, claimed) : null;
+
+    // موقعٌ مريب لا يُبطل الطلب: الرجل قد يكون إمام المسجد حقاً وجهازُه هو
+    // المخطئ. يُعتمد إمامَ مسجده، ويبقى المسجد مجهول الموقع حتى يثبّته من عنده
+    // بـ`confirmMosqueLocation`. وموقعٌ مجهول أهون من موقعٍ يقود الناس ضلالاً.
+    locationRejected = offersLocation && !plausible;
+
+    if (offersLocation && plausible) {
       mosque.set('lat', claimed.lat);
       mosque.set('lng', claimed.lng);
       mosque.set('location', new Parse.GeoPoint({
@@ -1087,7 +1184,17 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
     });
   }
 
-  return { status: claim.get('status'), locationLearned };
+  // يُقال للمشرف صراحةً: اعتمد الإمام ولم يعتمد موقعه. بلا هذا يظنّ المسجد
+  // صار على الخريطة، فلا يتابع ولا يُنبّه إمامه إلى الزرّ.
+  return {
+    status: claim.get('status'),
+    locationLearned,
+    locationRejected,
+    ...(locationRejected ? {
+      message: 'اعتُمد الإمام، ولم يُعتمد الموقع المُرسل — بعيدٌ عن مساجد الولاية. '
+        + 'المسجد يبقى مجهول الموقع حتى يثبّته إمامه من عنده.',
+    } : {}),
+  };
 });
 
 /**

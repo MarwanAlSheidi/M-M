@@ -1187,6 +1187,20 @@ export function AdminHome() {
                 )}
               </div>
               <p>الصفة: {api.CAPACITIES[row.capacity] || row.capacity}</p>
+              {/*
+                مسجدٌ مجهول الموقع: اعتمادُ الطلب يمنحه موقعه الدائم على
+                الخريطة، فيقود إليه كل متطوّع بعدها. وهذا أثرٌ لا يظهر في زرّ
+                «اعتماد الملكية»، فيُقال صراحةً ومعه ما يُقاس إليه.
+              */}
+              {row.willSetLocation && (
+                <div className="notice">
+                  <strong>هذا المسجد بلا موقع على الخريطة.</strong> اعتمادك يمنحه موقع
+                  مقدّم الطلب.
+                  {row.wilayatNearestKm != null
+                    ? ` وأقرب مسجدٍ معروف في الولاية يبعد عنه ${api.formatDistance(row.wilayatNearestKm)}.`
+                    : ' ولا نعرف موقع أيّ مسجدٍ في هذه الولاية، فلا مقياس هنا.'}
+                </div>
+              )}
               {/* المشرف يعتمد ملكية مسجدٍ بعينه، وثلاثمئة غيره تحمل الاسم نفسه */}
               <Where wilayat={row.wilayat} village={row.village}
                 governorate={row.governorate} mosqueNumber={row.mosqueNumber} />
