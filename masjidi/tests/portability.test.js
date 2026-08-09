@@ -184,6 +184,32 @@ test('محمولية الاستعلامات', async (t) => {
       'صيغ استعلام بلا مراجعة محمولية — ابحث عن سلوكها في المحوّلين ثم أضفها إلى REVIEWED');
   });
 
+  /**
+   * `include` بمسارٍ منقوط ليست `include` عاديّة.
+   *
+   * الأولى تُحمّل مؤشّراً في الاستعلام نفسه، والثانية تلاحق مؤشّراً داخل
+   * مؤشّر — تفكّها Parse إلى استعلامٍ تالٍ على الفئة الهدف. واسم التابع واحد،
+   * فالمسح بالاسم لا يفرّق بينهما ويمرّ المنقوط صامتاً. **وسلكُ تعثّرٍ يمرّ
+   * تحته ما لم يُراجَع ليس سلكاً.**
+   */
+  await t.test('ومسارات include المنقوطة مُراجَعة كلٌّ على حدة', () => {
+    const NESTED = {
+      'mosqueId.imamId': 'محمولة — Parse تفكّها إلى استعلامٍ تالٍ على _User '
+        + 'بمعرّفاتٍ مجموعة، فوق المحوّل لا داخله. ولا يقرأ منها إلا المشرف.',
+    };
+
+    const found = new Set();
+    for (const file of files) {
+      const source = fs.readFileSync(file, 'utf8');
+      for (const hit of source.matchAll(/\.include\(['"`]([^'"`]*\.[^'"`]*)['"`]/g)) {
+        found.add(hit[1]);
+      }
+    }
+
+    assert.deepEqual([...found].filter((path_) => !NESTED[path_]), [],
+      'مسار include منقوط بلا مراجعة — راجع سلوكه ثم أضِفه بملاحظته');
+  });
+
   await t.test('القائمتان لا تتقاطعان', () => {
     for (const name of Object.keys(REJECTED)) {
       assert.equal(REVIEWED[name], undefined, `${name} مقبولة ومرفوضة معاً`);

@@ -839,7 +839,15 @@ export function ImamHome() {
               </div>
               <Where wilayat={claim.wilayat} village={claim.village}
                 mosqueNumber={claim.mosqueNumber} />
-              {claim.status === 'pending' && <p>سيراجع المشرف طلبك خلال أيام عمل.</p>}
+              {/*
+                مراجعةُ النقل أثقل — يُتحقّق فيها من إمامٍ قائم — ومن ظنّ طلبه
+                تسجيلاً عادياً انتظر «أيام عمل» لا تأتي
+              */}
+              {claim.status === 'pending' && (
+                <p>{claim.isTransfer
+                  ? 'هذا طلب نقل إمامة: المسجد مسجَّل باسم إمامٍ آخر، وللمشرف أن يتواصل بكما قبل القرار.'
+                  : 'سيراجع المشرف طلبك خلال أيام عمل.'}</p>
+              )}
             </article>
           ))}
         </>
@@ -1250,7 +1258,16 @@ export function ClaimMosque() {
           {mosque.mosqueNumber && (
             <p className="when">رقم الوزارة: {mosque.mosqueNumber}</p>
           )}
-          {!mosque.isClaimed && (
+          {/*
+            المسجَّل كان بلا زرّ أصلاً، فخَلَفُ الإمام لا يجد طريقاً إلى مسجده
+            ولو فُتح له الخادم — والمسجد يبقى مجمّداً على إمامٍ رحل. والزرّ
+            هنا غير زرّ التسجيل الأوّل لفظاً وشكلاً: النقل يُطلب لا يُؤخذ.
+          */}
+          {mosque.isClaimed ? (
+            <button className="link" onClick={() => claim(mosque)}>
+              هذا مسجدي وأنا إمامه الآن — أطلب نقل الإمامة
+            </button>
+          ) : (
             <button className="ghost" onClick={() => claim(mosque)}>
               {location.point ? 'هذا مسجدي — أؤكّد أني عنده' : 'هذا مسجدي'}
             </button>
@@ -1301,6 +1318,19 @@ export function AdminHome() {
                 )}
               </div>
               <p>الصفة: {api.CAPACITIES[row.capacity] || row.capacity}</p>
+              {/*
+                نقلٌ لا تسجيلٌ أوّل: الضغطة نفسها، والأثر ليس واحداً — تَنزع
+                مسجداً من إمامٍ قائم. فيُقال صراحةً، ومعه ما يتحقّق به المشرف:
+                اسمُ من يُنزع منه وهاتفه.
+              */}
+              {row.isTransfer && (
+                <div className="error" data-testid="transfer-claim">
+                  <strong>هذا طلب نقل، لا تسجيلٌ أوّل.</strong> المسجد مسجَّل الآن
+                  باسم {row.currentImamName || 'إمامٍ آخر'}
+                  {row.currentImamPhone ? ` · ${row.currentImamPhone}` : ''}.
+                  اعتمادك يَنزعه منه ويمنحه لمقدّم الطلب — اتصل بهما قبل القرار.
+                </div>
+              )}
               {/*
                 مسجدٌ مجهول الموقع: اعتمادُ الطلب يمنحه موقعه الدائم على
                 الخريطة، فيقود إليه كل متطوّع بعدها. وهذا أثرٌ لا يظهر في زرّ

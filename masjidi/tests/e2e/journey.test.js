@@ -495,6 +495,64 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     });
   });
 
+  /**
+   * شاشة المشرف في متصفّح — ولم يكن لها اختبارٌ قطّ.
+   *
+   * وأخطر ما فيها زرٌّ واحد: «اعتماد الملكية». يعتمد تسجيلاً أوّل لمسجدٍ بلا
+   * إمام، **ويَنزع مسجداً من إمامٍ قائم** — والضغطة واحدة. فإن لم تقل الشاشة
+   * أيَّهما هو، ضُغط الثاني ظنّاً أنه الأوّل.
+   */
+  await t.test('والمشرف يُحذَّر أن الاعتماد يَنزع مسجداً من إمامٍ قائم', async () => {
+    // كلمات البحث لم تُضبط عند إنشاء المسجد بالمفتاح الرئيس — يضبطها
+    // الاستيراد لا الحفظ المباشر، فبدونها لا يجده بحثُ الاسم أصلاً
+    mosque.set({ nameNormalized: 'جامع الرحمه', nameTokens: ['جامع', 'الرحمه'] });
+    await mosque.save(null, { useMasterKey: true });
+
+    // خَلَفٌ يطلب المسجد المسجَّل لإمام الرحلة — فهذا طلب نقل
+    const heir = await browser.newUserPage();
+    await signUpVia(heir, { username: `heir_${stamp}`, fullName: 'الشيخ حمد', role: 'imam' });
+    await onScreen(heir, 'الخَلَف يطلب المسجد المسجَّل', async () => {
+      await heir.getByRole('button', { name: 'تسجيل مسجد' }).click();
+      await heir.getByLabel('اسم المسجد').fill('جامع الرحمة');
+      await heir.getByRole('button', { name: 'بحث' }).click();
+      // المسجَّل كان بلا زرٍّ أصلاً — فلا طريق لخَلَف الإمام ولو فُتح الخادم
+      await heir.waitForSelector('button:has-text("أطلب نقل الإمامة")');
+      await heir.getByRole('button', { name: /أطلب نقل الإمامة/ }).first().click();
+      await heir.waitForSelector('.notice');
+      assert.match(await heir.locator('.notice').innerText(), /طلب نقل/,
+        'قيل له «سيُراجع خلال أيام عمل» — ومراجعةُ النقل ليست كذلك');
+    });
+
+    // الدور `admin` لا يُختار عند التسجيل قصداً، فيُرقّى بالمفتاح الرئيس
+    const signingUp = await browser.newUserPage();
+    await signUpVia(signingUp,
+      { username: `admin_${stamp}`, fullName: 'المشرف', role: 'donor' });
+    const account = await new stack.Parse.Query(stack.Parse.User)
+      .equalTo('username', `admin_${stamp}`).first({ useMasterKey: true });
+    account.set('role', 'admin');
+    await account.save(null, { useMasterKey: true });
+
+    // الدور المخزَّن في المتصفّح لا يتغيّر بإعادة التحميل — يُقرأ من التخزين
+    // المحلّي لا من الخادم. فالترقية لا تظهر إلا بجلسةٍ جديدة.
+    const panel = await browser.newUserPage();
+    await onScreen(panel, 'المشرف يرى التحذير', async () => {
+      await panel.goto(site.url, { waitUntil: 'networkidle' });
+      await panel.getByLabel('اسم المستخدم').fill(`admin_${stamp}`);
+      await panel.getByLabel('كلمة المرور').fill(PASSWORD);
+      await panel.getByRole('button', { name: 'دخول' }).click();
+      await panel.waitForSelector('nav.tabs');
+      await panel.getByRole('button', { name: 'الإدارة' }).click();
+      await panel.waitForSelector('[data-testid="transfer-claim"]');
+
+      const text = await panel.locator('main').innerText();
+      assert.match(text, /طلب نقل، لا تسجيلٌ أوّل/,
+        'يُعرض النقل كتسجيلٍ أوّل، فيُنزع مسجدٌ من إمامه بضغطةٍ لا يُعلم أثرها');
+      assert.match(text, /الشيخ سعيد/, 'لا يُقال للمشرف ممّن يُنزع');
+      // زرّ الاعتماد قائمٌ إلى جانب التحذير: القرار للمشرف، والبيّنة أمامه
+      await panel.waitForSelector('button:has-text("اعتماد الملكية")');
+    });
+  });
+
   await t.test('المتبرّع يُخبَر بأن التبرّع غير مُفعَّل بعد', async () => {
     const donor = await browser.newUserPage();
     await onScreen(donor, 'المتبرّع يُخبَر بأن التبرّع غير مُفعَّل', async () => {

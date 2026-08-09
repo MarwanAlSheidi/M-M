@@ -64,6 +64,7 @@ export const AUDIT_LABEL = {
   location_corrected: 'صوّب إمام المسجد موقعه على الخريطة',
   request_cancelled: 'أُلغي الطلب',
   claim_reviewed: 'روجعت ملكية المسجد',
+  mosque_transferred: 'نُقلت إمامة المسجد',
   contractor_reviewed: 'روجع اعتماد شركة',
   contractor_suspended: 'سُحب اعتماد الشركة المكلَّفة بالعمل',
   donation_captured: 'قُيّد تبرّع',

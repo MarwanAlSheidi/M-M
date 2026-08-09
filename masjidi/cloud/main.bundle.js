@@ -391,6 +391,7 @@ const ACTIONS = {
   DONATION_EXPIRED: 'donation_expired',
   PAYOUT_RECORDED: 'payout_recorded',
   CLAIM_REVIEWED: 'claim_reviewed',
+  MOSQUE_TRANSFERRED: 'mosque_transferred',
   LOCATION_LEARNED: 'location_learned',
   LOCATION_CORRECTED: 'location_corrected',
   CONTRACTOR_REVIEWED: 'contractor_reviewed',
@@ -960,6 +961,15 @@ const CAPACITIES = { imam: 'إمام المسجد', agent: 'وكيل المسج�
 /** ما يُعدّ «عند المسجد» — نصف كيلومتر يحتمل ضعف الإشارة داخل البناء. */
 const AT_MOSQUE_KM = 0.5;
 
+/** أقصى ما ينتظره طالبٌ واحد من مراجعات. تقديريّ يُراجَع بعد أول موسم. */
+const MAX_PENDING_CLAIMS = 3;
+
+/** حقلٌ من إمام المسجد الحالي — والمؤشّر الخام لا يحمل بياناته. */
+const currentImamOf = (mosque, field) => {
+  const imam = mosque && mosque.get('imamId');
+  return imam && imam.get ? imam.get(field) || null : null;
+};
+
 /**
  * أبعد ما يُقبل بين موقعٍ مُقدَّم وأقرب مسجدٍ معلومٍ في الولاية نفسها.
  *
@@ -1049,13 +1059,34 @@ Parse.Cloud.define('claimMosque', async (request) => {
   const mosque = await new Parse.Query('Mosques').get(mosqueId, { useMasterKey: true })
     .catch(() => E.notFound('المسجد غير موجود.'));
 
-  if (mosque.get('isClaimed')) E.duplicate('هذا المسجد مسجّل باسم غيرك بالفعل.');
+  // مسجدٌ مسجَّل يُطلب نقلاً لا تسجيلاً أوّل.
+  //
+  // كان يُردّ عند الباب، فيبقى المسجد مربوطاً بأوّل من سجّله أبداً: إمامٌ
+  // يُنقل أو يتقاعد أو يُوقَف حسابه لإساءة، فيتجمّد مسجده — لا طلبَ جديد،
+  // ولا اعتماد لعملٍ أُنجز، ومنفّذٌ أتمّ عملَه يبقى بلا عدٍّ في سجلّه. فتقع
+  // عقوبةُ الإمام على جماعة المسجد، ولا مخرج إلا تعديلٌ يدويّ بلا أثر.
+  const currentImam = mosque.get('imamId');
+  const isTransfer = Boolean(mosque.get('isClaimed') && currentImam);
+  if (currentImam && currentImam.id === claimant.id) {
+    E.duplicate('هذا المسجد مسجّل باسمك بالفعل.');
+  }
 
   const existing = await new Parse.Query('MosqueClaims')
     .equalTo('mosqueId', mosque)
     .equalTo('status', 'pending')
     .first({ useMasterKey: true });
   if (existing) E.duplicate('يوجد طلب ملكية معلّق لهذا المسجد.');
+
+  // فتحُ المسجَّل للطلبات يجعل الثمانية عشر ألفاً كلَّها قابلةً للمنازعة،
+  // والمشرف وحده هو الحاجز. فيُحدّ ما ينتظره منه الطالب الواحد.
+  // **والرقم تقديريّ** يُراجَع بعد أول موسم، كحدّي الاهتمامات والتكليفات.
+  const pending = await new Parse.Query('MosqueClaims')
+    .equalTo('imamId', claimant)
+    .equalTo('status', 'pending')
+    .count({ useMasterKey: true });
+  if (pending >= MAX_PENDING_CLAIMS) {
+    E.forbidden(`لديك ${pending} طلبات معلّقة — انتظر مراجعتها قبل طلب مسجدٍ آخر.`);
+  }
 
   const here = geo.validCoordinates(Number(lat), Number(lng))
     ? { lat: Number(lat), lng: Number(lng) }
@@ -1098,13 +1129,17 @@ Parse.Cloud.define('claimMosque', async (request) => {
   await claim.save(null, { useMasterKey: true });
 
   const distance = claim.get('claimDistanceKm');
-  return {
-    claimId: claim.id,
-    atMosque: distance != null && distance <= AT_MOSQUE_KM,
-    message: distance != null && distance <= AT_MOSQUE_KM
+  const atMosque = distance != null && distance <= AT_MOSQUE_KM;
+  // النقل يُقال للطالب صراحةً: مراجعتُه أبطأ وأثقل — يُتحقّق فيها من إمامٍ
+  // قائم — ومن ظنّ طلبَه تسجيلاً عادياً انتظر ما لا يأتي في أيام
+  const received = isTransfer
+    ? 'تم استلام طلب نقل إمامة هذا المسجد. المسجد مسجَّل باسم إمامٍ آخر، '
+      + 'وللمشرف أن يتواصل بكما قبل القرار.'
+    : atMosque
       ? 'تم استلام طلبك من عند المسجد، سيُراجع خلال أيام عمل.'
-      : 'تم استلام طلبك، سيُراجع خلال أيام عمل.',
-  };
+      : 'تم استلام طلبك، سيُراجع خلال أيام عمل.';
+
+  return { claimId: claim.id, atMosque, isTransfer, message: received };
 });
 
 /**
@@ -1172,6 +1207,11 @@ Parse.Cloud.define('getMyClaims', async (request) => {
       wilayat: mosque ? mosque.get('wilayat') : null,
       village: mosque ? mosque.get('village') : null,
       mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,
+      // طلبٌ معلّق على مسجدٍ مسجَّل هو طلب نقل: مراجعتُه أثقل — يُتحقّق فيها
+      // من إمامٍ قائم — ومن ظنّه تسجيلاً عادياً انتظر «أيام عمل» لا تأتي.
+      // ويُشتقّ من المسجد لا يُخزَّن: حالتُه اليوم هي ما يعني الطالب.
+      isTransfer: Boolean(claim.get('status') === 'pending'
+        && mosque && mosque.get('isClaimed') && mosque.get('imamId')),
     };
   });
 });
@@ -1188,6 +1228,7 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
   const claims = await new Parse.Query('MosqueClaims')
     .equalTo('status', 'pending')
     .include('mosqueId')
+    .include('mosqueId.imamId') // إمامُ المسجد الحالي — ممّن يُنزع إن اعتُمد
     .include('imamId')
     .ascending('createdAt')
     .limit(100)
@@ -1218,6 +1259,11 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
       willSetLocation: claim.get('claimLat') != null && claim.get('claimDistanceKm') == null,
       imamName: imam ? imam.get('fullName') : null,
       imamPhone: imam ? imam.get('phone') : null, // المشرف يتحقّق بالاتصال
+      // نقلٌ لا تسجيلٌ أوّل: اعتمادُه يَنزع مسجداً من إمامٍ قائم. وبلا هذا
+      // التمييز تُضغط الضغطةُ نفسها في الحالتين، وأثرُها ليس واحداً.
+      isTransfer: Boolean(mosque && mosque.get('isClaimed') && mosque.get('imamId')),
+      currentImamName: currentImamOf(mosque, 'fullName'),
+      currentImamPhone: currentImamOf(mosque, 'phone'),
     };
   });
 });
@@ -1240,6 +1286,11 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
 
   let locationLearned = false;
   let locationRejected = false;
+  // مَن كان قبله — يُقرأ قبل الكتابة فوقه، ولا سبيل إليه بعدها
+  const previousImam = claim.get('mosqueId') && claim.get('mosqueId').get('imamId');
+  const transferred = approve && Boolean(previousImam)
+    && previousImam.id !== claim.get('imamId').id;
+
   if (approve) {
     const mosque = claim.get('mosqueId');
     mosque.set('imamId', claim.get('imamId'));
@@ -1294,6 +1345,24 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
       target: claim.get('mosqueId'),
       mosque: claim.get('mosqueId'),
       actor: admin,
+    });
+  }
+
+  if (transferred) {
+    // بلا `note`: سجلّ المسجد يقرؤه كل مستخدم، و`getMosqueAuditTrail` تُعيد
+    // الدور دون الهوية قصداً — فلا تُوضع أسماء الأئمّة فيه من الباب الخلفي
+    await audit.record({
+      action: audit.ACTIONS.MOSQUE_TRANSFERRED,
+      target: claim.get('mosqueId'),
+      mosque: claim.get('mosqueId'),
+      actor: admin,
+    });
+
+    // من يُنزع منه مسجده أولى الناس بأن يعلم. وقد يكون حسابه موقوفاً فلا
+    // يفتح التطبيق — والقيد في وارده يبقى له إن عادت إتاحته.
+    await pushToUsers(previousImam, {
+      alert: `نُقلت إمامة ${claim.get('mosqueId').get('name')} إلى غيرك بقرار الإدارة. `
+        + 'راجع الإدارة إن كان ذلك خطأً.',
     });
   }
 
