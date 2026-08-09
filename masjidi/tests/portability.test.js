@@ -32,6 +32,8 @@ const REVIEWED = {
   containedIn: 'محمولة — $in في المحوّلين، وعليها يقوم فرز الحالات في الاستعلامات.',
   containsAll: 'محمولة — $all على MongoDB، ويخدمها فهرس المصفوفة نفسه.',
   doesNotExist: 'محمولة — الحقل الغائب لا القيمة null. تُميّز عن equalTo(null).',
+  exists: 'محمولة — وعلى `exists("objectId")` يقوم العدُّ الكامل: قيدٌ يصدق '
+    + 'على كل سجلّ، وبه تُتجنّب count بلا قيد التي تُعيد صفراً صامتاً.',
   startsWith: 'محمولة — regex مثبّت من البداية، فيستفيد من الفهرس في الاثنين.',
   contains: 'محمولة، **ومكلفة**: regex غير مثبّت يمسح المجموعة. خطة أخيرة لا أولى.',
   select: 'محمولة — تقليل الحقول المُعادة، وهي ما يمنع تسريب الحقول الحسّاسة.',
@@ -39,6 +41,10 @@ const REVIEWED = {
   limit: 'محمولة — والسقف مفروض في كل استعلام يُعيد قائمة، بلا استثناء.',
   ascending: 'محمولة — الترتيب على حقل واحد متطابق في المحوّلين.',
   descending: 'محمولة — وعليها يقوم ترتيب الوارد والسجلّ بالأحدث.',
+  find: 'محمولة — وعليها يقوم كلُّ عرضٍ في المنصّة.',
+  first: 'محمولة — سجلٌّ واحد، وتُغني عن limit(1) وقراءة الأوّل.',
+  count: 'محمولة **بقيد**. وبلا قيدٍ واحدٍ على الأقل قِيست على PostgreSQL '
+    + 'فأعادت صفراً بينما find تُعيد ثلاثين — بلا خطأ. استعمل exists("objectId").',
 };
 
 /**
@@ -171,7 +177,10 @@ test('محمولية الاستعلامات', async (t) => {
       // صيغ استعلام أخرى تعرفها Parse — وجودها يستوجب مراجعة لا رفضاً تلقائياً
       'notContainedIn', 'containedBy', 'exists', 'endsWith', 'matches', 'matchesQuery',
       'doesNotMatchQuery', 'skip', 'addAscending', 'addDescending', 'polygonContains',
-      'withinGeoBox', 'or', 'and', 'nor', 'each', 'aggregate', 'distinct']);
+      'withinGeoBox', 'or', 'and', 'nor', 'each', 'aggregate', 'distinct',
+      // التوابع الطرفية: ليست قيوداً، لكنها تُنفَّذ على المحوّل — و`count`
+      // بلا قيدٍ تُعيد صفراً على أحدهما. غيابُها عن القائمة أخفاها عن المسح.
+      'find', 'first', 'count']);
 
     const unreviewed = new Set();
     for (const file of files) {
@@ -208,6 +217,28 @@ test('محمولية الاستعلامات', async (t) => {
 
     assert.deepEqual([...found].filter((path_) => !NESTED[path_]), [],
       'مسار include منقوط بلا مراجعة — راجع سلوكه ثم أضِفه بملاحظته');
+  });
+
+  /**
+   * `count()` بلا قيدٍ واحد تُعيد **صفراً** على `parse-server` فوق PostgreSQL،
+   * بينما `find()` على الاستعلام نفسه تُعيد السجلّات كلَّها. قِيس ذلك في هذا
+   * المستودع لا نُقل عن أحد.
+   *
+   * **وأسوأ ما فيها أنها لا تسقط:** فحصٌ يقول «لا مسجد في القاعدة» وفيها
+   * ثمانية عشر ألفاً يُرسل المُشغّل يستورد ما هو مستورد، وحدٌّ يقرأ صفراً
+   * يسمح بما كان يمنعه. والقيد `exists('objectId')` يصدق على كل سجلّ.
+   */
+  await t.test('ولا عدَّ بلا قيد — يُعيد صفراً صامتاً', () => {
+    const bare = [];
+    for (const file of files) {
+      const source = fs.readFileSync(file, 'utf8');
+      for (const hit of source.matchAll(/new Parse\.Query\([^)]*\)\s*\.count\(/g)) {
+        bare.push(`${path.relative(CLOUD, file)}: ${hit[0].replace(/\s+/g, ' ')}`);
+      }
+    }
+
+    assert.deepEqual(bare, [],
+      'عدٌّ بلا قيد — يُعيد صفراً على PostgreSQL بلا خطأ. قيّده بـ exists("objectId")');
   });
 
   await t.test('القائمتان لا تتقاطعان', () => {

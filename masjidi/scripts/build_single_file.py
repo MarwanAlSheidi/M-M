@@ -20,6 +20,7 @@ ORDER = [
     ("functions/users.js", "شؤون الحسابات"),
     ("functions/notifications.js", "صندوق الوارد"),
     ("functions/maintenance.js", "الصيانة الدورية"),
+    ("functions/preflight.js", "فحص ما قبل الإطلاق"),
 ]
 
 REPLACEMENTS = {

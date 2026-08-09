@@ -88,7 +88,7 @@ test('نقاط الدخول', async (t) => {
     'getMosqueLedger', 'listPendingContractors', 'reviewContractor',
     'setFavoriteMosque', 'getMyProfile', 'updateMyProfile',
     'getMyNotifications', 'markNotificationsRead',
-    'getMosqueAuditTrail', 'health',
+    'getMosqueAuditTrail', 'health', 'preflight',
   ];
 
   const EXPECTED_TRIGGERS = [
@@ -131,6 +131,48 @@ test('نقاط الدخول', async (t) => {
    * يجدولها المُشغّل. حين انحرفت، بقيت `pruneNotifications` خارجها — فلا
    * تُجدوَل، ويمتلئ صندوق الوارد بلا سبب ظاهر.
    */
+  /**
+   * كلُّ ما تناديه الواجهة موجودٌ على الخادم.
+   *
+   * `Parse.Cloud.run('اسمٌ مخطوء')` لا يسقط عند البناء ولا عند الفحص — يسقط
+   * **في وجه المستخدم** حين يفتح الشاشة، برسالة `Invalid function`. ووقع هذا
+   * في هذا المستودع أثناء كتابة اختبار (`listPendingMosqueClaims` بدل
+   * `listPendingClaims`)، ولم يكشفه إلا خادمٌ يعمل. ولو وقع في شاشةٍ نادرة
+   * لبلغ الناسَ قبل أن يبلغنا.
+   */
+  await t.test('كل دالةٍ تناديها الواجهة معرَّفةٌ على الخادم', () => {
+    const client = fs.readFileSync(
+      path.join(CLOUD, '..', 'app', 'src', 'api.js'), 'utf8');
+    const called = new Set([...client.matchAll(/(?:Cloud\.run|\brun)\(\s*'([^']+)'/g)]
+      .map((hit) => hit[1]));
+    const defined = new Set(Object.keys(loadCloud('modular').functions));
+
+    assert.ok(called.size >= 25, `قُرئ ${called.size} نداءً فقط — المسح لا يصل`);
+    assert.deepEqual([...called].filter((name) => !defined.has(name)), [],
+      'الواجهة تنادي دالةً لا وجود لها — تسقط في وجه المستخدم لا في الفحص');
+  });
+
+  /**
+   * وكلُّ ملفّ سحابةٍ داخلٌ في الحزمة.
+   *
+   * `main.bundle.js` هو ما يُلصق في لوحة Back4app، وقائمةُ ملفاته في المولّد
+   * مكتوبةٌ باليد. فملفٌّ جديد يُضاف إلى `main.js` ولا يُضاف إليها **يعمل في
+   * كل اختباراتنا ويغيب عن الإنتاج وحده** — وهو أسوأ أنواع الغياب.
+   */
+  await t.test('وكل ملفّ يُحمّله main.js داخلٌ في الحزمة', () => {
+    const entry = fs.readFileSync(path.join(CLOUD, 'main.js'), 'utf8');
+    const required = [...entry.matchAll(/require\('\.\/([^']+)'\)/g)]
+      .map((hit) => (hit[1].endsWith('.js') ? hit[1] : `${hit[1]}.js`));
+
+    const builder = fs.readFileSync(
+      path.join(CLOUD, '..', 'scripts', 'build_single_file.py'), 'utf8');
+    const bundled = new Set([...builder.matchAll(/\("([^"]+\.js)",/g)].map((hit) => hit[1]));
+
+    assert.ok(required.length >= 6, `قُرئ ${required.length} استيراداً فقط — المسح لا يصل`);
+    assert.deepEqual(required.filter((file) => !bundled.has(file)), [],
+      'ملفّ سحابةٍ خارج الحزمة — يعمل في الاختبارات ويغيب عن الإنتاج وحده');
+  });
+
   await t.test('جدولا المواصفات يطابقان ما بُني', async () => {
     const spec = fs.readFileSync(
       path.join(CLOUD, '..', 'docs', 'PROJECT_SPEC.md'), 'utf8');

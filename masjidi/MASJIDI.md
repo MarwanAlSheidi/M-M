@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 295 حالة على بديل Parse (`npm test`) + 119 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 26 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 298 حالة على بديل Parse (`npm test`) + 127 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 26 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -121,7 +121,13 @@
 18. **قيدُ تدقيقٍ بلا `mosqueId` لا يبلغ عيناً أبداً** — `getMosqueAuditTrail`
     هي القارئ الوحيد وتستعلم بالمسجد، ثم يحذفه التقليم بعد 180 يوماً. فكل
     فعلٍ له مسجدٌ يُعرف فليُقيَّد به.
-19. **الكود 209 يعني أن الجلسة زالت** — يُعالَج مركزياً في `api.js`: يُمحى
+19. **`count()` بلا قيدٍ واحد تُعيد صفراً صامتاً** على `parse-server` فوق
+    PostgreSQL بينما `find()` تُعيد السجلّات — قِيس في هذا المستودع. للعدّ
+    الكامل استعمل `exists('objectId')`، ويحرس ذلك سلكُ تعثّر.
+20. **`health` تقول إن الكود حُمّل ولا تقول غير ذلك.** ما يُفحص قبل الإطلاق
+    هو `npm run preflight`: يُشغّل الصيغ المشبوهة على القاعدة الحيّة، **ويطبع
+    ما لم يفحصه** — فالأخضر لا يعني «كلُّ شيء سليم».
+21. **الكود 209 يعني أن الجلسة زالت** — يُعالَج مركزياً في `api.js`: يُمحى
     المحلّي ويُطلق `SESSION_EXPIRED`، فيعيد `App` شاشة الدخول. لا تلتقطه في
     شاشة، ولا تعرضه كخطأٍ عاديّ.
 
@@ -171,11 +177,13 @@ cloud/
     users.js           اعتماد الشركات، الملف الشخصي، المسجد المفضّل
     notifications.js   صندوق الوارد: القراءة والتعليم مقروءاً
     maintenance.js     المهام الدورية — تقليم سجل التدقيق وصندوق الوارد
+    preflight.js       فحص ما قبل الإطلاق — يُشغّل الصيغ المشبوهة على القاعدة الحيّة
 scripts/
   clean_mosques.py     Excel → JSON نظيف
   seed_mosques.js      استيراد إلى Parse (idempotent)
   apply_schema.js      تطبيق schema.json — الحقول والصلاحيات والفهارس
   promote_admin.js     ترقية حساب إلى مشرف، وإيقاف حسابٍ وإعادته
+  preflight.js         `npm run preflight` — فحص الخادم المنشور قبل أوّل مستخدم
   resolve_locations.js استخراج مواقع المساجد المجهولة من OpenStreetMap — مجاناً، ويكتب تراكباً لا قاعدة
   lib/place-match.js   قبول موقعٍ من الخرائط أو ردُّه — نتيجتُه مرشَّحٌ لا حقيقة
   lib/mosque-record.js تحضير السجلّ للاستيراد — المصدر الواحد للاستيراد والمِرقاة
@@ -215,6 +223,7 @@ tests/
     confirm-location.test.js  الإمام يثبّت موقع مسجده أو يصوّبه وهو عنده
     revoked-contractor.test.js  سحب اعتماد شركةٍ مكلَّفة — من يُخبَر وما يُمنع
     mosque-transfer.test.js  انتقال المسجد من إمامٍ إلى إمام، وحدُّ الطلبات
+    preflight.test.js  الفحص على خادمٍ معطوب: يقول ما العطب ولا يرمي
   e2e/                 متصفّح حقيقي فوق خادم حقيقي — `npm run test:e2e`
     harness.js         يبني الواجهة على منفذ الاختبار، ويقدّمها، ويفتح Chromium
     journey.test.js    الرحلة كاملة: التسجيل، الطلب، الاهتمام، السحب، التنبيهات
@@ -1862,6 +1871,74 @@ await page.locator('.card').count() > 0
 
 ---
 
+### 🟠 أخطرُ لحظةٍ في عمر المنصّة، وأضعفُ أداةٍ بيد من يعيشها
+
+**كيف وُجد:** سُئلتُ «هل البرنامج جاهز للإطلاق؟» فأجبتُ أن أكبر خطرٍ باقٍ هو
+أن الكود لم يعمل على MongoDB يوماً، وأن **أوّل نشرٍ هو أوّل تشغيل**. ثم نظرتُ
+فيما بيد المُشغّل عند تلك اللحظة بالضبط، فإذا هو `health`:
+
+```js
+Parse.Cloud.define('health', async () => ({ ok: true, version: '1.0.0', … }));
+```
+
+**لا تلمس القاعدة.** تُثبت أن الملفّ قُرئ ولا تُثبت شيئاً غيره. و`docs/DEPLOY.md`
+كان يقول: «ارفع كود السحابة، **ثم تأكّد**» ويضع تحتها نداءها. فبين أوّل نشرٍ
+وأوّل إمامٍ يستعمل المنصّة **لا شيء يخبر المُشغّل أن استعلاماً لا يعمل**، ولا
+أن المخطط لم يُطبَّق، ولا أنه بلا مشرف فالطلبات تتراكم بلا اعتماد.
+
+**الإصلاح:** `preflight` — بالمفتاح الرئيسي، تُشغَّل مرّةً بعد النشر
+(`npm run preflight`). تُجري الصيغ التي يختلف فيها المحوّلان على **القاعدة
+الحيّة**: `containsAll` على مصفوفة (وهي التي كشفت أوّل فرق)، وصندوق الإحاطة،
+و`startsWith`، و`containedIn` والعدّ، والترتيب والتحميل المرافق ومساره المنقوط.
+وثلاثة قيود في تصميمها:
+
+1. **لا ترمي.** كلُّ فحصٍ يُلتقط خطؤه ويُعاد على حدة — فحصٌ يسقط عند أوّل خطأ
+   يُخفي ما بعده، ويُعيد المُشغّل إلى الظلام الذي جاء يُخرجه منه.
+2. **تقول ما لم تفحصه** (`unverifiable`): جدولة المهام، والفهرس الفريد، ورفع
+   الملفات — لا تُقرأ من داخل Cloud Code. **وأخطر ما في تقريرٍ أخضر أن يُقرأ
+   ضماناً وهو ليس ضماناً.**
+3. **أهمّ اختبارٍ لها هو سلوكها على خادمٍ معطوب** — على خادمٍ بلا مخطط، وهي
+   أوّل لحظةٍ تُنادى فيها فعلاً.
+
+#### وبناؤها كشف عطباً لم أكن أبحث عنه
+
+`new Parse.Query('Mosques').count()` أعادت **صفراً** بينما `find()` على
+الاستعلام نفسه تُعيد ثلاثين. قِيس ذلك هنا لا نُقل عن أحد:
+
+```
+find().length        : 30      count()              : 0
+exists(objectId)     : 30      hasLocation=false    : 5
+```
+
+أي قيدٍ واحد يُعيد العدّ إلى صوابه؛ وبلا قيدٍ يُعيد صفراً **بلا خطأ ولا تحذير**.
+وأسوأ ما فيه أنه لا يسقط: فحصٌ يقول «لا مسجد في القاعدة» وفيها ثمانية عشر ألفاً
+يُرسل المُشغّل يستورد ما هو مستورد، وحدٌّ يقرأ صفراً يسمح بما كان يمنعه.
+
+**والأسوأ أن `count` لم تكن في قائمة الصيغ المُراجَعة أصلاً.** قائمةُ سطح
+الاستعلام في `portability.test.js` مكتوبةٌ باليد، فالتوابع الطرفية (`find`،
+`first`، `count`) كانت خارجها — **فما لا تعرفه القائمة لا يراه المسح.** أُضيفت
+الثلاثة بملاحظاتها، ومعها سلكُ تعثّرٍ يرفض `count` بلا قيد في كود السحابة.
+
+#### وحارسان كشفهما هذا العمل لا التخطيط له
+
+- **ملفّ سحابةٍ جديد خارج الحزمة.** قائمةُ ملفات `build_single_file.py`
+  مكتوبةٌ باليد، و`main.bundle.js` هو ما يُلصق في لوحة Back4app. فملفٌّ يُضاف
+  إلى `main.js` ولا يُضاف إليها **يعمل في كل اختباراتنا ويغيب عن الإنتاج
+  وحده** — وهو أسوأ أنواع الغياب. وقع بي حرفياً مع `preflight.js`. أُضيف حارسٌ
+  يقابل استيرادات `main.js` بقائمة المولّد، **وجُرّب ساقطاً قبل قبوله.**
+- **نداءٌ من الواجهة إلى دالةٍ لا وجود لها.** يسقط في وجه المستخدم برسالة
+  `Invalid function`، لا في بناءٍ ولا في فحص. وقع بي في هذه الجلسة
+  (`listPendingMosqueClaims` بدل `listPendingClaims`) ولم يكشفه إلا خادمٌ يعمل.
+  أُضيف حارسٌ يقابل نداءات `api.js` بالدوال المسجَّلة. (والمسح اليوم يقول إن
+  الوصلة سليمة كلُّها.)
+
+**والدرس:** الأداةُ تُقاس بأشدّ لحظةٍ تُستعمل فيها لا بأهونها. و`health` كانت
+تُقاس بالمراقبة الدوريّة — حيث يكفي «حيّ» — وتُستعمل في لحظة النشر الأولى حيث
+لا يكفي. **ولمّا صنعتُ الأداة التي تليق بتلك اللحظة، دلّتني في أوّل تشغيلٍ لها
+على عطبٍ في العدّ لم يكن أحدٌ يبحث عنه.**
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB — وهذا أكبر قيدٍ باقٍ.**
@@ -2564,7 +2641,15 @@ require('./functions/donations');
 require('./functions/users');
 require('./functions/notifications');
 require('./functions/maintenance');
+require('./functions/preflight');
 
+/**
+ * نبضٌ رخيص: يُثبت أن الكود حُمّل، ولا يُثبت شيئاً غيره.
+ *
+ * يُنادى من مراقبٍ خارجيّ كلَّ دقيقة، فلا يلمس القاعدة. **وما يُفحص قبل
+ * الإطلاق ليس هذا** — بل `preflight`: تُشغّل الاستعلامات على القاعدة الحيّة
+ * وتقول ما لا تفحصه. لا تخلط بينهما.
+ */
 Parse.Cloud.define('health', async () => ({
   ok: true,
   version: '1.0.0',
@@ -8665,6 +8750,187 @@ Parse.Cloud.job('pruneNotifications', async (request) => {
 
 
 // ======================================================================
+// فحص ما قبل الإطلاق   [functions/preflight.js]
+// ======================================================================
+
+/**
+ * فحص ما قبل الإطلاق — يُشغَّل على الخادم المنشور، مرّةً بعد النشر.
+ *
+ * **لماذا:** كل اختبارات هذا المستودع تعمل على PostgreSQL، وBack4app على
+ * MongoDB. **فأوّل نشرٍ هو أوّل تشغيلٍ حقيقي على المحوّل الآخر** — وقد كشف هذا
+ * الفرق خللين فعليّين من قبل (`equalTo` على حقل مصفوفة، والفهارس المكانية):
+ * مرّا في الاختبار وسقطا على خادمٍ حقيقي.
+ *
+ * وكان كلُّ ما بيد المُشغّل عند تلك اللحظة `health` التي تقول `{ok:true}` —
+ * **وهي لا تُثبت إلا أن الملفّ قُرئ.** فبينه وبين أوّل إمامٍ يستعمل المنصّة
+ * لا شيء يخبره أن استعلاماً لا يعمل، أو أن المخطط لم يُطبَّق، أو أنه بلا مشرف.
+ *
+ * فهذه تُشغّل الصيغ المشبوهة نفسها على القاعدة الحيّة، وتُعيد نتيجة كلٍّ منها
+ * على حدة **ولا ترمي**: فحصٌ يسقط عند أوّل خطأ يُخفي ما بعده، والمُشغّل يريد
+ * القائمة كاملةً في نداءٍ واحد لا خطأً واحداً يُصلحه ثم يكتشف الذي يليه.
+ *
+ * **وما لا تفحصه تقوله.** جدولةُ المهام والفهرسُ الفريد ورفعُ الملفات لا
+ * تُقرأ من داخل Cloud Code، فتُذكر صراحةً في `unverifiable` — لأن أخطر ما في
+ * فحصٍ أخضر أن يُقرأ «كلُّ شيء سليم» وهو لا يقول ذلك.
+ * **غيابُ البيّنة ليس بيّنةَ نفي.**
+ */
+
+/** أصناف المخطط التي لا تعمل المنصّة بدونها. */
+const REQUIRED_CLASSES = [
+  'Mosques', 'MosqueClaims', 'ServiceRequests',
+  'TaskInterests', 'AuditLog', 'Notifications',
+];
+
+/**
+ * عدُّ كلِّ سجلّات صنف.
+ *
+ * **لا تُستعمل `count()` بلا قيد:** قِيست على `parse-server` فوق PostgreSQL
+ * فأعادت **صفراً** بينما `find()` تُعيد ثلاثين — بلا خطأٍ ولا تحذير. وأسوأ
+ * ما فيها أنها لا تسقط: فحصٌ يقول «لا مسجد في القاعدة» وفيها ثمانية عشر ألفاً
+ * يُرسل المُشغّل يستورد ما هو مستورد. و`exists('objectId')` قيدٌ يصدق على كل
+ * سجلّ فيُعيد العدّ إلى صوابه.
+ */
+const countAll = (className) =>
+  new Parse.Query(className).exists('objectId').count({ useMasterKey: true });
+
+/** يُجري فحصاً ويلتقط خطأه بدل أن يُسقط البقية. */
+async function check(name, why, run) {
+  try {
+    const detail = await run();
+    return { name, ok: true, detail: detail == null ? null : String(detail) };
+  } catch (error) {
+    return { name, ok: false, why, detail: (error && error.message) || String(error) };
+  }
+}
+
+/**
+ * الصيغ التي يختلف فيها المحوّلان، مُشغَّلةً على القاعدة الحيّة.
+ *
+ * ليست عيّنةً عشوائية: كلٌّ منها يقوم عليه مسارٌ يراه المستخدم، وذكرُ المسار
+ * في الاسم مقصود — من يقرأ «سقط» يحتاج أن يعرف ما الذي تعطّل عند الناس.
+ */
+async function queryForms() {
+  return Promise.all([
+    check('البحث بالكلمات المفهرسة (containsAll على مصفوفة)',
+      'هي الصيغة التي كشفت أوّل فرقٍ بين المحوّلين — والبحث بالاسم يقوم عليها',
+      async () => {
+        const rows = await new Parse.Query('Mosques')
+          .containsAll('nameTokens', ['مسجد']).limit(1).find({ useMasterKey: true });
+        return `${rows.length} نتيجة`;
+      }),
+
+    check('البحث بالقرب (صندوق الإحاطة على lat/lng)',
+      'عليه يقوم «ما حولي» وترتيب الفرص بالأقرب — وهو بديلنا عن الفهرس المكاني',
+      async () => {
+        const query = new Parse.Query('Mosques');
+        geo.withinBox(query, geo.boundingBox(23.6, 58.5, 25));
+        query.select('name', 'lat', 'lng').limit(5);
+        return `${(await query.find({ useMasterKey: true })).length} مسجداً حول مسقط`;
+      }),
+
+    check('البحث بالبادئة (startsWith على النصّ المطبَّع)',
+      'خطة البحث الثانية حين لا تُطابق الكلمات',
+      async () => {
+        const rows = await new Parse.Query('Mosques')
+          .startsWith('nameNormalized', 'مسجد').limit(1).find({ useMasterKey: true });
+        return `${rows.length} نتيجة`;
+      }),
+
+    check('تصفية الحالات (containedIn) والعدّ (count)',
+      'عليهما يقوم عدّاد الطلبات المفتوحة، وبه تُرشَّح المساجد في شاشة الفرص',
+      async () => {
+        const open = await new Parse.Query('ServiceRequests')
+          .containedIn('status', ['open_for_volunteers', 'assigned', 'in_progress'])
+          .count({ useMasterKey: true });
+        return `${open} طلباً قائماً`;
+      }),
+
+    check('الترتيب والتحميل المرافق (descending + include)',
+      'عليهما يقوم صندوق الوارد وسجلّ المسجد وقائمة طلبات الملكية',
+      async () => {
+        const rows = await new Parse.Query('AuditLog')
+          .descending('createdAt').include('mosqueId').limit(1).find({ useMasterKey: true });
+        return `${rows.length} سطراً`;
+      }),
+
+    check('التحميل المرافق بمسارٍ منقوط (include مؤشّرٍ داخل مؤشّر)',
+      'عليه تقوم قائمة طلبات الملكية: به يعرف المشرف ممّن يُنزع المسجد',
+      async () => {
+        const rows = await new Parse.Query('MosqueClaims')
+          .include('mosqueId').include('mosqueId.imamId').limit(1)
+          .find({ useMasterKey: true });
+        return `${rows.length} طلباً`;
+      }),
+  ]);
+}
+
+/**
+ * فحص ما قبل الإطلاق. بالمفتاح الرئيسي وحده — يكشف أعداداً وبنيةً لا تُعرض
+ * لمستخدم، ويُشغَّل من `scripts/preflight.js` لا من التطبيق.
+ */
+Parse.Cloud.define('preflight', async (request) => {
+  if (!request.master) E.forbidden('هذا الفحص بالمفتاح الرئيسي وحده.');
+
+  const classes = await Promise.all(REQUIRED_CLASSES.map((className) =>
+    check(`الصنف ${className} مطبَّق`,
+      'المخطط لم يُطبَّق — شغّل `npm run schema` قبل أي شيء آخر',
+      async () => `${await countAll(className)} سجلاً`)));
+
+  const forms = await queryForms();
+
+  /** أعدادٌ تقول للمُشغّل أين هو، لا أخضر ولا أحمر. */
+  const counts = {};
+  const admins = await new Parse.Query(Parse.User)
+    .equalTo('role', 'admin').count({ useMasterKey: true }).catch(() => null);
+  counts.مساجد = await countAll('Mosques').catch(() => null);
+  counts.مساجد_بلا_موقع = await new Parse.Query('Mosques')
+    .equalTo('hasLocation', false).count({ useMasterKey: true }).catch(() => null);
+  counts.مشرفون = admins;
+  counts.طلبات_ملكية_منتظرة = await new Parse.Query('MosqueClaims')
+    .equalTo('status', 'pending').count({ useMasterKey: true }).catch(() => null);
+
+  /**
+   * بلا مشرفٍ لا تعمل المنصّة وإن عمل كلُّ سطرٍ فيها: الأئمة يسجّلون، وطلباتهم
+   * تبقى `pending` أبداً. وهذه أشدّ حالةٍ يبدو فيها كلُّ شيء سليماً وهو معطّل.
+   */
+  const blockers = await Promise.all([
+    check('يوجد مشرفٌ واحد على الأقل',
+      'بلا مشرف تتراكم طلبات الملكية بلا اعتماد — `npm run admin -- --username <اسمه>`',
+      async () => {
+        if (admins === 0) throw new Error('لا مشرف على هذا الخادم');
+        return `${admins} مشرفاً`;
+      }),
+    check('في القاعدة مساجد',
+      'الاستيراد لم يُشغَّل — `node scripts/seed_mosques.js --governorate musandam`',
+      async () => {
+        if (!counts.مساجد) throw new Error('لا مسجد في القاعدة');
+        return `${counts.مساجد} مسجداً`;
+      }),
+  ]);
+
+  const results = [...classes, ...forms, ...blockers];
+
+  return {
+    ok: results.every((row) => row.ok),
+    serverTime: new Date().toISOString(),
+    checks: results,
+    counts,
+    failed: results.filter((row) => !row.ok).map((row) => row.name),
+    /**
+     * ما لا يُقرأ من داخل Cloud Code. يُذكر صراحةً لأن أخطر ما في فحصٍ أخضر
+     * أن يُقرأ «كلُّ شيء سليم» وهو لا يقول ذلك.
+     */
+    unverifiable: [
+      'جدولة المهام الدورية (pruneAuditLog وpruneNotifications) — تُراجَع من لوحة Back4app',
+      'الفهرس الفريد على Mosques.externalId — يُضاف يدوياً، ويكشف تكرارَه `seed_mosques.js --verify`',
+      'تفعيل رفع الملفات للمستخدم المصادَق — يُراجَع من إعدادات التطبيق',
+      'وصول الدفع (Parse.Push) — لا Installation مسجَّل، والوارد داخل التطبيق هو القناة',
+    ],
+  };
+});
+
+
+// ======================================================================
 // فحص حالة الخادم
 // ======================================================================
 
@@ -8753,7 +9019,8 @@ Parse.Cloud.define('health', async () => ({
 | `markNotificationsRead` | الجميع | تعليم الوارد مقروءاً |
 | `getMosqueLedger` | الجميع | السجل المالي الشفاف |
 | `getMosqueAuditTrail` | الجميع | سجل القرارات — الدور لا هوية الفاعل |
-| `health` | الجميع | فحص حالة الخادم |
+| `health` | الجميع | نبضٌ رخيص: يُثبت أن الكود حُمّل ولا يلمس القاعدة |
+| `preflight` | المفتاح الرئيسي | فحص ما قبل الإطلاق: يُشغّل الصيغ المشبوهة على القاعدة الحيّة، ويقول ما لم يفحصه |
 
 ### المهام الدورية
 
@@ -9471,6 +9738,7 @@ ORDER = [
     ("functions/users.js", "شؤون الحسابات"),
     ("functions/notifications.js", "صندوق الوارد"),
     ("functions/maintenance.js", "الصيانة الدورية"),
+    ("functions/preflight.js", "فحص ما قبل الإطلاق"),
 ]
 
 REPLACEMENTS = {
@@ -9828,7 +10096,8 @@ files/
     "test:integration": "node --test --test-concurrency=1 tests/integration/*.test.js",
     "seed:verify": "node scripts/seed_mosques.js --verify",
     "test:e2e": "node --test --test-timeout=180000 tests/e2e/*.test.js",
-    "admin": "node scripts/promote_admin.js"
+    "admin": "node scripts/promote_admin.js",
+    "preflight": "node scripts/preflight.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -11968,7 +12237,7 @@ test('نقاط الدخول', async (t) => {
     'getMosqueLedger', 'listPendingContractors', 'reviewContractor',
     'setFavoriteMosque', 'getMyProfile', 'updateMyProfile',
     'getMyNotifications', 'markNotificationsRead',
-    'getMosqueAuditTrail', 'health',
+    'getMosqueAuditTrail', 'health', 'preflight',
   ];
 
   const EXPECTED_TRIGGERS = [
@@ -12011,6 +12280,48 @@ test('نقاط الدخول', async (t) => {
    * يجدولها المُشغّل. حين انحرفت، بقيت `pruneNotifications` خارجها — فلا
    * تُجدوَل، ويمتلئ صندوق الوارد بلا سبب ظاهر.
    */
+  /**
+   * كلُّ ما تناديه الواجهة موجودٌ على الخادم.
+   *
+   * `Parse.Cloud.run('اسمٌ مخطوء')` لا يسقط عند البناء ولا عند الفحص — يسقط
+   * **في وجه المستخدم** حين يفتح الشاشة، برسالة `Invalid function`. ووقع هذا
+   * في هذا المستودع أثناء كتابة اختبار (`listPendingMosqueClaims` بدل
+   * `listPendingClaims`)، ولم يكشفه إلا خادمٌ يعمل. ولو وقع في شاشةٍ نادرة
+   * لبلغ الناسَ قبل أن يبلغنا.
+   */
+  await t.test('كل دالةٍ تناديها الواجهة معرَّفةٌ على الخادم', () => {
+    const client = fs.readFileSync(
+      path.join(CLOUD, '..', 'app', 'src', 'api.js'), 'utf8');
+    const called = new Set([...client.matchAll(/(?:Cloud\.run|\brun)\(\s*'([^']+)'/g)]
+      .map((hit) => hit[1]));
+    const defined = new Set(Object.keys(loadCloud('modular').functions));
+
+    assert.ok(called.size >= 25, `قُرئ ${called.size} نداءً فقط — المسح لا يصل`);
+    assert.deepEqual([...called].filter((name) => !defined.has(name)), [],
+      'الواجهة تنادي دالةً لا وجود لها — تسقط في وجه المستخدم لا في الفحص');
+  });
+
+  /**
+   * وكلُّ ملفّ سحابةٍ داخلٌ في الحزمة.
+   *
+   * `main.bundle.js` هو ما يُلصق في لوحة Back4app، وقائمةُ ملفاته في المولّد
+   * مكتوبةٌ باليد. فملفٌّ جديد يُضاف إلى `main.js` ولا يُضاف إليها **يعمل في
+   * كل اختباراتنا ويغيب عن الإنتاج وحده** — وهو أسوأ أنواع الغياب.
+   */
+  await t.test('وكل ملفّ يُحمّله main.js داخلٌ في الحزمة', () => {
+    const entry = fs.readFileSync(path.join(CLOUD, 'main.js'), 'utf8');
+    const required = [...entry.matchAll(/require\('\.\/([^']+)'\)/g)]
+      .map((hit) => (hit[1].endsWith('.js') ? hit[1] : `${hit[1]}.js`));
+
+    const builder = fs.readFileSync(
+      path.join(CLOUD, '..', 'scripts', 'build_single_file.py'), 'utf8');
+    const bundled = new Set([...builder.matchAll(/\("([^"]+\.js)",/g)].map((hit) => hit[1]));
+
+    assert.ok(required.length >= 6, `قُرئ ${required.length} استيراداً فقط — المسح لا يصل`);
+    assert.deepEqual(required.filter((file) => !bundled.has(file)), [],
+      'ملفّ سحابةٍ خارج الحزمة — يعمل في الاختبارات ويغيب عن الإنتاج وحده');
+  });
+
   await t.test('جدولا المواصفات يطابقان ما بُني', async () => {
     const spec = fs.readFileSync(
       path.join(CLOUD, '..', 'docs', 'PROJECT_SPEC.md'), 'utf8');
