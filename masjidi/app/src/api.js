@@ -86,7 +86,33 @@ export const CATEGORIES = {
   other: 'أخرى',
 };
 
-const run = (name, params) => Parse.Cloud.run(name, params);
+/**
+ * الجلسة انتهت أو أُبطلت — حدثٌ يلتقطه `App` فيعيد المستخدم إلى الدخول.
+ *
+ * `Parse.User.current()` يقرأ من تخزين المتصفّح، فيبقى «مسجَّلاً» بعد أن يرفض
+ * الخادمُ رمزَه: تنتهي الصلاحية، أو تُبطَل الجلسة، أو تُستبدل القاعدة عند نشر.
+ * وحينها يرى المستخدم شاشاتٍ كاملةً تفشل واحدةً واحدة برسالةٍ لا مخرج منها،
+ * ولا سبيل له إلا مسح بيانات المتصفّح. فيُقطع ذلك من موضعٍ واحد.
+ */
+export const SESSION_EXPIRED = 'masjidi:session-expired';
+
+/**
+ * كل خطأ يمرّ من هنا.
+ *
+ * والكود 209 يرسله الخادم في حالتين: رمزٌ لا يعرفه Parse، وحارسُنا
+ * `requireUser` حين لا جلسة. وكلتاهما تعني الشيء نفسه عملياً — العميل يظنّ
+ * نفسه داخلاً والخادم لا يعرفه — فالعلاج واحد.
+ */
+async function handle(error) {
+  if (error && error.code === Parse.Error.INVALID_SESSION_TOKEN) {
+    // الخروج قد يفشل هو نفسه برمزٍ باطل، فلا يُنتظر نجاحُه
+    await Parse.User.logOut().catch(() => {});
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_EXPIRED));
+  }
+  throw error;
+}
+
+const run = (name, params) => Parse.Cloud.run(name, params).catch(handle);
 
 /* ————— الجلسة ————— */
 
@@ -192,7 +218,7 @@ async function listRequests(build) {
   query.limit(50);
   build(query);
 
-  const rows = await query.find();
+  const rows = await query.find().catch(handle);
   return rows.map((row) => {
     const mosque = row.get('mosqueId');
     return {
@@ -327,5 +353,29 @@ export const reviewMosqueClaim = (claimId, approve) =>
   run('reviewMosqueClaim', { claimId, approve });
 
 /** رسالة الخطأ العربية القادمة من `lib/errors.js`، لا نصّ Parse الإنجليزي. */
-export const messageOf = (error) =>
-  (error && error.message) || 'تعذّر إتمام العملية، حاول مرة أخرى.';
+/**
+ * رسائل Parse نفسه — إنجليزية، وتظهر في واجهةٍ عربية.
+ *
+ * دوالُّ السحابة عندنا تتكلّم العربية دائماً (`lib/errors.js`)، وParse يتكلّم
+ * الإنجليزية دائماً. فالفصل بينهما بالحرف لا بالكود: كودٌ واحد قد يأتي من
+ * الطرفين (209 من الخادم ومن حارسنا، و101 من تسجيل دخولٍ خاطئ ومن `notFound`).
+ */
+const PARSE_MESSAGES = {
+  100: 'تعذّر الوصول إلى الخادم — تحقّق من اتصالك.',
+  101: 'اسم المستخدم أو كلمة المرور غير صحيحة.',
+  200: 'اسم المستخدم مطلوب.',
+  201: 'كلمة المرور مطلوبة.',
+  202: 'اسم المستخدم مسجَّل مسبقاً — اختر غيره.',
+  203: 'البريد مسجَّل مسبقاً.',
+  209: 'انتهت جلستك — سجّل الدخول من جديد.',
+};
+
+const hasArabic = (text) => /[\u0600-\u06FF]/.test(text);
+
+export const messageOf = (error) => {
+  if (!error) return 'تعذّر إتمام العملية، حاول مرة أخرى.';
+  // رسالتُنا عربيةٌ فتُعرض كما هي؛ ورسالةُ Parse إنجليزيةٌ فتُترجم بكودها
+  if (error.message && hasArabic(error.message)) return error.message;
+  return PARSE_MESSAGES[error.code] || error.message
+    || 'تعذّر إتمام العملية، حاول مرة أخرى.';
+};

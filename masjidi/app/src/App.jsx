@@ -80,6 +80,21 @@ function useOnline() {
 export default function App() {
   const [user, setUser] = useState(api.currentUser());
   const [tab, setTab] = useState('home');
+  const [expired, setExpired] = useState(false);
+
+  /**
+   * الجلسة تنتهي أو تُبطَل، والمتصفّح لا يعلم.
+   *
+   * `Parse.User.current()` يقرأ من تخزين المتصفّح، فيبقى المستخدم «داخلاً»
+   * بينما يرفض الخادم رمزَه — فتفشل كل شاشةٍ يفتحها برسالةٍ لا مخرج منها،
+   * ولا سبيل له إلا مسح بيانات المتصفّح. و`api` يُطلق الحدث من موضعٍ واحد
+   * مهما كان النداء الذي كشفه، فيُعاد هنا إلى الدخول ويُقال له لماذا.
+   */
+  useEffect(() => {
+    const onExpired = () => { setExpired(true); setUser(null); };
+    window.addEventListener(api.SESSION_EXPIRED, onExpired);
+    return () => window.removeEventListener(api.SESSION_EXPIRED, onExpired);
+  }, []);
   // ضغطة التبويب تُعيد التحميل ولو كان نشطاً أصلاً: الشاشات تجلب بياناتها عند
   // الظهور مرّة واحدة، فمن فتح التطبيق قبل نشر طلبٍ يبقى يرى قائمةً فارغة بلا
   // أي وسيلة لتحديثها. `key` متغيّر يُعيد تركيب الشاشة فتجلب من جديد.
@@ -95,7 +110,16 @@ export default function App() {
             لا يوجد اتصال — يلزم الاتصال لتسجيل الدخول.
           </div>
         )}
-        <Auth onDone={() => { setUser(api.currentUser()); setTab('home'); }} />
+        {expired && (
+          <div className="error" role="status" data-testid="session-expired">
+            انتهت جلستك — سجّل الدخول من جديد.
+          </div>
+        )}
+        <Auth onDone={() => {
+          setExpired(false);
+          setUser(api.currentUser());
+          setTab('home');
+        }} />
       </>
     );
   }

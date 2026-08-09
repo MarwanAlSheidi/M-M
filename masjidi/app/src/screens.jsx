@@ -1349,7 +1349,7 @@ export function Profile({ onLogOut }) {
   const [editing, setEditing] = useState(false);
   const profile = state.rows;
 
-  if (editing && !state.loading) {
+  if (editing && !state.loading && !state.error) {
     return (
       <EditProfile profile={profile}
         onDone={() => { setEditing(false); state.refresh(); }} />
@@ -1359,7 +1359,13 @@ export function Profile({ onLogOut }) {
   return (
     <>
       <h2>حسابي</h2>
-      {state.loading ? <p className="empty">جارٍ التحميل…</p> : (
+      {/*
+        الخطأ يُعرض. و`useList` يُرجع `rows: []` عند الفشل، وهذه الشاشة تعامل
+        `rows` ككائن — فكان الفشل يرسم **ملفاً فارغاً كأنه بيانات صحيحة**:
+        «بلا اسم»، وصفةٌ فارغة، ولا كلمة عمّا جرى. وذلك أسوأ من رسالة خطأ.
+      */}
+      {state.error && <div className="error">{state.error}</div>}
+      {state.loading || state.error ? null : (
         <article className="card">
           <h3>{profile.fullName || 'بلا اسم'}</h3>
           <p>الصفة: {api.ROLES[profile.role] || profile.role}</p>

@@ -50,7 +50,11 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     try {
       await run();
     } catch (error) {
-      const text = await page.locator('main').innerText().catch(() => '(تعذّرت القراءة)');
+      // `main` غير موجودة على شاشة الدخول — الهيكل كلُّه لا يُركَّب إلا بعد
+      // الدخول. وكان العطب هناك يطبع «تعذّرت القراءة» فيُخفي ما يلزم لتشخيصه.
+      const text = await page.locator('main').innerText()
+        .catch(() => page.locator('body').innerText())
+        .catch(() => '(تعذّرت القراءة)');
       error.message = `${step}\n${error.message}\n— ما على الشاشة —\n${text.slice(0, 700)}`;
       throw error;
     }
@@ -522,6 +526,47 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       assert.match(await page.locator('main').innerText(), /من 22\.93/,
         'السجلّ يقول «صُوّب» ولا يقول ماذا كان — فلا يُراجَع');
     });
+  });
+
+  /**
+   * الجلسة تُبطَل من الخادم، والمتصفّح لا يعلم.
+   *
+   * `Parse.User.current()` يقرأ من تخزين المتصفّح، فيبقى المستخدم «داخلاً»
+   * بعد أن يرفض الخادمُ رمزَه — تنتهي الصلاحية، أو تُبطَل الجلسة، أو تُستبدل
+   * القاعدة عند نشر. وكانت كل شاشةٍ يفتحها تفشل برسالةٍ لا مخرج منها، ولا
+   * سبيل له إلا مسح بيانات المتصفّح.
+   *
+   * وهذه حالةٌ لا يراها اختبار التكامل: هو يحمل رمزاً صالحاً دائماً.
+   */
+  await t.test('جلسةٌ أُبطلت تُعيد المستخدم إلى الدخول لا إلى شاشة عطل', async () => {
+    const page = await browser.newUserPage();
+    const username = `expired_${stamp}`;
+    await signUpVia(page, { username, fullName: 'سعيد بن علي', role: 'volunteer' });
+
+    // إبطالٌ من جانب الخادم — كما يقع عند انتهاء الصلاحية أو تبديل القاعدة
+    const sessions = await new stack.Parse.Query('_Session')
+      .matchesQuery('user', new stack.Parse.Query(stack.Parse.User).equalTo('username', username))
+      .find({ useMasterKey: true });
+    assert.ok(sessions.length > 0, 'لا جلسة لإبطالها — تغيّر شيء في التسجيل');
+    await stack.Parse.Object.destroyAll(sessions, { useMasterKey: true });
+
+    await onScreen(page, 'جلسة أُبطلت', async () => {
+      // أوّل نداءٍ بعد الإبطال يكشفه، ومن موضعٍ واحد يُعاد إلى الدخول
+      await page.getByRole('button', { name: 'حسابي' }).click();
+      await page.waitForSelector('[data-testid="session-expired"]');
+      // شاشة الدخول بلا `main`: الهيكل لا يُركَّب إلا لمستخدمٍ داخل
+      assert.equal(await page.locator('nav.tabs').count(), 0, 'التبويبات باقية بلا جلسة');
+      assert.match(await page.locator('body').innerText(), /دخول/,
+        'أُبطلت الجلسة ولم يعد إلى شاشة الدخول');
+    });
+
+    // ويدخل من جديد بلا مسح بيانات المتصفّح
+    await page.getByLabel('اسم المستخدم').fill(username);
+    await page.getByLabel('كلمة المرور').fill(PASSWORD);
+    await page.getByRole('button', { name: /^دخول$/ }).click();
+    await page.waitForSelector('nav.tabs');
+    assert.equal(await page.locator('[data-testid="session-expired"]').count(), 0,
+      'التنبيه باقٍ بعد الدخول');
   });
 
   /**
