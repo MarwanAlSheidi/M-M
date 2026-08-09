@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as api from './api';
+import { cachedUnread, onUnread, publishUnread, resetUnread } from './unread';
 import {
   AdminHome, AroundMe, Auth, ClaimMosque, ImamHome, MyTasks,
   Notifications, Opportunities, Profile,
@@ -38,15 +39,34 @@ for (const tabs of Object.values(TABS)) {
   tabs.splice(tabs.length - 1, 0, ['alerts', 'التنبيهات', Notifications]);
 }
 
-/** عدّاد غير المقروء للشارة. يُجلب بحدّ واحد: العدد وحده هو المطلوب. */
+/**
+ * عدّاد غير المقروء للشارة.
+ *
+ * كان يُجلب **مع كل ضغطة تبويب** — قِيس ذلك في متصفّح حقيقي — وعلى تبويب
+ * «التنبيهات» يُجلب مرّتين: مرّةً للشاشة ومرّةً للرقم فوقها. والطلبات هي القيد
+ * الملزم في الباقة لا المساحة، فمئةُ مستخدمٍ يضغط عشرين تبويباً يومياً تُنفق
+ * ضعفَي الباقة الشهرية **على رقمٍ فوق زرّ**.
+ *
+ * فيُقرأ المحفوظ ما دام طرياً، وتُنشر الشاشاتُ ما تعرفه فتتحدّث الشارة بلا
+ * طلب. والجلب يبقى قائماً حين لا يكون هناك محفوظٌ طريّ — لا تُلغى الطراوة،
+ * تُستعمل.
+ */
 function useUnread(tab) {
-  const [unread, setUnread] = useState(0);
+  const [unread, setUnread] = useState(() => cachedUnread() || 0);
+
+  // الاشتراك أوّلاً: شاشة التنبيهات تنشر العدد حين تجلبه، والتعليم مقروءاً
+  // يُصفّره — وكلاهما بلا طلبٍ إضافي
+  useEffect(() => onUnread(setUnread), []);
 
   useEffect(() => {
     if (tab === null) { setUnread(0); return undefined; } // لا جلب قبل الدخول
+
+    const fresh = cachedUnread();
+    if (fresh != null) { setUnread(fresh); return undefined; }
+
     let cancelled = false;
     api.getMyNotifications(1)
-      .then((result) => { if (!cancelled) setUnread(result.unread); })
+      .then((result) => { if (!cancelled) publishUnread(result.unread); })
       .catch(() => {}); // الشارة زينة — فشلها لا يُعطّل شاشة
     return () => { cancelled = true; };
   }, [tab]);
@@ -91,7 +111,8 @@ export default function App() {
    * مهما كان النداء الذي كشفه، فيُعاد هنا إلى الدخول ويُقال له لماذا.
    */
   useEffect(() => {
-    const onExpired = () => { setExpired(true); setUser(null); };
+    // المحفوظ يُنسى مع الجلسة: شارةُ من مضى فوق وارد من أتى رقمٌ ليس له
+    const onExpired = () => { resetUnread(); setExpired(true); setUser(null); };
     window.addEventListener(api.SESSION_EXPIRED, onExpired);
     return () => window.removeEventListener(api.SESSION_EXPIRED, onExpired);
   }, []);
@@ -131,6 +152,7 @@ export default function App() {
 
   async function signOut() {
     await api.logOut();
+    resetUnread();
     setUser(null);
   }
 

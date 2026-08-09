@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as api from './api';
 import { MAPS_KEY, VIEWS, loadGoogleMaps } from './maps';
 import { daysSince, sinceLabel } from './time';
+import { publishUnread } from './unread';
 
 /**
  * بعدها يُنبَّه الإمام إلى طول انتظاره — تقديريٌّ يُراجَع بعد أول موسم تشغيل،
@@ -1536,6 +1537,9 @@ export function Notifications() {
   const state = useList(async () => {
     const result = await api.getMyNotifications(50);
     setUnread(result.unread);
+    // الشاشة عرفت العدد، فلا تُجلبه الشارة مرّةً أخرى — كانت الشاشةُ الوحيدة
+    // التي يُطلب فيها الشيء نفسه مرّتين في ضغطةٍ واحدة
+    publishUnread(result.unread);
     return result.items;
   });
   const [busy, setBusy] = useState(false);
@@ -1544,6 +1548,7 @@ export function Notifications() {
     setBusy(true);
     try {
       await api.markNotificationsRead();
+      publishUnread(0); // الشارة تختفي فور التعليم لا بعد دقيقة
       await state.refresh();
     } finally {
       setBusy(false);

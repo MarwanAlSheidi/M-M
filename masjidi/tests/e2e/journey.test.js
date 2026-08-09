@@ -704,6 +704,50 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
    * إعدادٍ لا سلوك: لا يُثبت أن الصفحة تُفتح فعلاً بلا شبكة. والفرق بينهما هو
    * الفرق بين تطبيقٍ مثبَّتٍ يعمل وشاشةِ خطأٍ من المتصفّح.
    */
+  /**
+   * الطلبات هي القيد الملزم في الباقة، لا المساحة.
+   *
+   * قِيس في هذا المتصفّح: كل ضغطة تبويب كانت تُطلق `getMyNotifications` لتحديث
+   * الشارة — وعلى تبويب «التنبيهات» يُجلب الشيء نفسه مرّتين في ضغطةٍ واحدة.
+   * ومئةُ مستخدمٍ يضغط عشرين تبويباً يومياً = ستون ألف طلبٍ شهرياً، **ضعفا
+   * الباقة كلِّها لرقمٍ فوق زرّ.**
+   *
+   * ولا يُقاس هذا إلا في متصفّح: الخادم يرى طلباتٍ صحيحة كلَّها، ولا يرى أنها
+   * لم تكن لازمة.
+   */
+  await t.test('والشارة لا تُنفق طلباً مع كل ضغطة تبويب', async () => {
+    const counter = await browser.newUserPage();
+    const inbox = [];
+    counter.on('request', (event) => {
+      if (event.url().includes('/functions/getMyNotifications')) inbox.push(event.url());
+    });
+
+    await onScreen(counter, 'الشارة لا تُنفق طلباً مع كل ضغطة', async () => {
+      await signUpVia(counter,
+        { username: `budget_${stamp}`, fullName: 'المتطوّع', role: 'volunteer' });
+
+      inbox.length = 0;
+      // خمس ضغطاتٍ متتالية داخل نافذة الطراوة — كانت خمسة طلبات
+      for (const name of ['حولي', 'مهامّي', 'حسابي', 'الفرص', 'حولي']) {
+        await counter.getByRole('button', { name }).click();
+        await counter.waitForTimeout(400);
+      }
+
+      assert.ok(inbox.length <= 1,
+        `الشارة أنفقت ${inbox.length} طلبات في خمس ضغطات — والباقة 25 ألفاً شهرياً`);
+    });
+
+    await onScreen(counter, 'وتبويب التنبيهات لا يجلب الشيء مرّتين', async () => {
+      inbox.length = 0;
+      await counter.getByRole('button', { name: 'التنبيهات' }).click();
+      await counter.waitForSelector('.empty, .card');
+      await counter.waitForTimeout(400);
+
+      assert.equal(inbox.length, 1,
+        'جُلب الوارد مرّةً للشاشة ومرّةً للرقم فوقها — والبيانات نفسها');
+    });
+  });
+
   await t.test('التطبيق يُفتح فعلاً بلا شبكة', async () => {
     const offline = await browser.newUserPage();
     await onScreen(offline, 'التطبيق يُفتح فعلاً بلا شبكة', async () => {
