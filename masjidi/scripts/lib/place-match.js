@@ -16,12 +16,17 @@
  *      ثم كلماتُ اسمنا المميِّزة كلُّها في اسمه. و«مسجد» و«جامع» و«مصلى» لا
  *      تميّز شيئاً فتُطرح من المقارنة — ولذلك لزم شرط بيت الصلاة قبلها،
  *      وإلا طابقت «صيدلية النور» مسجدَ النور.
- *   2. **الموضع معقول** — قريبٌ من مساجد ولايته المعلومة. القاعدة نفسها
- *      المقيسة في `cloud/functions/mosques.js`: أقصى بُعدٍ بين مسجدٍ وأقرب
- *      جارٍ له في ولايته 73.4 كم، فثمانون فوق أقصى الواقع.
- *   3. **الموضع غير مأخوذ** — ليس على مسجدٍ نعرف موقعه أصلاً. وإلا نسخنا
- *      إحداثيَّ جارِه فصار مسجدان في نقطةٍ واحدة — وهو عين العطب الذي خرجنا
- *      منه.
+ *   2. **الموضع معقول، وهو في ولايتنا لا في جارتها** — قريبٌ من مساجد ولايته
+ *      المعلومة (القاعدة المقيسة في `cloud/functions/mosques.js`: أقصى بُعدٍ
+ *      بين مسجدٍ وأقرب جارٍ له في ولايته 73.4 كم، فثمانون فوق أقصى الواقع)،
+ *      **وأقربُ مسجدٍ معلومٍ إليه من ولايتنا لا من غيرها**. فالثمانون حاجزٌ
+ *      أمام الكوارث (850 كم) لا فاصلٌ بين ولايتين متجاورتين، والأسماء تتكرّر
+ *      عبر الحدود: «الغفار جل جلاله» في صلالة وفي رخيوت، وبينهما 74 كم.
+ *   3. **الموضع غير مأخوذ** — ليس على مسجدٍ نعرف موقعه أصلاً، **في أيّ ولاية**.
+ *      وإلا نسخنا إحداثيَّ جارِه فصار مسجدان في نقطةٍ واحدة — وهو عين العطب
+ *      الذي خرجنا منه. والحدود الإدارية لا تعني الخرائط شيئاً: «الحجرة» في
+ *      منح و«الحجرة» في سمائل اسمان متطابقان لمسجدين متجاورين، والفحص داخل
+ *      الولاية وحدها يُجيز نسخَ أحدهما فوق الآخر.
  *   4. **لا لبس** — مرشّحٌ واحدٌ يجتاز الثلاثة. فإن اجتازها اثنان فنحن لا نعرف
  *      أيُّهما، والتخمين هنا كذبٌ مُوثَّق.
  *
@@ -98,9 +103,10 @@ function nearestKm(point, points) {
  * @param {object}  mosque        سجلّ المسجد المجهول موقعه (يلزم منه `name`)
  * @param {Array}   candidates    نتائج جوجل: `{ name, lat, lng, types }`
  * @param {Array}   knownInWilayat نقاط المساجد المعلومة في الولاية نفسها
+ * @param {Array}   [otherNearby]  معلومُ الولايات المجاورة — لفحص «مأخوذ» و«لمن هو»
  * @returns {{ accepted?: object, rejected?: string }}
  */
-function chooseLocation(mosque, candidates, knownInWilayat) {
+function chooseLocation(mosque, candidates, knownInWilayat, otherNearby = []) {
   if (!Array.isArray(candidates) || candidates.length === 0) {
     return { rejected: 'لا نتيجة من جوجل' };
   }
@@ -119,14 +125,23 @@ function chooseLocation(mosque, candidates, knownInWilayat) {
   const plausible = named.filter((hit) => nearestKm(hit, knownInWilayat) <= PLAUSIBLE_KM);
   if (plausible.length === 0) return { rejected: 'كلّها بعيدة عن الولاية' };
 
-  const free = plausible.filter((hit) => nearestKm(hit, knownInWilayat) > TAKEN_KM);
+  // الفحص على الجوار كلِّه لا على الولاية وحدها: نقطةٌ مأخوذة مأخوذةٌ أياً كانت
+  // ولاية صاحبها. جرّبتُ الأولى فقبلَت 24 موقعاً من 32 كلُّها على بُعد صفرٍ من
+  // مسجدٍ معلومٍ في الولاية المجاورة — أي أنها نسخُ مساجدَ أخرى لا اكتشافُ مسجدنا.
+  const everyone = [...knownInWilayat, ...otherNearby];
+  const free = plausible.filter((hit) => nearestKm(hit, everyone) > TAKEN_KM);
   if (free.length === 0) return { rejected: 'الموضع مأخوذ بمسجدٍ معلوم' };
 
-  if (free.length > 1) {
-    return { rejected: `مرشّحون متعدّدون (${free.length}) — لا يُعرف أيُّهم` };
+  // ولمن هذا الموضع؟ أقربُ مسجدٍ معلومٍ إليه يقول في أيّ ولاية هو. فإن كان من
+  // ولايةٍ أخرى فالموضع هناك لا هنا، والاسمُ تكرّر عبر الحدود لا أكثر.
+  const ours = free.filter((hit) => nearestKm(hit, knownInWilayat) <= nearestKm(hit, otherNearby));
+  if (ours.length === 0) return { rejected: 'الموضع في ولايةٍ أخرى' };
+
+  if (ours.length > 1) {
+    return { rejected: `مرشّحون متعدّدون (${ours.length}) — لا يُعرف أيُّهم` };
   }
 
-  const [hit] = free;
+  const [hit] = ours;
   return {
     accepted: {
       lat: hit.lat,

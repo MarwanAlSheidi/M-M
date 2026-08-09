@@ -1,173 +1,195 @@
 #!/usr/bin/env node
 /**
- * استخراج مواقع المساجد المجهولة من خرائط جوجل.
+ * استخراج مواقع المساجد المجهولة من OpenStreetMap — **بلا مفتاح وبلا فاتورة**.
  *
- * 430 مسجداً بلا موقعٍ يُوثق به — ستة عشر بلا إحداثيّ في بيانات الوزارة،
- * و414 سُحبت ثقتنا من إحداثيّها الكاذب. وأهلها خارج البحث بالقرب وفرصهم في ذيل
- * القائمة. وانتظارُ أن يقف عندها أئمّتها يؤخّرها إلى أجلٍ غير معلوم، ومواقعُها
- * موجودة في خرائط جوجل بأسمائها.
+ * 430 مسجداً بلا موقعٍ يُوثق به — ستة عشر بلا إحداثيّ في بيانات الوزارة، و414
+ * سُحبت ثقتنا من إحداثيّها الكاذب. وأهلها خارج البحث بالقرب وفرصهم في ذيل
+ * القائمة. وانتظارُ أن يقف عندها أئمّتها يؤخّرها إلى أجلٍ غير معلوم.
  *
- * **لا يكتب في القاعدة.** يُخرج ملفّ تراكبٍ مراجَعاً — `data/resolved_locations.json`
- * — يقرؤه الاستيراد. فالنتيجة تُقرأ وتُراجَع قبل أن تصير موقع مسجدٍ على
- * الخريطة، ويبقى الملفّ في المستودع فيُعاد الاستيراد بلا مفتاحٍ ولا كلفة.
+ * **لماذا OSM لا خرائط جوجل:** البحث النصّي في Places مدفوعٌ بالطلب — 430 طلباً
+ * تعني فاتورة. وOpenStreetMap مفتوحة بترخيص ODbL: تنزيلٌ واحد مجاني يأتي بكل
+ * مساجد السلطنة دفعةً واحدة، ثم تجري المطابقة **على الجهاز** بلا شبكة. فلا
+ * مفتاح، ولا حساب، ولا عدّاد طلبات — وإعادة التشغيل لا تكلّف شيئاً.
  *
- * وقواعد القبول في `lib/place-match.js` — نتيجة جوجل مرشَّحٌ لا حقيقة.
+ * والترخيص يشترط النسبة: «© مساهمو OpenStreetMap» — وهي مكتوبة في كل ملفٍّ
+ * يُخرجه هذا السكربت.
  *
- * الكلفة: البحث النصّي في Places مدفوع (نحو 32 دولاراً للألف طلب وقت الكتابة)،
- * فأربعمئة وثلاثون طلباً ≈ 14 دولاراً. جرّب بـ`--limit` أولاً.
+ * **ولا يكتب في القاعدة.** يُخرج ملفّ تراكبٍ مراجَعاً — `data/resolved_locations.json`
+ * — يقرؤه الاستيراد، ويُعيد فحصه قبل أن يكتبه.
  *
- *   GOOGLE_MAPS_API_KEY=... node scripts/resolve_locations.js --limit 20
- *   GOOGLE_MAPS_API_KEY=... node scripts/resolve_locations.js
- *   node scripts/resolve_locations.js --report      # ما في الملفّ، بلا شبكة
+ * وقواعد القبول في `lib/place-match.js` — نتيجةُ أي مصدرٍ مرشَّحٌ لا حقيقة.
+ *
+ *   node scripts/resolve_locations.js --fetch     # التنزيل: الخطوة الوحيدة التي تحتاج شبكة
+ *   node scripts/resolve_locations.js             # المطابقة، بلا شبكة
+ *   node scripts/resolve_locations.js --report    # ماذا خرج ولماذا رُدّ
  */
 
-require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 
 const { prepare } = require('./lib/mosque-record');
-const { chooseLocation } = require('./lib/place-match');
+const { chooseLocation, PLAUSIBLE_KM } = require('./lib/place-match');
+const geo = require('../cloud/lib/geo');
 
-const DATA_FILE = path.join(__dirname, '..', 'data', 'mosques.json');
-const OUT_FILE = path.join(__dirname, '..', 'data', 'resolved_locations.json');
-const ENDPOINT = 'https://places.googleapis.com/v1/places:searchText';
-
-const args = process.argv.slice(2);
-const limit = args.includes('--limit') ? Number(args[args.indexOf('--limit') + 1]) : Infinity;
-const reportOnly = args.includes('--report');
-
-/** مهلةٌ بين الطلبات: البحث النصّي محدود المعدّل، والتسرّع يردّ 429. */
-const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+const DATA_DIR = path.join(__dirname, '..', 'data');
+const DATA_FILE = path.join(DATA_DIR, 'mosques.json');
+const OSM_FILE = path.join(DATA_DIR, 'osm-mosques.json');
+const OUT_FILE = path.join(DATA_DIR, 'resolved_locations.json');
 
 /**
- * بحثٌ نصّي واحد.
+ * مرايا Overpass — تُجرَّب بالترتيب.
  *
- * `locationBias` يوجّه البحث إلى محيط الولاية بدل السلطنة كلّها — فاسمٌ متكرّر
- * يعود بمرشّحي المنطقة لا بمسجدٍ في الطرف الآخر. وهو **توجيهٌ لا قيد**، فما
- * جاء بعيداً يردّه `chooseLocation` لا الاستعلام.
+ * الخدمة تطوّعية ومجانية، وقد تكون إحداها مثقلةً أو محجوبة عنك. والتنزيل مرّةٌ
+ * واحدة لا تتكرّر، فلا يُثقلها هذا.
  */
-async function searchText(query, centre, apiKey) {
-  const response = await fetch(ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': apiKey,
-      'X-Goog-FieldMask': 'places.displayName,places.location,places.formattedAddress,places.types',
-    },
-    body: JSON.stringify({
-      textQuery: query,
-      languageCode: 'ar',
-      regionCode: 'OM',
-      maxResultCount: 10,
-      locationBias: { circle: { center: { latitude: centre.lat, longitude: centre.lng }, radius: 40000 } },
-    }),
-  });
+const MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.openstreetmap.ru/api/interpreter',
+];
 
-  if (!response.ok) {
-    throw new Error(`جوجل ردّ ${response.status}: ${(await response.text()).slice(0, 200)}`);
-  }
-  const body = await response.json();
-  return (body.places || []).map((place) => ({
-    name: (place.displayName && place.displayName.text) || '',
-    lat: place.location && place.location.latitude,
-    lng: place.location && place.location.longitude,
-    address: place.formattedAddress || '',
-    // التصنيف يفصل «مسجد النور» عن «صيدلية النور» — والاسم وحده لا يفصلهما
-    types: place.types || [],
-  })).filter((hit) => typeof hit.lat === 'number' && typeof hit.lng === 'number');
-}
+/** كل بيوت الصلاة الإسلامية داخل حدود سلطنة عُمان. */
+const QUERY = `[out:json][timeout:180];
+area["ISO3166-1"="OM"][admin_level=2]->.oman;
+nwr["amenity"="place_of_worship"]["religion"="muslim"](area.oman);
+out center tags;`;
+
+/** أقلّ عددٍ يُصدَّق: أقلُّ منه يعني استعلاماً بُتر أو حدوداً لم تُطابَق. */
+const MIN_SANE = 200;
+
+const args = process.argv.slice(2);
+const fetchOnly = args.includes('--fetch');
+const reportOnly = args.includes('--report');
 
 const median = (values) => {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)];
 };
 
-function main() {
-  const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  const { records } = prepare(raw);
+const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 
-  const located = records.filter((row) => row.location);
-  const missing = records.filter((row) => !row.location);
+/** تنزيلٌ واحد، مُقلَّمٌ إلى ما نحتاجه: اسمٌ ونقطة. */
+async function download() {
+  let lastError = null;
 
-  /** نقاط المساجد المعلومة، مجمّعةً بالولاية — بها تُقاس معقولية المرشّح. */
-  const byWilayat = new Map();
-  for (const row of located) {
-    const key = `${row.governorate}|${row.wilayat}`;
-    if (!byWilayat.has(key)) byWilayat.set(key, []);
-    byWilayat.get(key).push({ lat: row.location.latitude, lng: row.location.longitude });
+  for (const mirror of MIRRORS) {
+    process.stdout.write(`→ ${new URL(mirror).host} … `);
+    try {
+      const response = await fetch(mirror, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ data: QUERY }),
+      });
+      if (!response.ok) throw new Error(`ردّ ${response.status}`);
+
+      const body = await response.json();
+      const places = (body.elements || [])
+        .map((element) => ({
+          // `name:ar` أدقّ حين يوجد: كثيرٌ من المساجد مسجَّلٌ بالإنجليزية أيضاً
+          name: (element.tags && (element.tags['name:ar'] || element.tags.name)) || '',
+          lat: element.lat != null ? element.lat : element.center && element.center.lat,
+          lng: element.lon != null ? element.lon : element.center && element.center.lon,
+        }))
+        .filter((place) => place.name && geo.validCoordinates(place.lat, place.lng));
+
+      console.log(`${places.length} مسجداً`);
+      // ملفٌّ ناقصٌ أسوأ من لا ملفّ: المطابقة عليه تردّ الجميع بلا سببٍ ظاهر
+      if (places.length < MIN_SANE) {
+        throw new Error(`العدد أقلّ من أن يكون صحيحاً (${places.length})`);
+      }
+
+      fs.writeFileSync(OSM_FILE, `${JSON.stringify({
+        fetchedAt: new Date().toISOString(),
+        source: 'OpenStreetMap via Overpass API',
+        licence: 'ODbL — © مساهمو OpenStreetMap',
+        mirror,
+        count: places.length,
+        places,
+      }, null, 2)}\n`, 'utf8');
+
+      console.log(`✓ ${path.relative(process.cwd(), OSM_FILE)}`);
+      return;
+    } catch (error) {
+      console.log(`أخفقت (${error.message})`);
+      lastError = error;
+    }
   }
 
-  if (reportOnly) {
-    if (!fs.existsSync(OUT_FILE)) {
-      console.log(`لا ملفّ تراكب بعد (${path.relative(process.cwd(), OUT_FILE)}).`);
-      console.log(`المساجد المجهولة موقعُها: ${missing.length}`);
-      return Promise.resolve();
-    }
-    const overlay = JSON.parse(fs.readFileSync(OUT_FILE, 'utf8'));
-    const resolved = Object.keys(overlay.resolved || {}).length;
-    console.log(`مُستخرَج: ${resolved} من ${missing.length}`);
-    const reasons = new Map();
-    for (const { reason } of overlay.rejected || []) {
-      reasons.set(reason, (reasons.get(reason) || 0) + 1);
-    }
-    for (const [reason, count] of [...reasons].sort((a, b) => b[1] - a[1])) {
-      console.log(`  ${String(count).padStart(4)}  ${reason}`);
-    }
-    return Promise.resolve();
+  throw new Error(`تعذّر التنزيل من كل المرايا. آخر خطأ: ${lastError && lastError.message}`);
+}
+
+/**
+ * تضييق نقاط OSM إلى محيط كل ولاية.
+ *
+ * ليس تحسيناً للسرعة وحده: «مصلى العيدين» اسمٌ لـ369 مسجداً في السلطنة،
+ * فمطابقةُ الاسم على القائمة كلّها تعطي عشرات المرشّحين فيُردّ الكلُّ للبس.
+ * والتضييق يترك مرشّحي الولاية وحدهم — وهم من يُحتمل أن يكون مسجدُنا فيهم.
+ */
+function candidatesByWilayat(places, knownByWilayat, allKnown) {
+  const scoped = new Map();
+  const nearby = new Map();
+  const inBox = (box, point) => point.lat >= box.minLat && point.lat <= box.maxLat
+    && point.lng >= box.minLng && point.lng <= box.maxLng;
+
+  for (const [key, known] of knownByWilayat) {
+    const centre = { lat: median(known.map((p) => p.lat)), lng: median(known.map((p) => p.lng)) };
+    const box = geo.boundingBox(centre.lat, centre.lng, PLAUSIBLE_KM);
+
+    scoped.set(key, places
+      .filter((place) => inBox(box, place))
+      // كلّها بيوت صلاة — الاستعلام لم يجلب غيرها، والوسم يُقال صراحةً
+      .map((place) => ({ ...place, types: ['mosque'] })));
+
+    // معلومُ الولايات **الأخرى** في الصندوق: به يُفحص «مأخوذ» و«لمن هذا الموضع».
+    // والحدود الإدارية لا تعني الخرائط شيئاً، لكنها تعني أيَّ مسجدٍ نتكلّم عنه.
+    nearby.set(key, allKnown.filter((point) => point.key !== key && inBox(box, point)));
   }
 
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) {
-    console.error('✗ GOOGLE_MAPS_API_KEY غير مضبوط. ضعه في .env أو في البيئة.');
-    console.error('  ويحتاج تفعيل Places API (New) على المشروع — والبحث النصّي مدفوع.');
+  return { scoped, nearby };
+}
+
+/** المطابقة — محليّةٌ بالكامل، بلا شبكة. */
+function match() {
+  if (!fs.existsSync(OSM_FILE)) {
+    console.error(`✗ لا ملفّ OSM بعد. شغّل أوّلاً: node ${path.basename(__filename)} --fetch`);
     process.exit(1);
   }
 
-  return resolveAll(missing.slice(0, limit), byWilayat, apiKey);
-}
+  const { places } = readJson(OSM_FILE);
+  const { records } = prepare(readJson(DATA_FILE), {}); // بلا تراكبٍ سابق: نحن نولّده
+  const located = records.filter((row) => row.location);
+  const missing = records.filter((row) => !row.location);
 
-async function resolveAll(targets, byWilayat, apiKey) {
-  console.log(`→ ${targets.length} مسجداً مجهول الموقع`);
+  console.log(`→ ${missing.length} مسجداً مجهول الموقع، و${places.length} نقطة في OSM`);
 
+  const knownByWilayat = new Map();
+  for (const row of located) {
+    const key = `${row.governorate}|${row.wilayat}`;
+    if (!knownByWilayat.has(key)) knownByWilayat.set(key, []);
+    knownByWilayat.get(key).push({ lat: row.location.latitude, lng: row.location.longitude });
+  }
+
+  const allKnown = located.map((row) => ({
+    lat: row.location.latitude,
+    lng: row.location.longitude,
+    key: `${row.governorate}|${row.wilayat}`,
+  }));
+  const { scoped, nearby } = candidatesByWilayat(places, knownByWilayat, allKnown);
   const resolved = {};
   const rejected = [];
-  let failed = 0;
 
-  for (const [index, row] of targets.entries()) {
+  for (const row of missing) {
     const key = `${row.governorate}|${row.wilayat}`;
-    const known = byWilayat.get(key) || [];
-    // مركز الولاية بالوسيط: نقطةٌ شاردة تسحب المتوسّط فيوجَّه البحث إلى فراغ
-    const centre = known.length > 0
-      ? { lat: median(known.map((p) => p.lat)), lng: median(known.map((p) => p.lng)) }
-      : null;
+    const verdict = chooseLocation(
+      row, scoped.get(key) || [], knownByWilayat.get(key) || [], nearby.get(key) || [],
+    );
 
-    if (!centre) {
-      rejected.push({ externalId: row.externalId, name: row.name, reason: 'لا مسجد معلوم في الولاية يُقاس إليه' });
-      continue;
-    }
-
-    const query = [row.name, row.village, row.wilayat, 'عُمان'].filter(Boolean).join('، ');
-
-    let candidates;
-    try {
-      candidates = await searchText(query, centre, apiKey);
-    } catch (error) {
-      // الفشل الشبكي ليس حكماً على المسجد: يُعدّ ولا يُكتب في المرفوض، فإعادة
-      // التشغيل تحاوله من جديد
-      failed += 1;
-      console.error(`\n  ✗ ${row.name}: ${error.message}`);
-      await sleep(1000);
-      continue;
-    }
-
-    const verdict = chooseLocation(row, candidates, known);
     if (verdict.accepted) {
       resolved[row.externalId] = {
         ...verdict.accepted,
         name: row.name,
         wilayat: row.wilayat,
         governorate: row.governorate,
-        query,
       };
     } else {
       rejected.push({
@@ -175,38 +197,56 @@ async function resolveAll(targets, byWilayat, apiKey) {
         name: row.name,
         wilayat: row.wilayat,
         reason: verdict.rejected,
-        sawCandidates: candidates.length,
+        sawCandidates: (scoped.get(key) || []).length,
       });
     }
-
-    if (index % 10 === 0) process.stdout.write(`\r  ${index + 1}/${targets.length}`);
-    await sleep(120);
-  }
-
-  const found = Object.keys(resolved).length;
-
-  // مفتاحٌ خاطئ أو شبكةٌ منقطعة تُخفق كلَّ الطلبات، والكتابة حينها تمحو تشغيلةً
-  // ناجحةً سابقة وتضع مكانها ملفّاً فارغاً — خسارةٌ صامتة بكلفةٍ مدفوعة
-  if (failed === targets.length && targets.length > 0) {
-    console.error(`\n✗ أخفقت الطلبات كلُّها (${failed}). لم يُكتب شيء — تحقّق من المفتاح.`);
-    process.exit(1);
   }
 
   fs.writeFileSync(OUT_FILE, `${JSON.stringify({
     generatedAt: new Date().toISOString(),
-    source: 'Google Places API (New) — searchText',
-    attempted: targets.length,
-    resolvedCount: found,
+    source: 'OpenStreetMap via Overpass API',
+    licence: 'ODbL — © مساهمو OpenStreetMap',
+    attempted: missing.length,
+    resolvedCount: Object.keys(resolved).length,
     resolved,
     rejected,
   }, null, 2)}\n`, 'utf8');
 
-  console.log(`\n✓ استُخرج ${found} من ${targets.length}`
-    + `، ورُدّ ${rejected.length}${failed > 0 ? `، وأخفق ${failed} شبكياً` : ''}`);
   console.log(`  ${path.relative(process.cwd(), OUT_FILE)} — راجعه قبل الاستيراد.`);
+  report();
+}
+
+function report() {
+  if (!fs.existsSync(OUT_FILE)) {
+    const { records } = prepare(readJson(DATA_FILE), {});
+    console.log('لا ملفّ تراكب بعد.');
+    console.log(`المساجد المجهولة موقعُها: ${records.filter((row) => !row.location).length}`);
+    return;
+  }
+
+  const overlay = readJson(OUT_FILE);
+  console.log(`\n✓ استُخرج ${overlay.resolvedCount} من ${overlay.attempted}`
+    + `، ورُدّ ${(overlay.rejected || []).length}`);
+
+  const reasons = new Map();
+  for (const { reason } of overlay.rejected || []) {
+    // الأعداد داخل السبب تُوحَّد حتى لا يصير كل عددٍ سطراً في التقرير
+    const key = reason.replace(/\(\d+\)/, '(…)');
+    reasons.set(key, (reasons.get(key) || 0) + 1);
+  }
+  if (reasons.size > 0) console.log('أسباب الردّ:');
+  for (const [reason, count] of [...reasons].sort((a, b) => b[1] - a[1])) {
+    console.log(`  ${String(count).padStart(4)}  ${reason}`);
+  }
+}
+
+async function main() {
+  if (reportOnly) return report();
+  if (fetchOnly) return download();
+  return match();
 }
 
 main().catch((error) => {
-  console.error('\n✗ فشل الاستخراج:', error.message);
+  console.error('\n✗ فشل:', error.message);
   process.exit(1);
 });

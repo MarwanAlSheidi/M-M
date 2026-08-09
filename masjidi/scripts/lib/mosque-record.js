@@ -44,7 +44,7 @@ const asNumber = (value) => {
 };
 
 /**
- * ما استُخرج من خرائط جوجل للمساجد المجهولة — إن وُجد.
+ * ما استُخرج من OpenStreetMap للمساجد المجهولة — إن وُجد.
  *
  * ملفٌّ اختياريّ: غيابه يعني أن `resolve_locations.js` لم يُشغَّل بعد، وهي
  * الحالة الافتراضية في مستودعٍ بلا مفتاح. ووجودُه لا يُلزم أحداً بشبكة —
@@ -102,7 +102,7 @@ function prepare(rows, overlay = readOverlay()) {
 
   const overlayRejected = [];
   const records = judgedAll.map((judged) => {
-    // ما استُخرج من جوجل يملأ الفراغ وحده — لا ينسخ فوق إحداثيٍّ موثوق.
+    // ما استُخرج من OSM يملأ الفراغ وحده — لا ينسخ فوق إحداثيٍّ موثوق.
     // والمصدر يُقال، فمن يقرأ الحقل لاحقاً يعرف من أين جاء الموقع.
     if (judged.location) return { ...judged, locationSource: 'ministry' };
 
@@ -117,8 +117,8 @@ function prepare(rows, overlay = readOverlay()) {
       ...judged,
       location: { __type: 'GeoPoint', latitude: verdict.lat, longitude: verdict.lng },
       hasLocation: true,
-      locationSource: 'google',
-      dataQuality: { ...(judged.dataQuality || {}), coordinates: 'resolved_from_places' },
+      locationSource: 'osm',
+      dataQuality: { ...(judged.dataQuality || {}), coordinates: 'resolved_from_osm' },
     };
   });
 

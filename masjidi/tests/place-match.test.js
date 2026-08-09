@@ -1,7 +1,7 @@
 /**
- * قبولُ موقعٍ من خرائط جوجل — أو ردُّه.
+ * قبولُ موقعٍ من OpenStreetMap — أو ردُّه.
  *
- * 430 مسجداً بلا موقع، ومواقعُها موجودة في خرائط جوجل بأسمائها. لكنّ الدرس
+ * 430 مسجداً بلا موقع، ومواقعُها موجودة في الخرائط المفتوحة. لكنّ الدرس
  * الذي كلّفنا 414 إحداثياً كاذباً في بيانات الوزارة هو ألّا يُؤخذ مصدرٌ على
  * علّاته. فهذه الاختبارات تحرس أن يبقى ردُّ المشكوك فيه هو الأصل: **موقعٌ
  * خاطئ يقود الناس ضلالاً، ومجهولٌ صدق.**
@@ -111,6 +111,40 @@ test('اختيار الموقع', async (t) => {
     assert.match(chooseLocation(mosque, [bare], KNOWN).rejected, /بيت صلاة/);
   });
 
+  /**
+   * جرّبتُ القاعدة على البيانات الحقيقية بنقاطٍ اصطناعية، فقبلَت 24 موقعاً من
+   * 32 كلُّها على بُعد **صفرٍ** من مسجدٍ معلومٍ في الولاية المجاورة — أي أنها
+   * نسخُ مساجدَ أخرى لا اكتشافُ مسجدنا. والفحص كان داخل الولاية وحدها.
+   */
+  await t.test('والموضع المأخوذ مأخوذٌ ولو كان صاحبه في ولايةٍ أخرى', () => {
+    const neighbourWilayat = [{ lat: 23.70, lng: 58.60 }];
+    const verdict = chooseLocation(
+      mosque, [at('مسجد النور', 23.70, 58.60)], KNOWN, neighbourWilayat,
+    );
+    assert.match(verdict.rejected, /مأخوذ/);
+  });
+
+  /**
+   * والثمانون كيلومتراً حاجزٌ أمام الكوارث (850 كم) لا فاصلٌ بين ولايتين
+   * متجاورتين. و«الغفار جل جلاله» اسمٌ في صلالة وفي رخيوت، وبينهما 74 كم —
+   * فقُبل موضعُ رخيوت لمسجد صلالة حتى أُضيف هذا الفحص.
+   */
+  await t.test('وأقربُ معلومٍ إلى الموضع يقول في أيّ ولايةٍ هو', () => {
+    const far = { lat: 23.90, lng: 58.90 };          // مرشّحٌ داخل الثمانين
+    const neighbourWilayat = [{ lat: 23.91, lng: 58.91 }]; // لكنه ألصق بالجارة
+    const verdict = chooseLocation(
+      mosque, [at('مسجد النور', far.lat, far.lng)], KNOWN, neighbourWilayat,
+    );
+    assert.match(verdict.rejected, /ولايةٍ أخرى/);
+  });
+
+  await t.test('وما كان أقرب إلى ولايتنا يُقبل رغم جوار الأخرى', () => {
+    const { accepted } = chooseLocation(
+      mosque, [at('مسجد النور', 23.61, 58.51)], KNOWN, [{ lat: 23.90, lng: 58.90 }],
+    );
+    assert.equal(accepted.lat, 23.61);
+  });
+
   await t.test('وولايةٌ بلا مسجدٍ معلوم: يُردّ — لا مقياس للمعقولية', () => {
     // قبولُه بلا قياسٍ يعيدنا إلى أخذ المصدر على علّاته
     const verdict = chooseLocation(mosque, [at('مسجد النور', 23.61, 58.51)], []);
@@ -155,9 +189,9 @@ test('التراكب يدخل الاستيراد بمصدره', async (t) => {
     const record = first(prepare(rows, { x1: { lat: 23.61, lng: 58.51 } }));
     assert.equal(record.location.latitude, 23.61);
     assert.equal(record.hasLocation, true);
-    assert.equal(record.locationSource, 'google',
-      'بلا مصدر لا يُعرف أن الموقع دبّوسُ خرائط لا بيانات وزارة');
-    assert.equal(record.dataQuality.coordinates, 'resolved_from_places');
+    assert.equal(record.locationSource, 'osm',
+      'بلا مصدر لا يُعرف أن الموقع نقطةُ خرائط لا بيانات وزارة');
+    assert.equal(record.dataQuality.coordinates, 'resolved_from_osm');
   });
 
   await t.test('ولا ينسخ فوق إحداثيٍّ موثوق', () => {
@@ -214,17 +248,17 @@ test('ترتيب المصادر في الاستيراد', async (t) => {
     path.join(__dirname, '..', 'scripts', 'seed_mosques.js'), 'utf8');
 
   await t.test('ما أثبته إنسانٌ لا ينسخ فوقه إلا الوزارة', () => {
-    // دبّوسُ جوجل وضعه غريب، والإمام وقف عند المسجد. ولولا هذا الشرط لمحا
+    // نقطةُ OSM وضعها متطوّع، والإمام وقف عند المسجد. ولولا هذا الشرط لمحا
     // ملفُّ التراكب كلَّ موقعٍ ثبّته إمامٌ بنفسه في أوّل إعادة استيراد.
     assert.match(seed, /keepLearned = prior && prior\.learnedLocation\s*\n?\s*&& row\.locationSource !== 'ministry'/,
-      'شرطُ الحفظ لم يعد يميّز مصدر الوارد، فجوجل ينسخ فوق الإنسان');
+      'شرطُ الحفظ لم يعد يميّز مصدر الوارد، فالخرائط تنسخ فوق الإنسان');
     assert.match(seed, /if \(row\.location && !keepLearned\)/,
       'الكتابة تسبق الفحص، فالشرط لا أثر له');
   });
 
-  await t.test('و«جوجل» معدودٌ من مصادر الاستيراد لا من البشرية', () => {
+  await t.test('و«OSM» معدودٌ من مصادر الاستيراد لا من البشرية', () => {
     const list = seed.match(/const IMPORT_SOURCES = \[(.*?)\];/);
     const sources = [...list[1].matchAll(/'([^']+)'/g)].map((hit) => hit[1]);
-    assert.deepEqual(sources.sort(), ['google', 'ministry']);
+    assert.deepEqual(sources.sort(), ['ministry', 'osm']);
   });
 });
