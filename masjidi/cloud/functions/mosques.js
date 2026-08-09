@@ -2,6 +2,7 @@ const E = require('../lib/errors');
 const { requireUser, requireRole, mosqueForImam } = require('../lib/auth');
 const audit = require('../lib/audit');
 const geo = require('../lib/geo');
+const { normalizeArabic } = require('../lib/arabic');
 
 const PUBLIC_FIELDS = [
   'name', 'mosqueNumber', 'type', 'typeSlug', 'governorate', 'wilayat',
@@ -147,27 +148,6 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
       distanceKm: hit.km == null ? null : Math.round(hit.km * 100) / 100,
     }));
 });
-
-/**
- * تطبيع النص العربي — نظير `normalize_ar` في `scripts/clean_mosques.py`.
- *
- * البيانات مخزَّنة مطبَّعة في `nameNormalized`، وكان البحث يُرسل النص كما كتبه
- * المستخدم: فمن يكتب «الرحمة» لا يجد «الرحمه»، وهي المشكلة التي وُجد الحقل
- * لحلّها. الطرفان يجب أن يمرّا بالتطبيع نفسه، وإلا فالحقل بلا فائدة.
- */
-function normalizeArabic(text) {
-  return String(text)
-    .normalize('NFKC')
-    .replace(/[\u064B-\u065F\u0670]/g, '') // التشكيل
-    .replace(/[أإآ]/g, 'ا')
-    .replace(/ى/g, 'ي')
-    .replace(/ة/g, 'ه')
-    .replace(/ؤ/g, 'و')
-    .replace(/ئ/g, 'ي')
-    .split(/\s+/)
-    .filter(Boolean)
-    .join(' ');
-}
 
 /** بحث نصّي بالاسم أو القرية داخل ولاية/محافظة. */
 Parse.Cloud.define('searchMosques', async (request) => {

@@ -89,6 +89,7 @@ def normalize_ar(text):
         return ""
     text = unicodedata.normalize("NFKC", text)
     text = "".join(c for c in text if not unicodedata.combining(c))
+    text = text.replace("\u0640", "")  # التطويل: زخرفة تمدّ الحرف ولا تغيّر الكلمة
     for src, dst in (("أإآ", "ا"), ("ى", "ي"), ("ة", "ه"), ("ؤ", "و"), ("ئ", "ي")):
         for ch in src:
             text = text.replace(ch, dst)

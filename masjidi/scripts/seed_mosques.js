@@ -18,8 +18,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const Parse = require('parse/node');
-const { tokenize } = require('./lib/tokenize');
-const { assessCoordinates, withdrawUntrusted } = require('./lib/coord-trust');
+const { prepare, descriptiveFields } = require('./lib/mosque-record');
 
 const BATCH_SIZE = 200; // Parse.Object.saveAll يتعامل داخلياً بدفعات — نبقيها معتدلة
 const DATA_FILE = path.join(__dirname, '..', 'data', 'mosques.json');
@@ -103,10 +102,9 @@ function reportDuplicates(duplicates) {
 async function main() {
   const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 
-  // الحكم على الإحداثيات قبل أي تصفية: قاعدة «النقطة الواحدة في ولايات شتّى»
-  // لا تُرى إلا في الملفّ كاملاً، فتمريرُ محافظةٍ وحدها يُخفيها
-  const verdicts = assessCoordinates(raw);
-  const all = raw.map((row) => withdrawUntrusted(row, verdicts.get(row.externalId)));
+  // التحضير على الملفّ كاملاً قبل أي تصفية — و`prepare` هي نفسها التي تستعملها
+  // مِرقاة اختبار التكامل، فلا تزرع القاعدةَ بما لا يزرعه الاستيراد
+  const { verdicts, records: all } = prepare(raw);
 
   if (coordReport) {
     const counts = new Map();
@@ -189,19 +187,7 @@ async function main() {
         created += 1;
       }
 
-      mosque.set('externalId', row.externalId);
-      mosque.set('mosqueNumber', row.mosqueNumber);
-      mosque.set('name', row.name);
-      mosque.set('nameNormalized', row.nameNormalized);
-      mosque.set('nameTokens', tokenize(row.nameNormalized, row.village));
-      mosque.set('type', row.type);
-      mosque.set('typeSlug', row.typeSlug);
-      mosque.set('governorate', row.governorate);
-      mosque.set('governorateSlug', row.governorateSlug);
-      mosque.set('wilayat', row.wilayat);
-      mosque.set('village', row.village);
-      mosque.set('source', row.source);
-      mosque.set('dataQuality', row.dataQuality);
+      mosque.set(descriptiveFields(row));
 
       // موقعٌ تعلّمه المسجد من إمامه أصدق من فراغٍ خلّفه سحبُ الثقة، فلا تمسحه
       // إعادةُ الاستيراد — وإلا عاد المسجد مجهولاً كلّما شُغّل السكربت، وضاع ما

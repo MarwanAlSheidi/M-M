@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 210 حالة على بديل Parse (`npm test`) + 87 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 21 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 226 حالة على بديل Parse (`npm test`) + 87 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 21 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -89,8 +89,10 @@
     بل ابحث عن سلوكها في المحوّلين. (مثال محسوم: `equalTo` على حقل مصفوفة يرمي
     على PostgreSQL — البديل `containsAll`.)
 11. **لا تعديل على `data/mosques.json` يدوياً** — عدّل السكربت وأعد توليده.
-    وهو سجلٌّ أمينٌ لما أصدرته الوزارة بعطبه: الحكمُ على إحداثيّه طبقةٌ فوقه في
-    `scripts/lib/coord-trust.js` يطبّقها الاستيراد، لا تصحيحٌ في الملفّ.
+    وهو سجلٌّ أمينٌ لما أصدرته الوزارة بعطبه، وما يدخل القاعدة يمرّ بطبقتين
+    فوقه في `scripts/lib/mosque-record.js`: الحكم على الإحداثيات وتنظيف النصّ.
+    **وهي المصدر الواحد للاستيراد ولمِرقاة اختبار التكامل معاً** — لا تكتب
+    حقول المسجد في أيّهما مباشرةً، وإلا زرعت المِرقاة ما لا يزرعه الإنتاج.
 12. **الشاشة تجلب بياناتها عند تركيبها**، و`App.jsx` يُعيد تركيبها مع كل ضغطة
     تبويب. فلا تحتفظ بحالةٍ في الشاشة تتوقّع بقاءها بين الضغطات.
 13. الكود بالإنجليزية، التعليقات ورسائل المستخدم بالعربية الفصحى.
@@ -133,6 +135,7 @@ cloud/
     audit.js           سجل التدقيق — لا يرمي أبداً
     push.js            صندوق الوارد الدائم + الدفع فوقه — لا يرمي أبداً
     geo.js             القرب بصندوق إحاطة وهافرساين — بلا فهرس مكاني
+    arabic.js          تطبيع النصّ العربي — نظيره `normalize_ar` في بايثون، ويحرس تطابقهما اختبار
   functions/
     mosques.js         البحث بالكلمات المفهرسة ومرتّباً بالأقرب، القرب، طلب الملكية
     requests.js        دورة حياة الطلب، اهتمام المتطوّعين، سحب التكليف والحدود
@@ -145,6 +148,7 @@ scripts/
   seed_mosques.js      استيراد إلى Parse (idempotent)
   apply_schema.js      تطبيق schema.json — الحقول والصلاحيات والفهارس
   promote_admin.js     ترقية حساب إلى مشرف — بدونه لا تُعتمد طلبات الملكية
+  lib/mosque-record.js تحضير السجلّ للاستيراد — المصدر الواحد للاستيراد والمِرقاة
   lib/coord-trust.js   سحب الثقة من الإحداثيّ الكاذب — القيمة الافتراضية والشاذّ
   lib/index-plan.js    تخطيط الفهارس الناقصة وفرز المكانيّ — تحت الاختبار
   lib/tokenize.js      كلمات البحث — يشترك فيها الاستيراد واختبار التكامل
@@ -161,6 +165,8 @@ tests/
   indexes.test.js      تخطيط الفهارس وسلامة تعريفها في المخطط
   portability.test.js  سلك تعثّر: يرفض صيغة استعلام لم تُراجَع بين المحوّلين
   notifications.test.js صندوق الوارد: الوصول والخصوصية والتقليم
+  coord-trust.test.js  سحب الثقة من الإحداثيّ الكاذب، وتوصيله بالاستيراد
+  text-clean.test.js   التطويل، وتطابق المطبِّعَين بايثون وجافاسكربت
   integration/
     harness.js         يُشغّل PostgreSQL وparse-server، ويطبّق المخطط ويستورد المساجد
     flow.test.js       الرحلة كاملة: التسجيل والصلاحيات والـACL
@@ -1257,6 +1263,42 @@ PostgreSQL كاملاً وخادماً**. ستة معاً تُنهك الجها�
 من أوّل يوم، لكنه لم يكن يُحدث فرقاً وهي ستة عشر — والقرار الذي لا يُحدث فرقاً
 لا يُنظر فيه. فحين يتضاعف حجمُ شيءٍ في النظام سبعاً وعشرين مرّةً، يُعاد النظر
 فيما اتُّكئ على صغره لا فيما تغيّر وحده.
+
+---
+
+### 🟡 «عبـري» — عُشر السجلّات باسم ولايةٍ مشوّه
+
+**العَرَض:** لا شيء يسقط. البحث يعمل، والتجميع صحيح.
+
+**السبب:** التطويل (`ـ` — U+0640) محرفٌ زخرفيّ يمدّ الحرف بصرياً ولا يحمل
+معنى. وفي بيانات الوزارة **1,836 مسجداً — عُشر السجلّات** — تحمل ولايةً
+ممدودة: «عبـري»، «ضـنـك»، «السـنينه». وواحدٌ اسمه «زايــد».
+
+**الأثر:** بطاقة كل مسجدٍ منها تعرض اسم ولايته مشوّهاً. وإمامٌ في عبري يرى
+«عبـري» فيشكّ أن التطبيق أخطأ في مسجده — والثقة في منصّةٍ كهذه رأسُ مالها.
+ودونه أثرٌ كامن: «زايد» لا تجد «زايــد» في بحث الكلمات، والمطابقة التامّة على
+ولايةٍ ممدودة لا يبلغها من كتب الاسم كما يُكتب.
+
+**الإصلاح:** التجريد عند الاستيراد، و`externalId` وحده يبقى كما هو — هو هويّة
+السجلّ التي يُبنى عليها التحديث، وتغييرها يجعل كل مسجدٍ يبدو جديداً فتُنشأ
+نسخةٌ ثانية ويُهجر الأصل بطلباته وملكيّته.
+
+**وحارسٌ لم يكن موجوداً:** `normalizeArabic` في السحابة و`normalize_ar` في
+بايثون **يجب أن يتطابقا** — الأوّل يطبّع ما يكتبه المستخدم، والثاني يطبّع ما
+يُخزَّن في `nameNormalized`. وانفصالهما يُبطل الحقل كلّه بصمت. ولم يكن بينهما
+شيء، فأُضيف اختبارٌ يستخرج دالّة بايثون من مصدرها نصّاً — بلا استيراد الوحدة،
+تفادياً لجرّ `pandas` — ويشغّل الاثنين على الكلمات نفسها ويقارن. جُرّب بحذف سطر
+التطويل من بايثون فسقط، ثم أُعيد.
+
+**وعطبٌ ثانٍ ظهر أثناء الإصلاح:** `seed_mosques.js` ومِرقاة اختبار التكامل كانا
+يكتبان حقول المسجد كلٌّ على حدة. فلمّا طُبّق سحبُ الثقة من الإحداثيات على
+الاستيراد وحده، صارت المِرقاة تزرع في القاعدة إحداثياتٍ لا يزرعها الإنتاج
+أبداً — **فاختبار التكامل يتحقّق من بياناتٍ لا وجود لها.** وهي أخطر أنواع
+الاختبار: خضراءُ عن شيءٍ آخر. الحقول الآن من `scripts/lib/mosque-record.js`
+وحدها، ويحرس ذلك سلكُ تعثّر.
+
+**والدرس:** نسخةٌ ثانية من منطقٍ لا تُخطئ يوم كتابتها، بل يوم يتغيّر الأصل
+وحده. ولم يكشفها اختبار — كشفها أنني مررتُ على المِرقاة لسببٍ آخر.
 
 ---
 
@@ -2613,6 +2655,7 @@ const E = require('../lib/errors');
 const { requireUser, requireRole, mosqueForImam } = require('../lib/auth');
 const audit = require('../lib/audit');
 const geo = require('../lib/geo');
+const { normalizeArabic } = require('../lib/arabic');
 
 const PUBLIC_FIELDS = [
   'name', 'mosqueNumber', 'type', 'typeSlug', 'governorate', 'wilayat',
@@ -2758,27 +2801,6 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
       distanceKm: hit.km == null ? null : Math.round(hit.km * 100) / 100,
     }));
 });
-
-/**
- * تطبيع النص العربي — نظير `normalize_ar` في `scripts/clean_mosques.py`.
- *
- * البيانات مخزَّنة مطبَّعة في `nameNormalized`، وكان البحث يُرسل النص كما كتبه
- * المستخدم: فمن يكتب «الرحمة» لا يجد «الرحمه»، وهي المشكلة التي وُجد الحقل
- * لحلّها. الطرفان يجب أن يمرّا بالتطبيع نفسه، وإلا فالحقل بلا فائدة.
- */
-function normalizeArabic(text) {
-  return String(text)
-    .normalize('NFKC')
-    .replace(/[\u064B-\u065F\u0670]/g, '') // التشكيل
-    .replace(/[أإآ]/g, 'ا')
-    .replace(/ى/g, 'ي')
-    .replace(/ة/g, 'ه')
-    .replace(/ؤ/g, 'و')
-    .replace(/ئ/g, 'ي')
-    .split(/\s+/)
-    .filter(Boolean)
-    .join(' ');
-}
 
 /** بحث نصّي بالاسم أو القرية داخل ولاية/محافظة. */
 Parse.Cloud.define('searchMosques', async (request) => {
@@ -5267,6 +5289,50 @@ const geo = { distanceKm, boundingBox, withinBox, sortByDistance, validCoordinat
 
 
 // ======================================================================
+// تطبيع النصّ العربي   [lib/arabic.js]
+// ======================================================================
+
+/**
+ * تطبيع النصّ العربي — الطرفان يجب أن يمرّا به معاً.
+ *
+ * البيانات مخزَّنة مطبَّعة في `nameNormalized`، والبحث يُرسل ما كتبه المستخدم.
+ * فمن يكتب «الرحمة» لا يجد «الرحمه» ما لم يمرّ الطرفان بالتطبيع نفسه — وهي
+ * المشكلة التي وُجد الحقل لحلّها أصلاً. ونظيرُ هذا الملفّ في بايثون هو
+ * `normalize_ar` في `scripts/clean_mosques.py`، ويحرس تطابقَهما
+ * `tests/text-clean.test.js` بتشغيل الاثنين على الكلمات نفسها.
+ *
+ * وهو في `cloud/lib` لا `scripts/lib` لأن دوال السحابة لا تستطيع الاستيراد من
+ * خارج `cloud/` — المدمج `main.bundle.js` لا يضمّ إلا ما تحتها. والسكربتات
+ * تستورد منه كما تستورد `coord-trust.js` من `geo.js`.
+ */
+
+/**
+ * **التطويل** (`ـ` — U+0640) محرفٌ زخرفيّ يمدّ الحرف بصرياً ولا يحمل معنى:
+ * «عبـري» و«عبري» كلمةٌ واحدة. وفي بيانات الوزارة 1,836 مسجداً — عُشر
+ * السجلّات — تحمل ولايةً ممدودة: «عبـري»، «ضـنـك»، «السـنينه».
+ *
+ * وأثره وجهان: بطاقة كل مسجدٍ منها تعرض اسم ولايته مشوّهاً — وإمامٌ في عبري
+ * يرى «عبـري» فيشكّ أن التطبيق أخطأ في مسجده — والمطابقةُ التامّة لا يبلغها
+ * من كتب الاسم كما يُكتب.
+ */
+const stripTatweel = (text) => (typeof text === 'string' ? text.replace(/ـ/g, '') : text);
+
+/** يوحّد الهمزات والياء والتاء المربوطة، ويُسقط التشكيل والتطويل والفراغ الزائد. */
+function normalizeArabic(text) {
+  return stripTatweel(String(text).normalize('NFKC'))
+    .replace(/[ً-ٰٟ]/g, '') // التشكيل
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ');
+}
+
+
+// ======================================================================
 // المُشغّلات (beforeSave / afterSave)   [triggers.js]
 // ======================================================================
 
@@ -5523,27 +5589,6 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
       distanceKm: hit.km == null ? null : Math.round(hit.km * 100) / 100,
     }));
 });
-
-/**
- * تطبيع النص العربي — نظير `normalize_ar` في `scripts/clean_mosques.py`.
- *
- * البيانات مخزَّنة مطبَّعة في `nameNormalized`، وكان البحث يُرسل النص كما كتبه
- * المستخدم: فمن يكتب «الرحمة» لا يجد «الرحمه»، وهي المشكلة التي وُجد الحقل
- * لحلّها. الطرفان يجب أن يمرّا بالتطبيع نفسه، وإلا فالحقل بلا فائدة.
- */
-function normalizeArabic(text) {
-  return String(text)
-    .normalize('NFKC')
-    .replace(/[\u064B-\u065F\u0670]/g, '') // التشكيل
-    .replace(/[أإآ]/g, 'ا')
-    .replace(/ى/g, 'ي')
-    .replace(/ة/g, 'ه')
-    .replace(/ؤ/g, 'و')
-    .replace(/ئ/g, 'ي')
-    .split(/\s+/)
-    .filter(Boolean)
-    .join(' ');
-}
 
 /** بحث نصّي بالاسم أو القرية داخل ولاية/محافظة. */
 Parse.Cloud.define('searchMosques', async (request) => {
@@ -7885,6 +7930,7 @@ def normalize_ar(text):
         return ""
     text = unicodedata.normalize("NFKC", text)
     text = "".join(c for c in text if not unicodedata.combining(c))
+    text = text.replace("\u0640", "")  # التطويل: زخرفة تمدّ الحرف ولا تغيّر الكلمة
     for src, dst in (("أإآ", "ا"), ("ى", "ي"), ("ة", "ه"), ("ؤ", "و"), ("ئ", "ي")):
         for ch in src:
             text = text.replace(ch, dst)
@@ -8096,8 +8142,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const Parse = require('parse/node');
-const { tokenize } = require('./lib/tokenize');
-const { assessCoordinates, withdrawUntrusted } = require('./lib/coord-trust');
+const { prepare, descriptiveFields } = require('./lib/mosque-record');
 
 const BATCH_SIZE = 200; // Parse.Object.saveAll يتعامل داخلياً بدفعات — نبقيها معتدلة
 const DATA_FILE = path.join(__dirname, '..', 'data', 'mosques.json');
@@ -8181,10 +8226,9 @@ function reportDuplicates(duplicates) {
 async function main() {
   const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 
-  // الحكم على الإحداثيات قبل أي تصفية: قاعدة «النقطة الواحدة في ولايات شتّى»
-  // لا تُرى إلا في الملفّ كاملاً، فتمريرُ محافظةٍ وحدها يُخفيها
-  const verdicts = assessCoordinates(raw);
-  const all = raw.map((row) => withdrawUntrusted(row, verdicts.get(row.externalId)));
+  // التحضير على الملفّ كاملاً قبل أي تصفية — و`prepare` هي نفسها التي تستعملها
+  // مِرقاة اختبار التكامل، فلا تزرع القاعدةَ بما لا يزرعه الاستيراد
+  const { verdicts, records: all } = prepare(raw);
 
   if (coordReport) {
     const counts = new Map();
@@ -8267,19 +8311,7 @@ async function main() {
         created += 1;
       }
 
-      mosque.set('externalId', row.externalId);
-      mosque.set('mosqueNumber', row.mosqueNumber);
-      mosque.set('name', row.name);
-      mosque.set('nameNormalized', row.nameNormalized);
-      mosque.set('nameTokens', tokenize(row.nameNormalized, row.village));
-      mosque.set('type', row.type);
-      mosque.set('typeSlug', row.typeSlug);
-      mosque.set('governorate', row.governorate);
-      mosque.set('governorateSlug', row.governorateSlug);
-      mosque.set('wilayat', row.wilayat);
-      mosque.set('village', row.village);
-      mosque.set('source', row.source);
-      mosque.set('dataQuality', row.dataQuality);
+      mosque.set(descriptiveFields(row));
 
       // موقعٌ تعلّمه المسجد من إمامه أصدق من فراغٍ خلّفه سحبُ الثقة، فلا تمسحه
       // إعادةُ الاستيراد — وإلا عاد المسجد مجهولاً كلّما شُغّل السكربت، وضاع ما
@@ -8348,6 +8380,7 @@ ORDER = [
     ("lib/payments.js", "بوابة الدفع"),
     ("lib/audit.js", "سجل التدقيق"),
     ("lib/geo.js", "القرب الجغرافي"),
+    ("lib/arabic.js", "تطبيع النصّ العربي"),
     ("triggers.js", "المُشغّلات (beforeSave / afterSave)"),
     ("functions/mosques.js", "دوال المساجد"),
     ("functions/requests.js", "دوال طلبات الصيانة"),
@@ -10906,7 +10939,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { planIndexes, splitByKind } = require('../../scripts/lib/index-plan');
-const { tokenize } = require('../../scripts/lib/tokenize');
+const { prepare, descriptiveFields } = require('../../scripts/lib/mosque-record');
 
 const CLOUD_MAIN = path.join(__dirname, '..', '..', 'cloud', 'main.js');
 
@@ -11127,20 +11160,20 @@ async function applySchema(Parse) {
  */
 async function seedMosques(Parse, limit = 300) {
   const file = path.join(__dirname, '..', '..', 'data', 'mosques.json');
-  const rows = JSON.parse(fs.readFileSync(file, 'utf8')).slice(0, limit);
+
+  // التحضير على الملفّ **كاملاً** ثم الاقتطاع: هو نفسه الذي يستعمله
+  // `seed_mosques.js`، فما يُزرع هنا هو ما يُزرع في الإنتاج حرفاً بحرف. وكانت
+  // المِرقاة تنسخ الصفوف خاماً، فتزرع إحداثياتٍ سحب الاستيرادُ ثقتَه منها —
+  // واختبارٌ أخضرُ على بياناتٍ لا وجود لها أسوأ من لا اختبار.
+  const { records } = prepare(JSON.parse(fs.readFileSync(file, 'utf8')));
+  const rows = records.slice(0, limit);
   const Mosque = Parse.Object.extend('Mosques');
 
   for (let i = 0; i < rows.length; i += 100) {
     const batch = rows.slice(i, i + 100).map((row) => {
       const mosque = new Mosque();
-      mosque.set('externalId', row.externalId);
-      mosque.set('name', row.name);
-      mosque.set('nameNormalized', row.nameNormalized);
-      mosque.set('nameTokens', tokenize(row.nameNormalized, row.village));
-      mosque.set('governorate', row.governorate);
-      mosque.set('wilayat', row.wilayat);
-      mosque.set('village', row.village);
-      mosque.set('hasLocation', row.hasLocation);
+      mosque.set(descriptiveFields(row));
+      mosque.set('hasLocation', Boolean(row.location));
       if (row.location) {
         mosque.set('lat', row.location.latitude);
         mosque.set('lng', row.location.longitude);

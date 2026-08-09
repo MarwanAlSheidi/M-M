@@ -8,10 +8,14 @@
  * مشتركة بين `seed_mosques.js` واختبار التكامل: لو انفصلتا لصار اختبار البحث
  * يتحقّق من كلماتٍ ليست هي التي تُستورَد فعلاً.
  */
+const { stripTatweel } = require('../../cloud/lib/arabic');
+
 function tokenize(...values) {
   const words = values
     .filter(Boolean)
-    .flatMap((value) => String(value).split(/\s+/))
+    // التطويل زخرفةٌ لا معنى: «زايــد» و«زايد» كلمةٌ واحدة، فلا تكونان كلمتَي
+    // بحثٍ مختلفتين. والتجريد هنا يُبقي المِرقاة والاستيراد متطابقَين بلا اتفاق.
+    .flatMap((value) => stripTatweel(String(value)).split(/\s+/))
     .map((word) => word.trim())
     .filter((word) => word.length >= 2);
 

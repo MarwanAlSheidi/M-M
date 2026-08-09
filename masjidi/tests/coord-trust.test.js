@@ -143,22 +143,32 @@ test('سحب الإحداثيّ من السجلّ', async (t) => {
  * كتلة الفهارس كلّها. ولا اختبارَ تشغيليّ هنا يكشفه — السكربت يستدعي `main()`
  * عند تحميله فلا يُستورَد، والاستيراد الحقيقي يحتاج خادماً وMaster Key.
  */
-test('سكربت الاستيراد يُطبّق الحكم فعلاً', async (t) => {
-  const seed = fs.readFileSync(
-    path.join(__dirname, '..', 'scripts', 'seed_mosques.js'), 'utf8');
+test('الحكم موصولٌ بما يدخل القاعدة', async (t) => {
+  const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
+  const record = read('scripts', 'lib', 'mosque-record.js');
+  const seed = read('scripts', 'seed_mosques.js');
+  const harness = read('tests', 'integration', 'harness.js');
 
-  await t.test('يستدعي الوحدتين', () => {
-    assert.match(seed, /assessCoordinates\(raw\)/,
-      'الحكم يُحسب على الملفّ كاملاً — تمريرُ محافظةٍ وحدها يُعمي القاعدة الأولى');
-    assert.match(seed, /withdrawUntrusted\(/);
+  await t.test('`prepare` تُطبّق الحكم على الملفّ كاملاً', () => {
+    assert.match(record, /assessCoordinates\(rows\)/,
+      'الحكم على شريحةٍ من الملفّ يُعمي القاعدة الأولى — النقطة الواحدة في ولايات شتّى');
+    assert.match(record, /withdrawUntrusted\(/);
   });
 
-  await t.test('يستورد المحكوم عليه لا الخام', () => {
+  await t.test('والاستيراد يمرّ بها، لا بالسجلّات الخام', () => {
+    assert.match(seed, /prepare\(raw\)/);
     assert.equal(/\bpool = raw\b/.test(seed), false,
       'عاد الاستيراد إلى السجلّات الخام، فالإحداثيّ الكاذب يدخل القاعدة');
   });
 
-  await t.test('ويمحو إحداثيّاً سبق أن كتبه', () => {
+  await t.test('والمِرقاة تمرّ بها كذلك — وإلا زرعت ما لا يزرعه الإنتاج', () => {
+    // كانت المِرقاة تنسخ الصفوف خاماً، فتزرع إحداثياتٍ سحب الاستيرادُ ثقتَه
+    // منها. واختبارٌ أخضرُ على بياناتٍ لا وجود لها أسوأ من لا اختبار.
+    assert.match(harness, /prepare\(/);
+    assert.match(harness, /descriptiveFields\(/);
+  });
+
+  await t.test('والاستيراد يمحو إحداثيّاً سبق أن كتبه', () => {
     // بلا `unset` يبقى ما كتبته تشغيلةٌ سابقة: مسجد صلالة في مسقط إلى الأبد
     assert.match(seed, /unset\('lat'\)/);
     assert.match(seed, /unset\('lng'\)/);

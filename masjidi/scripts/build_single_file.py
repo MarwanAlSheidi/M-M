@@ -12,6 +12,7 @@ ORDER = [
     ("lib/payments.js", "بوابة الدفع"),
     ("lib/audit.js", "سجل التدقيق"),
     ("lib/geo.js", "القرب الجغرافي"),
+    ("lib/arabic.js", "تطبيع النصّ العربي"),
     ("triggers.js", "المُشغّلات (beforeSave / afterSave)"),
     ("functions/mosques.js", "دوال المساجد"),
     ("functions/requests.js", "دوال طلبات الصيانة"),

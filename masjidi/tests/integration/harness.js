@@ -22,7 +22,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { planIndexes, splitByKind } = require('../../scripts/lib/index-plan');
-const { tokenize } = require('../../scripts/lib/tokenize');
+const { prepare, descriptiveFields } = require('../../scripts/lib/mosque-record');
 
 const CLOUD_MAIN = path.join(__dirname, '..', '..', 'cloud', 'main.js');
 
@@ -243,20 +243,20 @@ async function applySchema(Parse) {
  */
 async function seedMosques(Parse, limit = 300) {
   const file = path.join(__dirname, '..', '..', 'data', 'mosques.json');
-  const rows = JSON.parse(fs.readFileSync(file, 'utf8')).slice(0, limit);
+
+  // التحضير على الملفّ **كاملاً** ثم الاقتطاع: هو نفسه الذي يستعمله
+  // `seed_mosques.js`، فما يُزرع هنا هو ما يُزرع في الإنتاج حرفاً بحرف. وكانت
+  // المِرقاة تنسخ الصفوف خاماً، فتزرع إحداثياتٍ سحب الاستيرادُ ثقتَه منها —
+  // واختبارٌ أخضرُ على بياناتٍ لا وجود لها أسوأ من لا اختبار.
+  const { records } = prepare(JSON.parse(fs.readFileSync(file, 'utf8')));
+  const rows = records.slice(0, limit);
   const Mosque = Parse.Object.extend('Mosques');
 
   for (let i = 0; i < rows.length; i += 100) {
     const batch = rows.slice(i, i + 100).map((row) => {
       const mosque = new Mosque();
-      mosque.set('externalId', row.externalId);
-      mosque.set('name', row.name);
-      mosque.set('nameNormalized', row.nameNormalized);
-      mosque.set('nameTokens', tokenize(row.nameNormalized, row.village));
-      mosque.set('governorate', row.governorate);
-      mosque.set('wilayat', row.wilayat);
-      mosque.set('village', row.village);
-      mosque.set('hasLocation', row.hasLocation);
+      mosque.set(descriptiveFields(row));
+      mosque.set('hasLocation', Boolean(row.location));
       if (row.location) {
         mosque.set('lat', row.location.latitude);
         mosque.set('lng', row.location.longitude);
