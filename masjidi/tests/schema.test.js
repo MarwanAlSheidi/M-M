@@ -79,7 +79,7 @@ test('المخطط', async (t) => {
 
 test('نقاط الدخول', async (t) => {
   const EXPECTED_FUNCTIONS = [
-    'getNearbyMosques', 'getNearbyOpportunities', 'updateMyLocation', 'searchMosques', 'claimMosque', 'getMyMosques', 'getMyClaims', 'listPendingClaims', 'reviewMosqueClaim',
+    'getNearbyMosques', 'getNearbyOpportunities', 'updateMyLocation', 'searchMosques', 'claimMosque', 'getMyMosques', 'getMyClaims', 'confirmMosqueLocation', 'listPendingClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'expressInterest', 'withdrawInterest',
     'getRequestInterests', 'getMyInterests', 'assignWorker', 'releaseAssignment',
     'startWork', 'markWorkDone',

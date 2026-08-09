@@ -681,7 +681,7 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
     await mosqueQuery.find({ useMasterKey: true }), lat, lng, radiusKm,
   );
 
-  // مساجد بلا إحداثيات — ستة عشر في بيانات الوزارة. صندوق الإحاطة لا يبلغها
+  // مساجد بلا إحداثيات — 430 بعد سحب الثقة من الكاذب منها. صندوق الإحاطة لا يبلغها
   // أبداً، فكانت طلباتها لا تصل متطوّعاً شارك موقعه، وتصل من رفض المشاركة
   // وحده. تُلحق بالقائمة بمسافةٍ مجهولة لا تُسقَط منها: القائمة تُرتَّب
   // بالقرب، وما لا يُعرف قربه يأتي آخراً موسوماً لا محذوفاً.
@@ -945,6 +945,9 @@ Parse.Cloud.define('getMyMosques', async (request) => {
     mosqueNumber: mosque.get('mosqueNumber'),
     governorate: mosque.get('governorate'),
     openRequestsCount: mosque.get('openRequestsCount') || 0,
+    // بلا هذا الحقل لا تعرف الواجهة أن المسجد مجهول الموقع، فلا تعرض للإمام
+    // زرّ التثبيت — وتبقى `confirmMosqueLocation` دالّةً لا طريق إليها
+    hasLocation: geo.validCoordinates(mosque.get('lat'), mosque.get('lng')),
   }));
 });
 
@@ -1044,8 +1047,8 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
     mosque.set('imamId', claim.get('imamId'));
     mosque.set('isClaimed', true);
 
-    // مسجدٌ بلا إحداثيات سجّله إمامه من عنده: فقد عرفنا أين هو. ستة عشر مسجداً
-    // في بيانات الوزارة بلا موقع صالح، وأهلها خارج البحث بالقرب وفرصهم في ذيل
+    // مسجدٌ بلا إحداثيات سجّله إمامه من عنده: فقد عرفنا أين هو. 430 مسجداً
+    // بلا موقع يُوثق به، وأهلها خارج البحث بالقرب وفرصهم في ذيل
     // القائمة — فتُتبنّى إحداثيات الطلب بعد اعتماد المشرف لها.
     //
     // **ولا تُمسّ إحداثيات موجودة أبداً.** بيانات الوزارة مرجع، وموقع مقدّم
@@ -1085,6 +1088,52 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
   }
 
   return { status: claim.get('status'), locationLearned };
+});
+
+/**
+ * الإمام يثبّت موقع مسجده وهو عنده.
+ *
+ * لماذا لزمت هذه الدالة: أربعمئة مسجدٍ وأربعة عشر سُحبت ثقتنا من إحداثياتها
+ * (انظر `scripts/lib/coord-trust.js`)، وطريق التعلّم الوحيد كان اعتماد طلب
+ * الملكية. ومسجدٌ سُجّل قبل ذلك يبقى مجهول الموقع أبداً: لا طلبَ ينتظر اعتماداً
+ * يحمل إحداثياً. فسحبُ الموقع بلا طريقٍ لردّه نصفُ إصلاح.
+ *
+ * والشرط نفسه شرط التسجيل: أن يكون الإمام **عند مسجده**. لا مقياس هنا يُقاس
+ * إليه — فالمسجد بلا موقع — والضمانة أن المُثبِّت إمامٌ اعتمده مشرف، وأن ما
+ * يُثبته يُكتب في سجلّ التتبّع باسمه.
+ *
+ * ولا يُمسّ موقعٌ قائم: بيانات الوزارة مرجع، وهذا يملأ فراغاً لا ينسخ فوقه.
+ */
+Parse.Cloud.define('confirmMosqueLocation', async (request) => {
+  const imam = requireRole(request, 'imam');
+  const { mosqueId, lat, lng } = request.params;
+
+  const mosque = await mosqueForImam(imam, mosqueId);
+
+  if (geo.validCoordinates(mosque.get('lat'), mosque.get('lng'))) {
+    E.invalid('لهذا المسجد موقعٌ مسجّل. لتصحيحه راسل الإدارة.');
+  }
+  if (!geo.validCoordinates(Number(lat), Number(lng))) {
+    E.invalid('أكّد موقعك عند المسجد — فعّل إذن الموقع وأعد المحاولة.');
+  }
+
+  mosque.set('lat', Number(lat));
+  mosque.set('lng', Number(lng));
+  mosque.set('location', new Parse.GeoPoint({ latitude: Number(lat), longitude: Number(lng) }));
+  mosque.set('hasLocation', true);
+  // المصدر يُقال: من يقرأ الحقل لاحقاً يعرف أنه تقدير جهازٍ لا بيانات وزارة —
+  // وعليه يعتمد سكربت الاستيراد فلا يمسحه في تشغيلةٍ تالية
+  mosque.set('locationSource', 'imam');
+  await mosque.save(null, { useMasterKey: true });
+
+  await audit.record({
+    action: audit.ACTIONS.LOCATION_LEARNED,
+    target: mosque,
+    mosque,
+    actor: imam,
+  });
+
+  return { located: true, message: 'تم تثبيت موقع المسجد، بارك الله فيكم.' };
 });
 
 

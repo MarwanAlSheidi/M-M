@@ -11,6 +11,7 @@
  *   node scripts/seed_mosques.js --verify   # فحص التكرار بلا كتابة
  *   node scripts/seed_mosques.js --governorate muscat   # محافظة واحدة
  *   node scripts/seed_mosques.js --governorates         # ما المتاح منها
+ *   node scripts/seed_mosques.js --coord-report         # الإحداثيات المرفوضة
  */
 
 require('dotenv').config();
@@ -18,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const Parse = require('parse/node');
 const { tokenize } = require('./lib/tokenize');
+const { assessCoordinates, withdrawUntrusted } = require('./lib/coord-trust');
 
 const BATCH_SIZE = 200; // Parse.Object.saveAll يتعامل داخلياً بدفعات — نبقيها معتدلة
 const DATA_FILE = path.join(__dirname, '..', 'data', 'mosques.json');
@@ -27,6 +29,7 @@ const limit = args.includes('--limit') ? Number(args[args.indexOf('--limit') + 1
 const dryRun = args.includes('--dry-run');
 const verifyOnly = args.includes('--verify');
 const listGovernorates = args.includes('--governorates');
+const coordReport = args.includes('--coord-report');
 /**
  * تجربةٌ ميدانية في محافظة واحدة أقرب إلى الواقع من أوّل مئة سجلّ: `--limit`
  * يأخذ أوائل الملفّ وهي ترتيبٌ لا معنى له، فيخرج المتطوّع يبحث حوله فلا يجد
@@ -59,7 +62,9 @@ async function existingIds() {
   const found = new Map();
   const duplicates = new Map();
   const query = new Parse.Query('Mosques');
-  query.select('externalId');
+  // `locationSource` لازم هنا: مسجدٌ تعلّم موقعه من إمامه لا يُمسح موقعه في
+  // إعادة استيرادٍ لاحقة، حتى لو بقيت الوزارة على إحداثيّها الخاطئ
+  query.select('externalId', 'locationSource');
   query.limit(1000);
   let cursor = null;
   for (;;) {
@@ -69,11 +74,11 @@ async function existingIds() {
     for (const mosque of page) {
       const key = mosque.get('externalId');
       if (found.has(key)) {
-        const seen = duplicates.get(key) || [found.get(key)];
+        const seen = duplicates.get(key) || [found.get(key).id];
         seen.push(mosque.id);
         duplicates.set(key, seen);
       } else {
-        found.set(key, mosque.id);
+        found.set(key, { id: mosque.id, learnedLocation: mosque.get('locationSource') === 'claim' });
       }
     }
     cursor = page[page.length - 1].id;
@@ -98,6 +103,24 @@ function reportDuplicates(duplicates) {
 async function main() {
   const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 
+  // الحكم على الإحداثيات قبل أي تصفية: قاعدة «النقطة الواحدة في ولايات شتّى»
+  // لا تُرى إلا في الملفّ كاملاً، فتمريرُ محافظةٍ وحدها يُخفيها
+  const verdicts = assessCoordinates(raw);
+  const all = raw.map((row) => withdrawUntrusted(row, verdicts.get(row.externalId)));
+
+  if (coordReport) {
+    const counts = new Map();
+    for (const { trust } of verdicts.values()) counts.set(trust, (counts.get(trust) || 0) + 1);
+    console.log(`إحداثيات لا يُوثق بها: ${verdicts.size} من ${raw.length}`);
+    for (const [trust, count] of counts) console.log(`  ${trust.padEnd(12)} ${count}`);
+    console.log('\nأمثلة:');
+    for (const row of all.filter((r) => verdicts.has(r.externalId)).slice(0, 25)) {
+      const { reason } = verdicts.get(row.externalId);
+      console.log(`  ${row.governorate}/${row.wilayat} — ${row.name} — ${reason}`);
+    }
+    return;
+  }
+
   if (listGovernorates) {
     const counts = new Map();
     for (const row of raw) {
@@ -112,10 +135,10 @@ async function main() {
     return;
   }
 
-  let pool = raw;
+  let pool = all;
   if (governorate) {
     const wanted = governorate.toLowerCase();
-    pool = raw.filter((row) => row.governorateSlug === wanted || row.governorate === governorate);
+    pool = all.filter((row) => row.governorateSlug === wanted || row.governorate === governorate);
     if (pool.length === 0) {
       console.error(`✗ لا محافظة باسم «${governorate}». استعمل --governorates لعرض المتاح.`);
       process.exit(1);
@@ -125,6 +148,13 @@ async function main() {
 
   const records = pool.slice(0, limit);
   console.log(`→ ${records.length} سجلاً جاهزاً للاستيراد`);
+
+  const withdrawn = records.filter((row) => verdicts.has(row.externalId)).length;
+  const unlocated = records.filter((row) => !row.hasLocation).length;
+  if (withdrawn > 0) {
+    console.log(`→ سُحبت الثقة من إحداثيات ${withdrawn} مسجداً (--coord-report للتفصيل)`);
+  }
+  console.log(`→ مجهول الموقع بعد الفحص: ${unlocated} — يظهر بالاسم ويتعلّم موقعه من إمامه`);
 
   if (dryRun) {
     console.log(JSON.stringify(records[0], null, 2));
@@ -151,8 +181,9 @@ async function main() {
   for (let i = 0; i < records.length; i += BATCH_SIZE) {
     const batch = records.slice(i, i + BATCH_SIZE).map((row) => {
       const mosque = new Mosque();
-      if (known.has(row.externalId)) {
-        mosque.id = known.get(row.externalId);
+      const prior = known.get(row.externalId) || null;
+      if (prior) {
+        mosque.id = prior.id;
         updated += 1;
       } else {
         created += 1;
@@ -169,11 +200,17 @@ async function main() {
       mosque.set('governorateSlug', row.governorateSlug);
       mosque.set('wilayat', row.wilayat);
       mosque.set('village', row.village);
-      mosque.set('hasLocation', row.hasLocation);
       mosque.set('source', row.source);
       mosque.set('dataQuality', row.dataQuality);
 
+      // موقعٌ تعلّمه المسجد من إمامه أصدق من فراغٍ خلّفه سحبُ الثقة، فلا تمسحه
+      // إعادةُ الاستيراد — وإلا عاد المسجد مجهولاً كلّما شُغّل السكربت، وضاع ما
+      // أثبته إمامه بوقوفه عنده. أمّا إن جاءت الوزارة بإحداثيٍّ موثوقٍ فهو
+      // المرجع ويحلّ محلّ التقدير.
+      const keepLearned = prior && prior.learnedLocation && !row.location;
+
       if (row.location) {
+        mosque.set('hasLocation', true);
         mosque.set('location', new Parse.GeoPoint({
           latitude: row.location.latitude,
           longitude: row.location.longitude,
@@ -182,10 +219,19 @@ async function main() {
         // على فهرس 2dsphere الذي يُضاف يدوياً — انظر cloud/lib/geo.js
         mosque.set('lat', row.location.latitude);
         mosque.set('lng', row.location.longitude);
+        mosque.set('locationSource', 'ministry');
+      } else if (!keepLearned) {
+        // الحذف لا الترك: استيرادٌ سابق ربما كتب الإحداثيّ الخاطئ في القاعدة،
+        // فتركُ الحقل على حاله يُبقي مسجد صلالة في مسقط إلى الأبد
+        mosque.set('hasLocation', false);
+        mosque.unset('location');
+        mosque.unset('lat');
+        mosque.unset('lng');
+        mosque.unset('locationSource');
       }
 
       // لا نلمس الحقول التشغيلية عند التحديث حتى لا نمسح رصيداً أو ملكية
-      if (!known.has(row.externalId)) {
+      if (!prior) {
         mosque.set('isClaimed', false);
         mosque.set('walletBalance', 0);
         mosque.set('openRequestsCount', 0);

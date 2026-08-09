@@ -168,6 +168,15 @@ export const claimMosque = (mosqueId, evidenceNote, capacity, point) =>
   });
 
 export const getMyMosques = () => run('getMyMosques');
+
+/**
+ * تثبيت موقع مسجدٍ مجهول الموقع — الإمام وهو عنده.
+ *
+ * أربعمئة مسجدٍ وأربعة عشر سُحبت ثقتنا من إحداثياتها لأنها كاذبة في المصدر،
+ * فبلا هذا الطريق يبقى المسجد خارج البحث بالقرب ما لم يُعَد تسجيله.
+ */
+export const confirmMosqueLocation = (mosqueId, point) =>
+  run('confirmMosqueLocation', { mosqueId, lat: point.lat, lng: point.lng });
 export const getMyClaims = () => run('getMyClaims');
 
 export const getMosqueAuditTrail = (mosqueId) => run('getMosqueAuditTrail', { mosqueId });

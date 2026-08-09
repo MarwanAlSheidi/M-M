@@ -293,11 +293,16 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
 
     // الشرط الذي لا يصدق إلا بعد استقرار الشاشة: بطاقات حاضرة ولا واحدة منها
     // غير مقروءة. وهو يختبر أثر التعليم نفسه لا مجرّد نجاة القائمة.
-    await waitUntil(imam, 'الوارد كلّه مقروء والقائمة باقية', async () => (
-      await imam.locator('.card').count() > 0
-      && await imam.locator('.card.unread').count() === 0));
-
-    assert.ok(await imam.locator('.card').count() > 0, 'التعليم حذف القائمة بدل أن يعلّمها');
+    //
+    // **العدّان من لقطةٍ واحدة**، لا استعلامين متتاليين: بينهما تمرّ الشاشة
+    // بإطار «جارٍ التحميل…» بلا بطاقات، فيقرأ الأوّل بطاقاتِ ما قبل التحديث
+    // ويقرأ الثاني صفراً غير مقروء — لأنه صفرُ بطاقات أصلاً — فيصدق شرطٌ لم
+    // تجتمع طرفاه في لحظة قطّ. كان الاختبار يسقط بذلك مرّةً كل ثلاث تشغيلات.
+    /* global document */ // الدالة التالية تُنفَّذ في المتصفّح لا في Node
+    await waitUntil(imam, 'الوارد كلّه مقروء والقائمة باقية', async () => imam.evaluate(() => {
+      const cards = document.querySelectorAll('.card');
+      return cards.length > 0 && document.querySelectorAll('.card.unread').length === 0;
+    }));
     });
   });
 
@@ -401,6 +406,49 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       assert.match(await salim.locator('.card').innerText(), /المحافظة: مسقط/,
         'المحافظة تُقرأ في خطة الإشعار البديلة ولم تكن تُكتب قطّ');
     });
+  });
+
+  /**
+   * مسجدٌ بلا موقع، وإمامه يثبّته من عنده.
+   *
+   * 430 مسجداً على هذه الحال: ستة عشر بلا إحداثيّ في المصدر، والبقية سُحبت
+   * ثقتنا من إحداثيّها الكاذب (`scripts/lib/coord-trust.js`). وهي لا تظهر
+   * لمتطوّعٍ يبحث حوله. والدالة موجودة ومختبَرة، لكن قيمتها كلّها معلّقة على
+   * أن يظهر الزرّ في الشاشة — وظهورُه يتوقّف على حقلٍ تُعيده `getMyMosques`،
+   * وهذا ما لا يراه اختبار التكامل.
+   *
+   * في صفحةٍ وإمامٍ مستقلَّين: زيادة مسجدٍ إلى إمام الرحلة تُغيّر عدد البطاقات
+   * الذي تعتمد عليه خطواتٌ قبلها.
+   */
+  await t.test('مسجدٌ مجهول الموقع يعرض لإمامه زرّ التثبيت، ويختفي بعده', async () => {
+    const page = await browser.newUserPage({ latitude: 22.93, longitude: 57.53 });
+    const username = `blind_imam_${stamp}`;
+    await signUpVia(page, { username, fullName: 'الشيخ حمد', role: 'imam' });
+
+    const imamId = await new stack.Parse.Query(stack.Parse.User)
+      .equalTo('username', username).first({ useMasterKey: true });
+    const blind = new (stack.Parse.Object.extend('Mosques'))();
+    blind.set({
+      externalId: `blind_${stamp}`, name: 'جامع النور بنزوى', governorate: 'الداخلية',
+      wilayat: 'نزوى', isClaimed: true, imamId, hasLocation: false,
+    });
+    await blind.save(null, { useMasterKey: true });
+
+    await onScreen(page, 'تثبيت موقع مسجدٍ مجهول الموقع', async () => {
+      await page.reload({ waitUntil: 'networkidle' });
+      await page.waitForSelector('text=جامع النور بنزوى');
+      assert.match(await page.locator('.notice').innerText(), /موقع هذا المسجد غير معروف/);
+
+      await page.getByRole('button', { name: /ثبّت موقع المسجد/ }).click();
+      await waitUntil(page, 'اختفاء تنبيه «مجهول الموقع»',
+        async () => await page.locator('.notice').count() === 0);
+    });
+
+    const fresh = await new stack.Parse.Query('Mosques').get(blind.id, { useMasterKey: true });
+    assert.equal(fresh.get('hasLocation'), true);
+    assert.equal(fresh.get('locationSource'), 'imam');
+    assert.ok(Math.abs(fresh.get('lat') - 22.93) < 0.001,
+      'ثُبّت موقعٌ غير موقع الجهاز');
   });
 
   /**

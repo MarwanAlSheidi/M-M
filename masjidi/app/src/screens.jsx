@@ -757,6 +757,9 @@ export function ImamHome() {
               </div>
               <Where wilayat={mosque.wilayat} village={mosque.village}
                 governorate={mosque.governorate} mosqueNumber={mosque.mosqueNumber} />
+              {mosque.hasLocation === false && (
+                <LocateMosque mosque={mosque} onDone={mosques.refresh} />
+              )}
               <div className="row">
                 <button onClick={() => setOpenMosque({ mosqueId: mosque.id, mosqueName: mosque.name })}>
                   طلبات الصيانة
@@ -792,6 +795,43 @@ export function ImamHome() {
         </>
       )}
     </>
+  );
+}
+
+/**
+ * تثبيت موقع مسجدٍ مجهول الموقع.
+ *
+ * لماذا يظهر أصلاً: 430 مسجداً في بيانات الوزارة بلا موقعٍ يُوثق به — ستة عشر
+ * بلا إحداثيّ، والبقية بإحداثيٍّ كاذب سُحبت ثقتنا منه. وهذه المساجد لا يجدها
+ * المتطوّع في البحث بالقرب، وتجيء في ذيل قائمة الفرص. وإمامها وحده يعرف أين
+ * هي، فيُعطى الطريق إلى قولها — لا يُنتظر منه أن يعيد التسجيل.
+ */
+function LocateMosque({ mosque, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const confirm = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const point = await api.currentPosition();
+      await api.confirmMosqueLocation(mosque.id, point);
+      onDone();
+    } catch (problem) {
+      setError(api.messageOf(problem));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="notice">
+      <p>موقع هذا المسجد غير معروف، فلا يجده المتطوّعون فيما حولهم.</p>
+      <p>قِف عند المسجد واضغط الزرّ ليُثبَّت موقعه.</p>
+      {error && <div className="error">{error}</div>}
+      <button onClick={confirm} disabled={busy}>
+        {busy ? 'جارٍ تحديد موقعك…' : 'ثبّت موقع المسجد من هنا'}
+      </button>
+    </div>
   );
 }
 

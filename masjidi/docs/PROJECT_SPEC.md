@@ -84,6 +84,7 @@
 | `claimMosque` | imam | طلب ملكية مسجد |
 | `getMyMosques` | imam | مساجده — من `Mosques.imamId`، مصدر الحقيقة نفسه |
 | `getMyClaims` | imam | حالة طلبات الملكية الخاصة به |
+| `confirmMosqueLocation` | imam | تثبيت موقع مسجدٍ مجهول الموقع، من عنده |
 | `listPendingClaims` | admin | طلبات الملكية المنتظرة مع بيانات الإمام |
 | `reviewMosqueClaim` | admin | اعتماد/رفض الطلب |
 | `createServiceRequest` | imam | إنشاء طلب صيانة |
