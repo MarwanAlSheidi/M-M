@@ -215,6 +215,9 @@ function match() {
         wilayat: row.wilayat,
         reason: verdict.rejected,
         sawCandidates: (scoped.get(key) || []).length,
+        // أقربُ ما كاد يطابق — به يُعرف أهي قاعدةٌ ضيّقة أم اسمٌ ليس في الخريطة
+        ...(verdict.nearMisses && verdict.nearMisses.length
+          ? { nearMisses: verdict.nearMisses } : {}),
       });
     }
   }
@@ -254,6 +257,21 @@ function report() {
   if (reasons.size > 0) console.log('أسباب الردّ:');
   for (const [reason, count] of [...reasons].sort((a, b) => b[1] - a[1])) {
     console.log(`  ${String(count).padStart(4)}  ${reason}`);
+  }
+
+  /**
+   * أمثلةٌ ممّا كاد يطابق.
+   *
+   * «لا اسم يطابق» رقمٌ لا يقول شيئاً وحده: أقاعدتُنا أضيق مما ينبغي، أم أن
+   * المساجد ليست في الخريطة أصلاً؟ وهذه الأسطر تفرّق بينهما في نظرةٍ واحدة.
+   */
+  const withMisses = (overlay.rejected || []).filter((entry) => entry.nearMisses);
+  if (withMisses.length === 0) return;
+
+  console.log(`\nكاد يطابق (${withMisses.length} حالة) — أمثلة:`);
+  for (const entry of withMisses.slice(0, 15)) {
+    const best = entry.nearMisses.map((hit) => `«${hit.name}» (${hit.shared})`).join('، ');
+    console.log(`  ${entry.wilayat} — «${entry.name}» ← ${best}`);
   }
 }
 
