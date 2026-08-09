@@ -663,12 +663,31 @@ Parse.Cloud.define('getNearbyMosques', async (request) => {
 });
 
 /**
+ * محافظة نقطةٍ على الأرض، مستنبَطةً من أقرب مسجدٍ إليها.
+ *
+ * لا حاجة إلى خدمة ترميزٍ جغرافيٍّ خارجية: عندنا ثمانية عشر ألف نقطةٍ معلومة
+ * موزّعة على السلطنة، فأقربُها إلى المستخدم يقول في أيّ محافظةٍ هو. وخمسة
+ * وعشرون كيلومتراً تكفي كل مأهول؛ وما وراءها صحراء، ولها البديل.
+ */
+async function governorateAt(lat, lng, radiusKm = 25) {
+  const query = new Parse.Query('Mosques');
+  geo.withinBox(query, geo.boundingBox(lat, lng, radiusKm));
+  query.select('governorate', 'lat', 'lng');
+  query.limit(50);
+
+  const [nearest] = geo.sortByDistance(
+    await query.find({ useMasterKey: true }), lat, lng, radiusKm,
+  );
+  return nearest ? nearest.row.get('governorate') : null;
+}
+
+/**
  * فرص التطوّع القريبة — شاشة المتطوّع الأولى.
  *
  * المتطوّع لا يبحث عن مسجد بل عن عمل قريب منه، فالترتيب بالمسافة لا بالتاريخ.
  */
 Parse.Cloud.define('getNearbyOpportunities', async (request) => {
-  requireUser(request);
+  const user = requireUser(request);
   const { lat, lng, radiusKm } = readPoint(request.params, 15);
 
   const mosqueQuery = new Parse.Query('Mosques');
@@ -681,16 +700,32 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
     await mosqueQuery.find({ useMasterKey: true }), lat, lng, radiusKm,
   );
 
-  // مساجد بلا إحداثيات — 430 بعد سحب الثقة من الكاذب منها. صندوق الإحاطة لا يبلغها
-  // أبداً، فكانت طلباتها لا تصل متطوّعاً شارك موقعه، وتصل من رفض المشاركة
-  // وحده. تُلحق بالقائمة بمسافةٍ مجهولة لا تُسقَط منها: القائمة تُرتَّب
-  // بالقرب، وما لا يُعرف قربه يأتي آخراً موسوماً لا محذوفاً.
-  const unlocated = await new Parse.Query('Mosques')
+  /**
+   * مساجد بلا إحداثيات — 430 بعد سحب الثقة من الكاذب منها.
+   *
+   * صندوق الإحاطة لا يبلغها أبداً، فكانت طلباتها لا تصل متطوّعاً شارك موقعه،
+   * وتصل من رفض المشاركة وحده. تُلحق بالقائمة بمسافةٍ مجهولة لا تُسقَط منها:
+   * القائمة تُرتَّب بالقرب، وما لا يُعرف قربه يأتي آخراً موسوماً لا محذوفاً.
+   *
+   * **وتُحصر في محافظة المستخدم.** كانت تُجلب من السلطنة كلّها — وستةَ عشرَ
+   * مسجداً كانت ضجيجاً محتملاً. أمّا اليوم فمتطوّعٌ في مسندم يرى في «ما حولك»
+   * فرصاً في ظفار على بُعد ألف كيلومتر، فيفقد الثقة بالقائمة كلّها. والمحافظة
+   * تُستنبط من أقرب مسجدٍ إليه، فإن تعذّر فمن ملفّه، فإن تعذّر فالسلطنة كلّها —
+   * وإخفاء الفرصة أسوأ من إظهارها بعيدة.
+   */
+  const region = await governorateAt(lat, lng) || user.get('governorate') || null;
+
+  const unlocatedQuery = new Parse.Query('Mosques')
     .equalTo('hasLocation', false)
     .greaterThan('openRequestsCount', 0)
     .select('name', 'wilayat', 'village', 'governorate')
-    .limit(50)
-    .find({ useMasterKey: true });
+    // ترتيبٌ صريح: بلا ترتيبٍ يكون المقطوع بالسقف عشوائياً، فمسجدٌ بعينه قد
+    // لا يظهر أبداً بلا أن يُعرف السبب
+    .descending('openRequestsCount')
+    .limit(50);
+  if (region) unlocatedQuery.equalTo('governorate', region);
+
+  const unlocated = await unlocatedQuery.find({ useMasterKey: true });
 
   const candidates = [
     ...near.map(({ row, km }) => ({ row, km })),

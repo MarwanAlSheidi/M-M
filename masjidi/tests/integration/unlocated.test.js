@@ -79,11 +79,62 @@ test('الفرص في مساجد بلا إحداثيات', options, async (t) =>
       'بلا ولاية ولا قرية لا يعرف المتطوّع أين يذهب أصلاً');
   });
 
+  /**
+   * الحصر في المحافظة.
+   *
+   * كانت مجهولة الموقع تُجلب من السلطنة كلّها. وستةَ عشرَ مسجداً كانت ضجيجاً
+   * محتملاً؛ أمّا 430 فمتطوّعٌ في مسندم يرى فرصاً في ظفار على بُعد ألف
+   * كيلومتر في قائمةٍ عنوانها «ما حولك»، فيفقد الثقة بها كلّها.
+   */
+  const far = new Mosque();
+  far.set({
+    externalId: `far_${Date.now()}`, name: 'مسجد ظفار بلا موقع', governorate: 'ظفار',
+    wilayat: 'صلالة', isClaimed: true, imamId: imam, hasLocation: false,
+  });
+  await far.save(null, { useMasterKey: true });
+  await as(imam, 'createServiceRequest',
+    { mosqueId: far.id, title: 'عمل في محافظة أخرى', description: 'وصف كافٍ للطلب' });
+
+  await t.test('ومجهولُ الموقع في محافظةٍ أخرى لا يُقحَم في «ما حولك»', async () => {
+    const rows = await as(volunteer, 'getNearbyOpportunities',
+      { lat: 23.6, lng: 58.5, radius: 5 });
+    const titles = rows.map((row) => row.title);
+
+    assert.ok(titles.includes('عمل بلا موقع'), 'مجهولُ محافظته سقط معه');
+    assert.equal(titles.includes('عمل في محافظة أخرى'), false,
+      'فرصةٌ على بُعد ألف كيلومتر في قائمةٍ عنوانها «ما حولك»');
+  });
+
+  await t.test('والمحافظة تُستنبط من أقرب مسجد، لا من ملفّ المستخدم وحده', async () => {
+    // المتطوّع لم يملأ محافظته قطّ، ومع ذلك حُصرت النتيجة في مسقط
+    assert.equal(volunteer.get('governorate'), undefined);
+    const rows = await as(volunteer, 'getNearbyOpportunities',
+      { lat: 23.6, lng: 58.5, radius: 5 });
+    assert.equal(rows.some((row) => row.title === 'عمل في محافظة أخرى'), false);
+  });
+
+  await t.test('وحيث لا مسجد يُستدلّ به تُقرأ المحافظة من ملفّ المستخدم', async () => {
+    // في البحر: لا مسجد في خمسة وعشرين كيلومتراً، فلا استنباط. والملفّ يقول ظفار
+    volunteer.set('governorate', 'ظفار');
+    await volunteer.save(null, { useMasterKey: true });
+
+    const rows = await as(volunteer, 'getNearbyOpportunities',
+      { lat: 24.5, lng: 59.5, radius: 5 });
+    assert.deepEqual(rows.map((row) => row.title), ['عمل في محافظة أخرى']);
+
+    // `set(field, undefined)` لا يمحو الحقل في Parse، فيبقى أثرُ هذا الاختبار
+    // على ما بعده. والمحو `unset`.
+    volunteer.unset('governorate');
+    await volunteer.save(null, { useMasterKey: true });
+  });
+
   await t.test('ولا تُحجب حين لا مسجد قريباً إطلاقاً', async () => {
     // متطوّع في البحر: الصندوق يخلو، وكان الخلوّ يُرجع قائمة فارغة قبل الفحص
+    // ولا محافظةَ تُستنبط ولا في الملفّ: السلطنة كلّها خيرٌ من قائمةٍ فارغة
     const rows = await as(volunteer, 'getNearbyOpportunities',
       { lat: 24.5, lng: 59.5, radius: 5 });
 
-    assert.deepEqual(rows.map((row) => row.title), ['عمل بلا موقع']);
+    assert.deepEqual(rows.map((row) => row.title).sort(),
+      ['عمل بلا موقع', 'عمل في محافظة أخرى']);
   });
 });
