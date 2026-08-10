@@ -79,7 +79,7 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     `${expected} بطاقة`, async () => await page.locator('.card').count() === expected);
 
   /** التسجيل من الواجهة لا بالـSDK: نموذج الدخول جزء من المسار المُختبَر. */
-  async function signUpVia(page, { username, fullName, role }) {
+  async function signUpVia(page, { username, fullName, role, phone }) {
     await page.goto(site.url, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: /سجّل الآن/ }).click();
     // `getByLabel` يمرّ فقط إن كان الحقل مرتبطاً بعنوانه — وهو ما يحتاجه
@@ -87,6 +87,8 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     await page.getByLabel('اسم المستخدم').fill(username);
     await page.getByLabel('كلمة المرور').fill(PASSWORD);
     await page.getByLabel('الاسم الكامل').fill(fullName);
+    // الرقم يُملأ هنا لأنه يُقرأ هناك: طرفا التكليف يتّصلان به
+    if (phone) await page.getByLabel('رقم الهاتف').fill(phone);
     await page.selectOption('select', role);
     if (role === 'volunteer') {
       // المهارات تُقرأ في قائمة المهتمّين، فبلا جمعها يختار الإمام بلا بيّنة
@@ -102,7 +104,9 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
 
   await t.test('التسجيل يعمل من النموذج، والحقول موصولة بعناوينها', async () => {
     await signUpVia(imam, { username: `imam_${stamp}`, fullName: 'الشيخ سعيد', role: 'imam' });
-    await signUpVia(salim, { username: `salim_${stamp}`, fullName: 'سالم بن راشد', role: 'volunteer' });
+    await signUpVia(salim, {
+      username: `salim_${stamp}`, fullName: 'سالم بن راشد', role: 'volunteer', phone: '99887766',
+    });
     await signUpVia(khalid, { username: `khalid_${stamp}`, fullName: 'خالد بن سيف', role: 'volunteer' });
 
     assert.match(await imam.locator('header .who').innerText(), /إمام مسجد/);
@@ -242,6 +246,11 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       await imam.waitForSelector('button:has-text("سحب التكليف")');
 
       const text = await imam.locator('main').innerText();
+      // الصفحة تقول «إن كنت على تواصلٍ معه» — فمن هو؟ قِيس هنا قبل الإصلاح:
+      // لا اسمَ على الشاشة ولا رقم، وتحتها زرٌّ يُقيِّد غياباً يقرؤه كل إمام.
+      assert.match(text, /سالم بن راشد/,
+        'يُحكم بالغياب على منفّذٍ لا يظهر اسمه على الشاشة');
+      assert.match(text, /99887766/, 'ولا رقمَ يُتّصل به — والصفحة تفترض تواصلاً');
       assert.match(text, /منذ 12 يوماً/,
         'زرّ «لم يحضر» معروضٌ بلا مدّة — والمدّة مكتوبةٌ في القاعدة منذ التكليف');
       assert.match(text, /طال الأمر/, 'مضى ضعفُ الحدّ ولا تنبيه');

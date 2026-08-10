@@ -316,6 +316,8 @@ export const withdrawInterest = (requestId) => run('withdrawInterest', { request
 export const getMyInterests = () => run('getMyInterests');
 export const getRequestInterests = (requestId) => run('getRequestInterests', { requestId });
 export const assignWorker = (requestId, workerId) => run('assignWorker', { requestId, workerId });
+/** الطرف الآخر من التكليف — اسماً ورقماً. الهاتف محميّ فلا يُقرأ باستعلام. */
+export const getRequestContact = (requestId) => run('getRequestContact', { requestId });
 export const releaseAssignment = (requestId, reason) => run('releaseAssignment', { requestId, reason });
 export const startWork = (requestId) => run('startWork', { requestId });
 export const markWorkDone = (requestId, notes, photoUrls) =>

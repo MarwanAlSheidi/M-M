@@ -814,6 +814,8 @@ export function MyTasks() {
                   كُلِّفت به {sinceLabel(row.assignedAt)} ولم تبدأ بعد.
                 </p>
               )}
+              {/* من يُسأل عنه إذا وصل — البطاقة كانت تحمل الطريق ولا تحمل أحداً */}
+              <Counterpart requestId={row.id} status={row.status} />
               {row.status === 'assigned' && (
                 <div className="row">
                   <button onClick={() => act(api.startWork, row.id)} disabled={guard.busy}>بدأت العمل</button>
@@ -1118,6 +1120,39 @@ function NewRequest({ mosque, onBack }) {
   );
 }
 
+/**
+ * الطرف الآخر من التكليف — اسماً ورقماً يُتّصل به.
+ *
+ * قِيس في متصفّح حقيقي على شاشة الإمام بعد التكليف، فكان كلُّ ما عليها:
+ *
+ *     كُلِّف المنفّذ منذ 12 يوماً ولمّا يبدأ بعد. وقد طال الأمر: **إن كنت على
+ *     تواصلٍ معه** فانتظاره أولى… | سحب التكليف — لم يحضر
+ *
+ * فالصفحة تفترض تواصلاً لم تُعطِه: لا اسمَ على الشاشة ولا رقم، وتحتها زرٌّ
+ * يُقيِّد غياباً يقرؤه كل إمامٍ بعده. **حكمٌ على إنسانٍ لا يُرى.** ونظيرُها عند
+ * المنفّذ: يعرف طريق المسجد ولا يعرف من يسأل عنه إذا وصل.
+ *
+ * ولا يُعرض شيءٌ إن أخفق النداء أو رُدّ: هذا سطرُ عونٍ لا شرطٌ للعمل، وخطأٌ
+ * أحمر فوق بطاقةٍ سليمة يُقلق بلا فائدة.
+ */
+function Counterpart({ requestId, status }) {
+  const live = ['assigned', 'in_progress', 'pending_imam_approval'].includes(status);
+  const state = useList(
+    async () => (live ? [await api.getRequestContact(requestId)] : []),
+    [requestId, live],
+  );
+
+  const contact = state.rows[0];
+  if (!contact || !contact.name) return null;
+
+  return (
+    <p className="notice" data-testid="counterpart">
+      {contact.role === 'imam' ? 'إمام المسجد' : 'المنفّذ'}: {contact.name}
+      {contact.phone && <> · <a href={`tel:${contact.phone}`}>{contact.phone}</a></>}
+    </p>
+  );
+}
+
 function RequestDetail({ request, onBack }) {
   const [status, setStatus] = useState(request.status);
   const interests = useList(
@@ -1191,6 +1226,8 @@ function RequestDetail({ request, onBack }) {
       {status === 'assigned' && (
         <>
           <h2>بانتظار المنفّذ</h2>
+          {/* من يُحكم عليه بالغياب أدناه — اسمُه ورقمُه فوق الزرّ لا بعده */}
+          <Counterpart requestId={request.id} status={status} />
           {/*
             «لم يحضر» حكمٌ يُقيَّد على المنفّذ في `abandonedJobs` ويراه كل إمامٍ
             بعده. وكان يُعرض بلا مدّة، فيستوي عند الإمام منفّذٌ كُلِّف أمسِ وآخرُ
@@ -1214,6 +1251,8 @@ function RequestDetail({ request, onBack }) {
       {status === 'pending_imam_approval' && (
         <>
           <h2>معاينة واعتماد</h2>
+          {/* والتقييم يُكتب في `avgRating` — فلا يُعتمد عملُ من لا يُعرف */}
+          <Counterpart requestId={request.id} status={status} />
           {request.workerNotes && <p className="notice">«{request.workerNotes}»</p>}
           {request.completionPhotos.length > 0 ? (
             <div className="gallery" data-testid="gallery">
@@ -1239,10 +1278,13 @@ function RequestDetail({ request, onBack }) {
         يبدأ العمل بعد — بل الشكوى أنه لم يبدأ.
       */}
       {status === 'in_progress' && (
-        <p className="notice">
-          {startedLabel ? `بدأ العمل ${startedLabel}. ` : ''}
-          يُبلّغك المنفّذ عند الإنجاز.
-        </p>
+        <>
+          <Counterpart requestId={request.id} status={status} />
+          <p className="notice">
+            {startedLabel ? `بدأ العمل ${startedLabel}. ` : ''}
+            يُبلّغك المنفّذ عند الإنجاز.
+          </p>
+        </>
       )}
     </>
   );

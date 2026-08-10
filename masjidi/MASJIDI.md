@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA **يُثبَّت ويعمل بلا إنترنت** — ويحرسه `verify:pwa`. و**React Native ليس ناقصاً بل غير مطلوب**: الواجهة تُثبَّت على أندرويد وiOS، وعميلٌ ثانٍ يُضاعف السطح بلا أثرٍ للمستخدم في المرحلة الأولى |
-| الاختبارات | ✅ 329 حالة على بديل Parse (`npm test`) + 150 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 29 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 329 حالة على بديل Parse (`npm test`) + 157 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 29 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -169,6 +169,11 @@
     قائمةُ اختيارٍ بجدول ترجمة**: `SIGNUP_ROLES` تُشتقّ من `ROLES` ولا تُكتب
     بجانبها — فمن غلّب أحد الغرضين أسقط `admin` من الاثنين.
 
+29. **من يُحكم عليه يُرى.** كلُّ زرٍّ يكتب أثراً دائماً على إنسان — غياباً في
+    `abandonedJobs` أو تقييماً في `avgRating` — يُعرض فوقه **اسمُ صاحبه**. ولا
+    يُقرأ حسابُ أحدٍ باستعلامٍ من العميل: الـACL على كل حساب `{صاحبه}` وحده،
+    فالطريق `getRequestContact` — وهي مقصورةٌ على طرفَي التكليف وعلى مدّته.
+
 ### القيود المهمة
 
 **تنظيمي — اقرأ هذا قبل لمس مسار التبرعات:**
@@ -268,6 +273,7 @@ tests/
     preflight.test.js  الفحص على خادمٍ معطوب: يقول ما العطب ولا يرمي
     user-text.test.js  حدود نصّ الحساب على باب التسجيل لا على الدوال وحدها
     platform-fields.test.js  السمعة لا يكتبها صاحبها، والفئات مقفلة — مسحُ الأبواب
+    contact.test.js    طرفا التكليف يتعارفان، ولا يعرفهما ثالث
     concurrency.test.js  ضغطتان في لحظةٍ واحدة: السمعة والتكليف
   e2e/                 متصفّح حقيقي فوق خادم حقيقي — `npm run test:e2e`
     harness.js         يبني الواجهة على منفذ الاختبار، ويقدّمها، ويفتح Chromium
@@ -2568,6 +2574,95 @@ not ok — عُرضت بلا عربية: «Network request failed»
 
 ---
 
+### 🔴 «إن كنت على تواصلٍ معه» — ومن هو؟
+
+بدأتُ أسأل عن تسرّب البيانات الشخصية: دوالُّ السحابة تقرأ بالمفتاح الرئيس
+وتبني ردودها بيدها، **فـ`protectedFields` لا تحرسها أصلاً**. فمسحتُ كل حقلٍ
+شخصيّ يعبر حدّ دالّة، ووجدتُ كلَّ موضعٍ محروساً: الاسم والرقم لا يخرجان إلا
+إلى مشرفٍ يراجع، أو إلى صاحبهما.
+
+ثم انقلب السؤال: **لا شيء يتسرّب — فهل يصل ما ينبغي أن يصل؟**
+
+#### وقِيس في متصفّح حقيقي
+
+شاشة الإمام بعد التكليف، بنصّها كما قرأتها الأداة:
+
+```
+تصليح إنارة الصحن | مُسنَد | بانتظار المنفّذ
+كُلِّف المنفّذ منذ 12 يوماً ولمّا يبدأ بعد. وقد طال الأمر:
+  إن كنت على تواصلٍ معه فانتظاره أولى، وإلا فاسحب التكليف…
+سحب التكليف — لم يحضر
+```
+
+**«معه»** — ولا اسمَ على الشاشة ولا رقم. الصفحة تفترض تواصلاً لم تُعطِه، وتحت
+الافتراض زرٌّ يُقيِّد على المنفّذ غياباً في `abandonedJobs` **يقرؤه كل إمامٍ
+بعده**. ثم في المعاينة زرٌّ آخر يكتب له تقييماً في `avgRating`.
+
+**حكمان دائمان على إنسانٍ لا يُرى.** والإمام رآه مرّةً واحدة: في قائمة
+المهتمّين — و`closeInterests` تُغلقها لحظة التكليف، والشاشة لا تجلبها بعدها
+أصلاً (`status === 'open_for_volunteers' ? … : []`). فالاسم يُعرض لحظةَ
+الاختيار ويُمحى لحظةَ الحاجة إليه.
+
+ونظيرُها عند المنفّذ: بطاقته تحمل اسم المسجد وقريته و**زرّ الطريق إليه** — ولا
+تحمل من يسأل عنه إذا وصل. رجلٌ يقود إلى مسجدٍ لا يعرف فيه أحداً ليعمل بيديه.
+
+#### والحرس كان أوسع ممّا ظننت
+
+خطّطتُ أن يأتي الاسم من العميل مباشرةً (`include` على المُسنَد إليه) والرقمَ
+وحده من دالّة — لأن `protectedFields` على `_User` تحجب `phone` دون `fullName`.
+ثم قِيس ما يراه مستخدمٌ مصادَق باستعلامٍ مباشر:
+
+```
+الفضوليّ يستعلم عن حساب المتطوّع  → null
+الفضوليّ يُعدّد المستخدمين         → 1  (نفسه وحده)
+ACL: { صاحبُه: قراءة وكتابة }
+```
+
+فالحساب لا يُحجب منه حقلٌ، **بل لا يُرجَع الكائن أصلاً**. ولولا القياس لبنيتُ
+نصف الحلّ على بابٍ مغلق، ولظهر ذلك أوّلَ مرّةٍ عند مستخدمٍ حقيقي. **والخطّة
+المبنيّة على قراءةِ مخطَّطٍ ليست قياساً.**
+
+#### فدالّةٌ واحدة، وحدُّها مدّةُ التكليف
+
+`getRequestContact` تُعطي كلَّ طرفٍ الطرفَ الآخر — اسماً ورقماً — وتشترط
+ثلاثاً: أن تكون الحالة `assigned` أو `in_progress` أو `pending_imam_approval`،
+وأن يكون للطلب منفّذ، وأن يكون المستدعي أحد الطرفين **بمقارنة المعرّف لا بما
+يقوله الطلب**. قبل التكليف لا طرفَ آخر، وبعد الاعتماد انقضى ما يُتواصل بشأنه —
+فينقطع. والشركة تُعرف باسمها التجاري لا باسم من سجّلها.
+
+#### والاختبار على طبقتين، لأن العطب على طبقتين
+
+- `tests/integration/contact.test.js` — على خادمٍ حقيقي، لأن الـACL
+  و`protectedFields` حرسٌ **لا يعرفه بديل Parse أصلاً**. سقط على `HEAD` في
+  ستٍّ من سبع؛ والسابعة — أن الاستعلام المباشر لا يُرجع أحداً — قامت وحدها،
+  وهي توثيق الحرس القائم لا الإصلاح الجديد.
+- `tests/e2e/journey.test.js` — في المتصفّح، حيث قِيس العطب. سقط بالنصّ نفسه:
+  «يُحكم بالغياب على منفّذٍ لا يظهر اسمه على الشاشة».
+
+#### وثلاثُ أدواتٍ كذبت عليّ في دورةٍ واحدة
+
+1. **مسبارٌ في المتصفّح** طبع الشاشة بعد سطرٍ جديد، و`grep` يقرأ سطراً سطراً —
+   فرأيتُ العنوان فارغاً وظننتُ الشاشة فارغة.
+2. **`grep -A12` على `protectedFields`** أصاب أوّل مطابقة وهي **لفئةٍ أخرى**،
+   فقرأتُ حرساً ليس حرسَ `_User` وبنيتُ عليه تصميماً.
+3. **إثباتُ السقوط بنزع الملفّ كلِّه** — نُزعت `api.js` فذهب معها ما لا علاقة
+   له، فسقط كلُّ شيء. وقد وقع نظيرُه في الدورة الماضية، **فوقعتُ فيه ثانيةً**.
+
+**والدرس:** الأداة التي تقرأ سطراً لا تُسأل عن فقرة، والأداة التي تقف عند أوّل
+مطابقةٍ لا تُسأل «هل هذا هو؟» بل «كم واحداً غيره؟». **وثلاثتها أخطأت في
+الاستخراج لا في المنطق** — أي في أوّل خطوة، حيث لا يظهر الخطأ لأنه يُعطي
+جواباً معقولاً.
+
+#### وعطبٌ صغير كشفه البناء
+
+كتبتُ الاستيراد النسبي على سطرين، **فبقي في الحزمة المدمجة** — نمطُ الحذف في
+`build_single_file.py` مربوطٌ بالسطر. والنتيجة `Identifier 'requireUser' has
+already been declared` في `main.bundle.js` وحدها. **وسقط صريحاً** في
+`tests/schema.test.js` لا صامتاً، وهو ما يُراد من الحارس. فكُتب على السطر
+الواحد، وكُتب في المولّد لماذا.
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB — وهذا أكبر قيدٍ باقٍ.**
@@ -4809,7 +4904,8 @@ Parse.Cloud.define('confirmMosqueLocation', async (request) => {
 
 ```javascript
 const E = require('../lib/errors');
-const { requireRole, mosqueForImam, fetchPointer } = require('../lib/auth');
+// سطرٌ واحد قصداً — انظر `scripts/build_single_file.py`
+const { requireUser, requireRole, mosqueForImam, fetchPointer } = require('../lib/auth');
 const { pushToUsers, pushToNearbyVolunteers } = require('../lib/push');
 const audit = require('../lib/audit');
 
@@ -5244,6 +5340,65 @@ async function closeInterests(serviceRequest) {
  * لا يستطيع. جعل الانسحاب المُعلن متاحاً وبلا عقوبة هو خير ما يُقلّل التغيّب —
  * إغلاقه لا يجعل المتخلّف يحضر، بل يجعله يصمت.
  */
+/** الحالات التي يلتقي فيها الطرفان فعلاً — قبلها لا منفّذ، وبعدها انقضى الأمر. */
+const LIVE_ASSIGNMENT = [STATUS.ASSIGNED, STATUS.IN_PROGRESS, STATUS.PENDING_APPROVAL];
+
+/**
+ * كلٌّ من طرفَي التكليف يعرف الآخر — اسماً ورقماً.
+ *
+ * قِيس في متصفّح حقيقي على شاشة الإمام بعد التكليف:
+ *
+ *     بانتظار المنفّذ | كُلِّف المنفّذ منذ 12 يوماً ولمّا يبدأ بعد. وقد طال
+ *     الأمر: **إن كنت على تواصلٍ معه** فانتظاره أولى، وإلا فاسحب التكليف…
+ *     | سحب التكليف — لم يحضر
+ *
+ * ولا اسم على الشاشة ولا رقم. **الصفحة تفترض تواصلاً لم تُعطِه**، وتحتها زرٌّ
+ * يُقيِّد على المنفّذ غياباً في `abandonedJobs` يقرؤه كل إمامٍ بعده. فالإمام
+ * يحكم على إنسانٍ لا يراه، ثم يُقيَّم عملُه في `avgRating` كذلك.
+ *
+ * ونظيرها عند المنفّذ: بطاقتُه تحمل اسم المسجد وطريقه، ولا تحمل من يسأل عنه
+ * إذا وصل. وهما يتواعدان على عملٍ بأيديهما في مسجد.
+ *
+ * والهاتف محميّ في المخطط (`protectedFields` على `_User`) فلا يُقرأ باستعلامٍ
+ * من العميل — وهذا صواب. فيُعطى هنا **للطرف الآخر وحده، وفي مدّة التكليف
+ * وحدها**: لا قبله فلا منفّذ، ولا بعده فقد انقضى ما يُتواصل بشأنه.
+ */
+Parse.Cloud.define('getRequestContact', async (request) => {
+  const user = requireUser(request);
+  const { requestId } = request.params;
+  if (!requestId) E.invalid('معرّف الطلب مطلوب.');
+
+  const serviceRequest = await new Parse.Query('ServiceRequests')
+    .get(requestId, { useMasterKey: true })
+    .catch(() => E.notFound('الطلب غير موجود.'));
+
+  if (!LIVE_ASSIGNMENT.includes(serviceRequest.get('status'))) {
+    E.invalid('لا تواصل إلا في مدّة التكليف.');
+  }
+
+  const worker = serviceRequest.get('assignedVolunteerId')
+    || serviceRequest.get('assignedContractorId');
+  if (!worker) E.invalid('لا يوجد منفّذ مكلَّف بهذا الطلب.');
+
+  const mosque = await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
+  const imam = mosque.get('imamId');
+
+  // الصفة تُقرأ من الكائن المخزَّن لا من الطلب، والهوية تُقارَن بالمعرّف —
+  // فمن ليس طرفاً في هذا التكليف لا يقرأ رقم أحد.
+  const isImam = Boolean(imam) && imam.id === user.id;
+  const isWorker = worker.id === user.id;
+  if (!isImam && !isWorker) E.forbidden('لست طرفاً في هذا التكليف.');
+
+  const other = await (isImam ? worker : imam).fetch({ useMasterKey: true });
+
+  return {
+    role: other.get('role'),
+    // الشركة تُعرف باسمها التجاري لا باسم من سجّلها
+    name: other.get('companyName') || other.get('fullName') || null,
+    phone: other.get('phone') || null,
+  };
+});
+
 Parse.Cloud.define('releaseAssignment', async (request) => {
   const user = requireRole(request, 'imam', 'volunteer', 'contractor');
   const { requestId, reason } = request.params;
@@ -8031,6 +8186,8 @@ Parse.Cloud.define('confirmMosqueLocation', async (request) => {
 // دوال طلبات الصيانة   [functions/requests.js]
 // ======================================================================
 
+// سطرٌ واحد قصداً — انظر `scripts/build_single_file.py`
+
 /**
  * دورة حياة الطلب:
  *   pending_funding → funded → assigned → in_progress → pending_imam_approval → completed
@@ -8462,6 +8619,65 @@ async function closeInterests(serviceRequest) {
  * لا يستطيع. جعل الانسحاب المُعلن متاحاً وبلا عقوبة هو خير ما يُقلّل التغيّب —
  * إغلاقه لا يجعل المتخلّف يحضر، بل يجعله يصمت.
  */
+/** الحالات التي يلتقي فيها الطرفان فعلاً — قبلها لا منفّذ، وبعدها انقضى الأمر. */
+const LIVE_ASSIGNMENT = [STATUS.ASSIGNED, STATUS.IN_PROGRESS, STATUS.PENDING_APPROVAL];
+
+/**
+ * كلٌّ من طرفَي التكليف يعرف الآخر — اسماً ورقماً.
+ *
+ * قِيس في متصفّح حقيقي على شاشة الإمام بعد التكليف:
+ *
+ *     بانتظار المنفّذ | كُلِّف المنفّذ منذ 12 يوماً ولمّا يبدأ بعد. وقد طال
+ *     الأمر: **إن كنت على تواصلٍ معه** فانتظاره أولى، وإلا فاسحب التكليف…
+ *     | سحب التكليف — لم يحضر
+ *
+ * ولا اسم على الشاشة ولا رقم. **الصفحة تفترض تواصلاً لم تُعطِه**، وتحتها زرٌّ
+ * يُقيِّد على المنفّذ غياباً في `abandonedJobs` يقرؤه كل إمامٍ بعده. فالإمام
+ * يحكم على إنسانٍ لا يراه، ثم يُقيَّم عملُه في `avgRating` كذلك.
+ *
+ * ونظيرها عند المنفّذ: بطاقتُه تحمل اسم المسجد وطريقه، ولا تحمل من يسأل عنه
+ * إذا وصل. وهما يتواعدان على عملٍ بأيديهما في مسجد.
+ *
+ * والهاتف محميّ في المخطط (`protectedFields` على `_User`) فلا يُقرأ باستعلامٍ
+ * من العميل — وهذا صواب. فيُعطى هنا **للطرف الآخر وحده، وفي مدّة التكليف
+ * وحدها**: لا قبله فلا منفّذ، ولا بعده فقد انقضى ما يُتواصل بشأنه.
+ */
+Parse.Cloud.define('getRequestContact', async (request) => {
+  const user = requireUser(request);
+  const { requestId } = request.params;
+  if (!requestId) E.invalid('معرّف الطلب مطلوب.');
+
+  const serviceRequest = await new Parse.Query('ServiceRequests')
+    .get(requestId, { useMasterKey: true })
+    .catch(() => E.notFound('الطلب غير موجود.'));
+
+  if (!LIVE_ASSIGNMENT.includes(serviceRequest.get('status'))) {
+    E.invalid('لا تواصل إلا في مدّة التكليف.');
+  }
+
+  const worker = serviceRequest.get('assignedVolunteerId')
+    || serviceRequest.get('assignedContractorId');
+  if (!worker) E.invalid('لا يوجد منفّذ مكلَّف بهذا الطلب.');
+
+  const mosque = await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
+  const imam = mosque.get('imamId');
+
+  // الصفة تُقرأ من الكائن المخزَّن لا من الطلب، والهوية تُقارَن بالمعرّف —
+  // فمن ليس طرفاً في هذا التكليف لا يقرأ رقم أحد.
+  const isImam = Boolean(imam) && imam.id === user.id;
+  const isWorker = worker.id === user.id;
+  if (!isImam && !isWorker) E.forbidden('لست طرفاً في هذا التكليف.');
+
+  const other = await (isImam ? worker : imam).fetch({ useMasterKey: true });
+
+  return {
+    role: other.get('role'),
+    // الشركة تُعرف باسمها التجاري لا باسم من سجّلها
+    name: other.get('companyName') || other.get('fullName') || null,
+    phone: other.get('phone') || null,
+  };
+});
+
 Parse.Cloud.define('releaseAssignment', async (request) => {
   const user = requireRole(request, 'imam', 'volunteer', 'contractor');
   const { requestId, reason } = request.params;
@@ -9991,6 +10207,7 @@ Parse.Cloud.define('health', async () => ({
 | `getMyInterests` | volunteer | اهتماماته وحالة كلٍّ منها |
 | `getRequestInterests` | imam | قائمة المهتمّين بمهاراتهم وتقييمهم |
 | `assignWorker` | imam | تعيين متطوع أو شركة |
+| `getRequestContact` | طرفا التكليف | اسم الطرف الآخر ورقمه — في مدّة التكليف وحدها. الهاتف محميّ في المخطط فلا يُقرأ باستعلام |
 | `startWork` | المنفّذ | بدء التنفيذ |
 | `markWorkDone` | المنفّذ | إبلاغ بالإنجاز + صور |
 | `completeService` | imam | معاينة واعتماد وتقييم |
@@ -10742,6 +10959,10 @@ REPLACEMENTS = {
 
 # يُحذف الاستيراد النسبي وحده (`./` و`../`): الملفات صارت واحداً فلا معنى له.
 # استيراد وحدات Node مثل `crypto` يبقى — حذفه كان يترك مرجعاً غير معرّف في المدمج.
+#
+# **والنمط مربوطٌ بالسطر**: استيرادٌ نسبيّ مفروشٌ على سطرين لا يُحذف، فيبقى في
+# المدمج ويصطدم بتعريف الدالّة نفسها — «Identifier already declared». وهو يسقط
+# صريحاً في `tests/schema.test.js` لا صامتاً، فاكتب الاستيراد النسبي سطراً واحداً.
 DROP = re.compile(
     r"^\s*(const .*= require\([\"']\.|module\.exports\s*=\s*\{\s*(ROLES|pushToUsers|STATUS)).*$")
 
@@ -13237,7 +13458,7 @@ test('نقاط الدخول', async (t) => {
     'getNearbyMosques', 'getNearbyOpportunities', 'updateMyLocation', 'searchMosques', 'claimMosque', 'getMyMosques', 'getMyClaims', 'confirmMosqueLocation', 'listPendingClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'expressInterest', 'withdrawInterest',
     'getRequestInterests', 'getMyInterests', 'assignWorker', 'releaseAssignment',
-    'startWork', 'markWorkDone',
+    'startWork', 'markWorkDone', 'getRequestContact',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
     'confirmDonation', 'paymentWebhook', 'payoutContractor', 'refundDonation',
     'getMosqueLedger', 'listPendingContractors', 'reviewContractor',

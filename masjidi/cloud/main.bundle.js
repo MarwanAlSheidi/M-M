@@ -1558,6 +1558,8 @@ Parse.Cloud.define('confirmMosqueLocation', async (request) => {
 // دوال طلبات الصيانة   [functions/requests.js]
 // ======================================================================
 
+// سطرٌ واحد قصداً — انظر `scripts/build_single_file.py`
+
 /**
  * دورة حياة الطلب:
  *   pending_funding → funded → assigned → in_progress → pending_imam_approval → completed
@@ -1989,6 +1991,65 @@ async function closeInterests(serviceRequest) {
  * لا يستطيع. جعل الانسحاب المُعلن متاحاً وبلا عقوبة هو خير ما يُقلّل التغيّب —
  * إغلاقه لا يجعل المتخلّف يحضر، بل يجعله يصمت.
  */
+/** الحالات التي يلتقي فيها الطرفان فعلاً — قبلها لا منفّذ، وبعدها انقضى الأمر. */
+const LIVE_ASSIGNMENT = [STATUS.ASSIGNED, STATUS.IN_PROGRESS, STATUS.PENDING_APPROVAL];
+
+/**
+ * كلٌّ من طرفَي التكليف يعرف الآخر — اسماً ورقماً.
+ *
+ * قِيس في متصفّح حقيقي على شاشة الإمام بعد التكليف:
+ *
+ *     بانتظار المنفّذ | كُلِّف المنفّذ منذ 12 يوماً ولمّا يبدأ بعد. وقد طال
+ *     الأمر: **إن كنت على تواصلٍ معه** فانتظاره أولى، وإلا فاسحب التكليف…
+ *     | سحب التكليف — لم يحضر
+ *
+ * ولا اسم على الشاشة ولا رقم. **الصفحة تفترض تواصلاً لم تُعطِه**، وتحتها زرٌّ
+ * يُقيِّد على المنفّذ غياباً في `abandonedJobs` يقرؤه كل إمامٍ بعده. فالإمام
+ * يحكم على إنسانٍ لا يراه، ثم يُقيَّم عملُه في `avgRating` كذلك.
+ *
+ * ونظيرها عند المنفّذ: بطاقتُه تحمل اسم المسجد وطريقه، ولا تحمل من يسأل عنه
+ * إذا وصل. وهما يتواعدان على عملٍ بأيديهما في مسجد.
+ *
+ * والهاتف محميّ في المخطط (`protectedFields` على `_User`) فلا يُقرأ باستعلامٍ
+ * من العميل — وهذا صواب. فيُعطى هنا **للطرف الآخر وحده، وفي مدّة التكليف
+ * وحدها**: لا قبله فلا منفّذ، ولا بعده فقد انقضى ما يُتواصل بشأنه.
+ */
+Parse.Cloud.define('getRequestContact', async (request) => {
+  const user = requireUser(request);
+  const { requestId } = request.params;
+  if (!requestId) E.invalid('معرّف الطلب مطلوب.');
+
+  const serviceRequest = await new Parse.Query('ServiceRequests')
+    .get(requestId, { useMasterKey: true })
+    .catch(() => E.notFound('الطلب غير موجود.'));
+
+  if (!LIVE_ASSIGNMENT.includes(serviceRequest.get('status'))) {
+    E.invalid('لا تواصل إلا في مدّة التكليف.');
+  }
+
+  const worker = serviceRequest.get('assignedVolunteerId')
+    || serviceRequest.get('assignedContractorId');
+  if (!worker) E.invalid('لا يوجد منفّذ مكلَّف بهذا الطلب.');
+
+  const mosque = await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
+  const imam = mosque.get('imamId');
+
+  // الصفة تُقرأ من الكائن المخزَّن لا من الطلب، والهوية تُقارَن بالمعرّف —
+  // فمن ليس طرفاً في هذا التكليف لا يقرأ رقم أحد.
+  const isImam = Boolean(imam) && imam.id === user.id;
+  const isWorker = worker.id === user.id;
+  if (!isImam && !isWorker) E.forbidden('لست طرفاً في هذا التكليف.');
+
+  const other = await (isImam ? worker : imam).fetch({ useMasterKey: true });
+
+  return {
+    role: other.get('role'),
+    // الشركة تُعرف باسمها التجاري لا باسم من سجّلها
+    name: other.get('companyName') || other.get('fullName') || null,
+    phone: other.get('phone') || null,
+  };
+});
+
 Parse.Cloud.define('releaseAssignment', async (request) => {
   const user = requireRole(request, 'imam', 'volunteer', 'contractor');
   const { requestId, reason } = request.params;
