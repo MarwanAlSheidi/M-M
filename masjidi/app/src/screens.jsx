@@ -11,6 +11,39 @@ import { publishUnread } from './unread';
  */
 const STALE_ASSIGNED_DAYS = 7;
 
+/**
+ * الوعد الذي قطعته المنصّة على نفسها: «سيُراجع خلال أيام عمل».
+ *
+ * سبعة أيامٍ تقويمية تسع خمسةَ أيام عمل. وبعدها يُعرض الطلب موسوماً في لوحة
+ * المشرف — **لا لأن المشرف مقصّر، بل لأن الوعد قُطع باسمه فينبغي أن يراه.**
+ */
+const OVERDUE_REVIEW_DAYS = 7;
+
+/**
+ * كم انتظر صاحبُ الطلب — تحت عينَي من يقرّر.
+ *
+ * الطابور مرتَّبٌ بالأقدم على الخادم، فالترتيب صحيح. لكنّ المشرف كان لا يرى
+ * **المدّة** أصلاً: `createdAt` تعبر السلك في `listPendingClaims`
+ * و`listPendingContractors` ولا تُقرأ في الواجهة قطّ. فيُراجَع طلبٌ عمره
+ * أربعون يوماً كما يُراجَع طلبُ اليوم، ولا يُحسّ ثِقلُ الطابور.
+ *
+ * ونظيرُها عولج من قبل في `assignedAt`: «حكمٌ يُطلب بلا المدّة التي يقوم
+ * عليها». والأداة نفسها (`sinceLabel`) كانت على هذه الشاشة تُستعمل لتاريخ سحب
+ * اعتماد شركةٍ — أي لتفصيلٍ ثانوي — دون المدّة التي تنتظرها الناس.
+ */
+const Waited = ({ since, label = 'قُدّم' }) => {
+  const days = daysSince(since);
+  const said = sinceLabel(since);
+  if (!said) return null;
+  return (
+    <p className={days != null && days >= OVERDUE_REVIEW_DAYS ? 'warn' : 'hint'}>
+      {label} {said}
+      {days != null && days >= OVERDUE_REVIEW_DAYS
+        && ' — وقيل لصاحبه «يُراجَع خلال أيام عمل».'}
+    </p>
+  );
+};
+
 /** حال اعتماد الشركة كما يشتقّه الخادم — ثلاثٌ لا اثنتان. */
 const CONTRACTOR_LABEL = {
   verified: 'معتمدة', pending: 'بانتظار المراجعة', revoked: 'سُحب الاعتماد',
@@ -1486,6 +1519,7 @@ export function AdminHome() {
               <Where wilayat={row.wilayat} village={row.village}
                 governorate={row.governorate} mosqueNumber={row.mosqueNumber} />
               <p>الطالب: {row.imamName || 'بلا اسم'}{row.imamPhone ? ` · ${row.imamPhone}` : ''}</p>
+              <Waited since={row.createdAt} />
               {row.evidenceNote && <p>«{row.evidenceNote}»</p>}
               <div className="row">
                 <button disabled={guard.busy} onClick={() => act(api.reviewMosqueClaim, claims, row.id, true)}>
@@ -1509,6 +1543,13 @@ export function AdminHome() {
             <article className="card" key={row.id}>
               <h3>{row.companyName || row.fullName}</h3>
               <p>السجل التجاري: {row.crNumber || '— غير مُدخَل'}</p>
+              {/*
+                الهاتف يعبر السلك ولا يُعرض. والسجلّ التجاري وحده ورقة: من
+                يعتمد شركةً تدخل مساجد الناس يحتاج ما يتّصل به قبل أن يعتمد —
+                ونظيرُه معروضٌ في بطاقة طلب الملكية أعلاه.
+              */}
+              <p>التواصل: {row.phone || '— غير مُدخَل'}</p>
+              <Waited since={row.createdAt} label="سجّلت" />
               {/*
                 المسحوب اعتمادها تعود إلى هذا الطابور كأنها لم تُراجَع قطّ،
                 فيعتمد المشرف اليوم من سحب اعتماده أمسِ وهو لا يدري.
