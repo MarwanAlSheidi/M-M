@@ -39,6 +39,7 @@ npm run schema                       # الحقول والصلاحيات وال�
 # ثم الصق cloud/main.bundle.js في لوحة Cloud Code
 npm run preflight                    # ← اللحظة الحاسمة: يقيس على قاعدتك الحيّة
 npm run admin -- --username <اسمه>   # أوّل مشرف — بدونه المنصّة معطّلة
+npm run export                       # نسخةٌ من السجلّ قبل أن يحذفه التقليم
 node scripts/seed_mosques.js --governorate musandam   # ابدأ بمحافظة
 ```
 

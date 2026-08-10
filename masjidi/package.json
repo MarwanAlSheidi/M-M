@@ -15,6 +15,7 @@
     "test:e2e": "node --test --test-concurrency=1 --test-timeout=180000 tests/e2e/*.test.js",
     "admin": "node scripts/promote_admin.js",
     "preflight": "node scripts/preflight.js",
+    "export": "node scripts/export_records.js",
     "verify": "node scripts/verify.js"
   },
   "dependencies": {
