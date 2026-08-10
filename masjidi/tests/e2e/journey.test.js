@@ -345,6 +345,73 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     });
   });
 
+  /**
+   * ما رُفع لا يُرفع مرّتين.
+   *
+   * قِيس على خادمٍ حقيقي: ثلاث صورٍ تُرفع ثم يسقط الإبلاغ، **فتبقى الثلاث في
+   * التخزين لا يشير إليها شيء ولا يحذفها شيء** — ولا سبيل إلى كنسها، إذ لا
+   * واجهة في Parse لسرد الملفات. وإعادة المحاولة كانت ترفعها من جديد.
+   *
+   * والمنفّذ الذي يُبلغ من داخل مسجدٍ بشبكةٍ ضعيفة هو أوّل من يقع فيه: يضغط
+   * فيسقط فيضغط — **ويدفع ثمن باقته في كل مرّة**، والتخزين والبيانات على
+   * باقةٍ واحدة سعتها 250 ميغابايت.
+   */
+  await t.test('وإعادةُ الإبلاغ لا تُعيد رفع ما رُفع', async () => {
+    const uploads = [];
+    const watch = (event) => {
+      if (event.method() === 'POST' && /\/parse\/files\//.test(event.url())) {
+        uploads.push(event.url());
+      }
+    };
+    khalid.on('request', watch);
+
+    // طلبٌ ثانٍ قيد التنفيذ لخالد — الأوّل صار بانتظار الاعتماد
+    const worker = await new stack.Parse.Query(stack.Parse.User)
+      .equalTo('username', `khalid_${stamp}`).first({ useMasterKey: true });
+    const second = new (stack.Parse.Object.extend('ServiceRequests'))();
+    second.set({
+      mosqueId: mosque, createdBy: worker, title: 'إعادة الإبلاغ',
+      description: 'طلبٌ لقياس إعادة الرفع', category: 'other', urgency: 'normal',
+      estimatedCost: 0, fundedAmount: 0, status: 'in_progress',
+      assignedVolunteerId: worker, assignedAt: new Date(), startedAt: new Date(),
+    });
+    await second.save(null, { useMasterKey: true });
+
+    await onScreen(khalid, 'إعادة الإبلاغ لا تُعيد الرفع', async () => {
+      await khalid.reload({ waitUntil: 'networkidle' });
+      await khalid.getByRole('button', { name: 'مهامّي' }).click();
+      await khalid.waitForSelector('[data-testid="photo-input"]');
+      await khalid.setInputFiles('[data-testid="photo-input"]',
+        [0, 1, 2].map((i) => ({ name: `retry-${i}.png`, mimeType: 'image/png', buffer: PNG })));
+
+      // أوّل محاولة تسقط: الجلسة تُقطع بعد الرفع وقبل الإبلاغ — وهو ما يقع
+      // على شبكةٍ ضعيفة داخل المسجد
+      await khalid.route('**/functions/markWorkDone', (route) => route.abort());
+      await khalid.getByRole('button', { name: 'أنجزتُ العمل' }).click();
+      await khalid.waitForSelector('.error');
+      const first = uploads.length;
+      assert.equal(first, 3, `رُفعت ${first} صور بدل ثلاث`);
+
+      // ثم تعود الشبكة ويُعيد المحاولة
+      await khalid.unroute('**/functions/markWorkDone');
+      await khalid.getByRole('button', { name: 'أنجزتُ العمل' }).click();
+      // الانتظار على اختفاء نموذج الإبلاغ نفسه: نصُّ «بانتظار معاينة الإمام»
+      // معروضٌ أصلاً على بطاقةٍ أخرى، فالانتظار عليه يمرّ قبل أن يقع شيء
+      await waitUntil(khalid, 'اختفاء نموذج الإبلاغ',
+        async () => await khalid.locator('.report').count() === 0);
+
+      // والصور بلغت الخادم فعلاً: الدليل الذي يقوم عليه اعتماد الإمام
+      const done = await new stack.Parse.Query('ServiceRequests')
+        .get(second.id, { useMasterKey: true });
+      assert.equal((done.get('completionPhotos') || []).length, 3,
+        'أُبلغ الإنجاز بلا صورة — والإمام يعتمد عملاً لا يراه');
+
+      assert.equal(uploads.length, first,
+        `أُعيد رفع ${uploads.length - first} صورةً رُفعت من قبل — يتيمةٌ في التخزين وباقةٌ تُنفق مرّتين`);
+    });
+    khalid.off('request', watch);
+  });
+
   await t.test('التنبيهات تصل الإمام في الواجهة بلا أي Installation', async () => {
     await onScreen(imam, 'التنبيهات تصل الإمام في الواجهة بلا أي Installation', async () => {
     await imam.reload({ waitUntil: 'networkidle' });

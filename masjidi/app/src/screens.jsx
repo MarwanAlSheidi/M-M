@@ -617,14 +617,34 @@ function ReportWork({ request, onDone }) {
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  /**
+   * ما رُفع فعلاً — يبقى بين المحاولات.
+   *
+   * قِيس على خادمٍ حقيقي: ثلاث صورٍ تُرفع، ثم يسقط الإبلاغ، **فتبقى الثلاث في
+   * التخزين لا يشير إليها شيء ولا يحذفها شيء.** وكانت إعادة المحاولة ترفعها
+   * من جديد: ستُّ صورٍ في التخزين لطلبٍ واحد، ثم تسع.
+   *
+   * والمنفّذ الذي يُبلغ من داخل مسجدٍ بشبكةٍ ضعيفة هو أوّل من يقع فيه: يضغط
+   * فيسقط، فيضغط فيسقط — **ويدفع ثمن باقته في كل مرّة**، وتمتلئ القاعدة بما
+   * لا يُقرأ. والتخزين والبيانات على باقةٍ واحدة سعتها 250 ميغابايت.
+   *
+   * فما رُفع لا يُرفع مرّتين. `useRef` لا `useState`: هذه ذاكرةٌ لا تُعرَض،
+   * ولا يجوز أن تُعيد تركيب الشاشة في منتصف الرفع.
+   */
+  const uploaded = useRef(new Map());
 
   async function submit() {
     setError('');
     try {
       const urls = [];
       for (const [index, file] of files.entries()) {
+        const seen = uploaded.current.get(file);
+        if (seen) { urls.push(seen); continue; }
+
         setBusy(`جارٍ رفع الصورة ${index + 1} من ${files.length}…`);
-        urls.push(await api.uploadPhoto(file));
+        const url = await api.uploadPhoto(file);
+        uploaded.current.set(file, url);
+        urls.push(url);
       }
       setBusy('جارٍ الإبلاغ…');
       await api.markWorkDone(request.id, notes || 'أُنجز العمل.', urls);
@@ -636,6 +656,12 @@ function ReportWork({ request, onDone }) {
     }
   }
 
+  /** اختيارٌ جديد يُبطل ما حُفظ: الملفات غير الملفات. */
+  const choose = (event) => {
+    uploaded.current = new Map();
+    setFiles(Array.from(event.target.files).slice(0, 6));
+  };
+
   return (
     <div className="report">
       <Field label="ملاحظات (اختياري)" value={notes}
@@ -644,7 +670,7 @@ function ReportWork({ request, onDone }) {
       <label htmlFor={`photos-${request.id}`}>صور الإنجاز</label>
       <input id={`photos-${request.id}`} type="file" accept="image/*" multiple
         data-testid="photo-input"
-        onChange={(event) => setFiles(Array.from(event.target.files).slice(0, 6))} />
+        onChange={choose} />
       {files.length > 0 && (
         <p className="hint">{files.length} صورة مختارة — تُرفع عند الإبلاغ.</p>
       )}
