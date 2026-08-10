@@ -112,6 +112,29 @@ test('المخطط', async (t) => {
         `${definition.className} مقفلٌ في المخطط وغير مذكورٍ في LOCKED_CLASSES — فقفلُه بلا فحص`);
     }
 
+    /*
+     * **وخلف كل قفلٍ حارسٌ ثانٍ.**
+     *
+     * الصلاحيات سطرٌ واحد يُقلب من لوحة Back4app أو لا يصل القاعدة أصلاً، وقِيس
+     * أثرُ سقوطه: متطوّعٌ عاديّ كتب قيد تدقيقٍ يقول `payout_released` بصفة
+     * `admin`، ومحا طلب خدمةٍ ليس له. فكلُّ صنفٍ مقفلٍ في المخطط له `beforeDelete`
+     * — و`beforeSave` إن لم يكن له واحدٌ خاصّ به.
+     *
+     * والقراءة من المُشغّلات المسجَّلة لا من نصّ المصدر: هي ما يعمل فعلاً.
+     */
+    const { triggers } = loadCloud('modular');
+    for (const definition of schema.classes) {
+      const clp = definition.classLevelPermissions || {};
+      const shut = ['create', 'update', 'delete']
+        .every((door) => clp[door] && Object.keys(clp[door]).length === 0);
+      if (!shut) continue;
+
+      assert.ok(triggers[`beforeDelete:${definition.className}`],
+        `${definition.className} مقفلٌ بالصلاحيات وحدها — لا beforeDelete خلفها`);
+      assert.ok(triggers[`beforeSave:${definition.className}`],
+        `${definition.className} مقفلٌ بالصلاحيات وحدها — لا beforeSave خلفها`);
+    }
+
     for (const definition of schema.classes) {
       const hidden = (definition.classLevelPermissions || {}).protectedFields;
       for (const field of (hidden && hidden['*']) || []) {
@@ -140,6 +163,12 @@ test('نقاط الدخول', async (t) => {
     'beforeSave:_User', 'afterSave:_User', 'beforeLogin:_User', 'beforeSave:Mosques',
     'beforeSave:ServiceRequests', 'beforeSave:Transactions',
     'afterSave:ServiceRequests',
+    // الطبقة الثانية خلف الصلاحيات — أربعةٌ للكتابة وسبعةٌ للحذف
+    'beforeSave:MosqueClaims', 'beforeSave:TaskInterests',
+    'beforeSave:AuditLog', 'beforeSave:Notifications',
+    'beforeDelete:Mosques', 'beforeDelete:MosqueClaims', 'beforeDelete:ServiceRequests',
+    'beforeDelete:Transactions', 'beforeDelete:TaskInterests',
+    'beforeDelete:AuditLog', 'beforeDelete:Notifications',
   ];
 
   await t.test('النسختان تسجّلان الدوال والمُشغّلات نفسها', () => {

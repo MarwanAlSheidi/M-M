@@ -206,3 +206,58 @@ Parse.Cloud.afterSave('ServiceRequests', async (request) => {
   mosque.set('openRequestsCount', openCount);
   await mosque.save(null, { useMasterKey: true });
 });
+
+/**
+ * الطبقة الثانية على الأصناف المقفلة — لا تقوم مقام الصلاحيات بل تقف خلفها.
+ *
+ * **العطب المقيس:** الأقفال كلُّها في `classLevelPermissions`، وهي سطرٌ يُقلب
+ * من لوحة Back4app بضغطة أو لا يصل القاعدة أصلاً إن تعثّر `npm run schema`.
+ * وفوقها `beforeSave` لثلاثة أصنافٍ من سبعة، **ولا `beforeDelete` لواحد**.
+ *
+ * وقِيس على خادمٍ حقيقي بفتح الأقفال، بحساب متطوّعٍ عاديّ لا صلة له بشيء:
+ *
+ *     AuditLog        إنشاء: نجح · تعديل: نجح · حذف: نجح
+ *     ServiceRequests إنشاء: رُدّ (119) · تعديل: رُدّ (119) · حذف: **نجح**
+ *     MosqueClaims · Notifications · TaskInterests        حذف: **نجح**
+ *
+ * فكُتب من متصفّحه قيدُ تدقيقٍ يقول `payout_released` بصفة `admin`. **وسجلٌّ
+ * يُزوَّر ويُمحى من متصفّح ليس سجلّ مساءلة** — وهو وعدُ المنصّة كلُّه.
+ *
+ * وما رُدّ من الباقي رُدّ بتحقّق المخطط (`142 … is required`) لا بحارس: من
+ * يملأ الحقول يمرّ. **ولا يُقرأ ردٌّ عارضٌ حمايةً.**
+ *
+ * والقاعدة المكتوبة في هذا المستودع: **الشرط الذي يُفحص عند بابٍ واحد ليس
+ * شرطاً** — الاعتماد يُفحص في `assignWorker` وفي `startWork`، وإيقافُ الحساب
+ * في `beforeLogin` وفي `requireUser`. فهذا بابُ الأصناف.
+ */
+const CLOUD_ONLY_WRITE = ['MosqueClaims', 'TaskInterests', 'AuditLog', 'Notifications'];
+
+/**
+ * والحذف على السبعة جميعاً.
+ *
+ * `Mosques` و`ServiceRequests` و`Transactions` لها `beforeSave` بالفعل، ولا
+ * يمنع أيٌّ منها حذفاً: `beforeSave` لا يُنادى عند الحذف أصلاً.
+ */
+const NO_CLIENT_DELETE = [...CLOUD_ONLY_WRITE, 'Mosques', 'ServiceRequests', 'Transactions'];
+
+for (const className of CLOUD_ONLY_WRITE) {
+  Parse.Cloud.beforeSave(className, (request) => {
+    if (!request.master) {
+      throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN,
+        `${className} تُكتب عبر دوال السحابة فقط.`);
+    }
+  });
+}
+
+for (const className of NO_CLIENT_DELETE) {
+  Parse.Cloud.beforeDelete(className, (request) => {
+    /*
+     * والمهام الدورية تحذف بالمفتاح الرئيس (`pruneAuditLog`,
+     * `pruneNotifications`)، فيمرّ ما يمرّ منها ويُردّ ما جاء من جلسة.
+     */
+    if (!request.master) {
+      throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN,
+        `${className} لا تُحذف من التطبيق.`);
+    }
+  });
+}

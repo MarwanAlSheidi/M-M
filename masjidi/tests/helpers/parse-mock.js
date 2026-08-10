@@ -227,6 +227,7 @@ function createMock() {
       job: (name, handler) => { jobs[name] = handler; },
       beforeSave: (target, handler) => { triggers[triggerKey(target, 'beforeSave')] = handler; },
       afterSave: (target, handler) => { triggers[triggerKey(target, 'afterSave')] = handler; },
+      beforeDelete: (target, handler) => { triggers[triggerKey(target, 'beforeDelete')] = handler; },
       // `beforeLogin` بلا هدف — Parse يربطه بـ`_User` وحده
       beforeLogin: (handler) => { triggers['beforeLogin:_User'] = handler; },
       httpRequest: async ({ method }) => (method === 'POST'

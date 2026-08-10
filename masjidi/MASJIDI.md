@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA **يُثبَّت ويعمل بلا إنترنت** — ويحرسه `verify:pwa`. و**React Native ليس ناقصاً بل غير مطلوب**: الواجهة تُثبَّت على أندرويد وiOS، وعميلٌ ثانٍ يُضاعف السطح بلا أثرٍ للمستخدم في المرحلة الأولى |
-| الاختبارات | ✅ 358 حالة على بديل Parse (`npm test`) + 192 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 31 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 358 حالة على بديل Parse (`npm test`) + 199 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 31 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -243,6 +243,12 @@
     فمقابلتُه بنفسه تُخضّرها — والقائمة مكتوبةٌ في `preflight` ويحرس انحرافَها
     `tests/schema.test.js`. **وعلى الحذف لا حارس غير الصلاحيات**: لا
     `beforeDelete` في المستودع، وقِيس أن غريباً محا طلباً ليس له لحظة فُتح القفل.
+    **وخلف كل قفلٍ حارسٌ ثانٍ الآن**: `beforeSave` للأربعة التي كانت بلا حارس
+    و`beforeDelete` للسبعة، بالصيغة القائمة (`if (!request.master)`) — فالشرط
+    على **الجلسة** لا على الفعل، وإلا أوقف التقليمَ الذي يحذف بالمفتاح الرئيس.
+    و`beforeSave` **لا يُنادى عند الحذف**، فحارسُ الكتابة لا يُقرأ حارساً على
+    المحو. ويحرس تطابقَ القوائم `tests/schema.test.js` من المُشغّلات المسجَّلة
+    لا من نصّ المصدر.
 
 42. **اختبارُ حارسٍ يؤكّد رسالته لا حالَه.** «سقط» ليست نتيجة بل بدايةُ سؤال:
     فحصٌ يسقط لسببٍ غير الذي وُضع له يمرّ على `assert.equal(ok, false)` وهو
@@ -281,7 +287,7 @@
 cloud/
   main.js              نقطة الدخول — يُحمّل البقية
   main.bundle.js       الملفات أدناه مدمجة للصق في لوحة Back4app — مولّد، لا يُعدّل
-  triggers.js          beforeSave/afterSave: التحقق والحماية
+  triggers.js          beforeSave/afterSave/beforeDelete: التحقق والحماية، والطبقة الثانية خلف الأقفال
   schema.json          الفئات والحقول والفهارس والصلاحيات
   lib/
     errors.js          أخطاء Parse موحّدة برسائل عربية
@@ -355,6 +361,7 @@ tests/
     revoked-contractor.test.js  سحب اعتماد شركةٍ مكلَّفة — من يُخبَر وما يُمنع
     mosque-transfer.test.js  انتقال المسجد من إمامٍ إلى إمام، وحدُّ الطلبات
     preflight.test.js  الفحص على خادمٍ معطوب: يقول ما العطب ولا يرمي
+    second-layer.test.js  ما يقف خلف الصلاحيات إن سقطت — ولا يوقف المهام الدورية
     user-text.test.js  حدود نصّ الحساب على باب التسجيل لا على الدوال وحدها
     platform-fields.test.js  السمعة لا يكتبها صاحبها، والفئات مقفلة — مسحُ الأبواب
     contact.test.js    طرفا التكليف يتعارفان، ولا يعرفهما ثالث
@@ -3701,6 +3708,66 @@ AuditLog مقفلٌ في المخطط وغير مذكورٍ في LOCKED_CLASSES 
 
 ---
 
+### 🔴 سجلُّ التدقيق يُزوَّر ويُمحى من متصفّح — إن سقط سطرٌ واحد
+
+الدورة الماضية جعلت `preflight` يرى القفل إن فُتح. **والرؤية ليست منعاً.**
+فسُئل: ما الذي يقف خلف القفل إن سقط؟
+
+وقِيس على خادمٍ حقيقي: فُتحت أقفال الأصناف الخمسة، ثم جُرّب كلُّ باب بحساب
+متطوّعٍ عاديّ لا صلة له بشيء:
+
+```
+--- AuditLog ---         إنشاء: **نجح**   تعديل: **نجح**   حذف: **نجح**
+--- ServiceRequests ---  إنشاء: رُدّ (119)  تعديل: رُدّ (119)  حذف: **نجح**
+--- MosqueClaims ---     تعديل: **نجح**   حذف: **نجح**
+--- Notifications ---    تعديل: **نجح**   حذف: **نجح**
+--- TaskInterests ---    حذف: **نجح**
+```
+
+فكُتب من متصفّحه قيدُ تدقيقٍ يقول `action: payout_released` بصفة `admin`.
+**وسجلٌّ يُزوَّر ويُمحى من متصفّح ليس سجلَّ مساءلة** — وهو وعدُ المنصّة كلُّه.
+
+#### والردُّ العارض ليس حماية
+
+ثلاثةٌ من الأبواب رُدّت بـ`142 … is required` — أي **تحقّق المخطط** لا حارس.
+ومن يملأ الحقول يمرّ. وواحدٌ رُدّ بـ`101 Object not found` بلا سببٍ عرفتُه،
+**ولم أعدّه حمايةً**: لم يأتِ من شيءٍ كتبناه، وبابُ الحذف على الصنف نفسه مرّ.
+
+#### وحارسُ الكتابة لا يُقرأ حارساً على المحو
+
+`ServiceRequests` له `beforeSave` منذ البداية، وقد ردّ الإنشاء والتعديل —
+**ومرّ الحذف**. لأن `beforeSave` لا يُنادى عند الحذف أصلاً. فوجودُ حارسٍ على
+صنفٍ لا يعني أن أبوابه محروسة.
+
+والحصيلة: `beforeSave` على ثلاثةٍ من سبعة، و`beforeDelete` على **صفر**.
+
+#### والقاعدة المكتوبة في هذا المستودع تقول ما يُفعل
+
+«الشرط الذي يُفحص عند الدخول ثم يُنسى ليس شرطاً» — الاعتماد يُفحص في
+`assignWorker` **وفي `startWork`**، وإيقافُ الحساب في `beforeLogin` **وفي
+`requireUser`**. فهذا بابُ الأصناف: `beforeSave` للأربعة التي بلا حارس،
+و`beforeDelete` للسبعة جميعاً، بالصيغة القائمة نفسها (`if (!request.master)`).
+
+#### والحارس الذي يمنع المهام الدورية يكسر ما يحمي
+
+التقليم يحذف `AuditLog` و`Notifications` أسبوعياً **بالمفتاح الرئيس**، وحارسٌ
+يمنع الحذف مطلقاً يوقفه فتمتلئ الباقة بعد أشهرٍ بلا سببٍ ظاهر. فالشرط على
+**الجلسة** لا على الفعل.
+
+**وما لم يُقَس قيل:** حدُّ التقليم أدناه ثلاثون يوماً، و`createdAt` **لا
+يُؤرَّخ رجعياً** — قِيس: طُلب 2025-07-06 فكُتب اليوم. فلا سبيل إلى تشغيل
+المهمّة على صفوفٍ يبلغها حدُّها. فقِيس **نداءُ الحذف الذي تصدره حرفاً بحرف**
+(`destroyAll` بالمفتاح الرئيس) لا المهمّة كلَّها — وهو موضع الخطر بعينه.
+
+#### وثلاثُ حالاتٍ يجب أن تبقى خضراء
+
+القفل المكتوب يردّ العميل (والحارس لا يُنادى أصلاً — فالطبقة الثانية **لا
+تُختبر** في الحالة السليمة)، والمفتاح الرئيس يحذف كما كان، و`preflight` يقرأ
+الأقفال سليمةً بعد إعادتها. وعلى `HEAD`: **ثلاثٌ تمرّ وثلاثٌ تسقط** بـ
+`Missing expected rejection` — أي أن التزوير والمحو **وقعا فعلاً**.
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB — وهذا أكبر قيدٍ باقٍ.**
@@ -3716,11 +3783,12 @@ AuditLog مقفلٌ في المخطط وغير مذكورٍ في LOCKED_CLASSES 
   PostGIS محلياً و`2dsphere` هناك)، وذرّية `increment` تحت التزامن الحقيقي.
   **أوّل نشرٍ على Back4app هو أوّل تشغيلٍ حقيقي على MongoDB** — فليكن على بيانات
   تجريبية أولاً.
-- **لا `beforeDelete` في المستودع كلِّه.** الكتابة محروسة بـ`beforeSave` فوق
-  الصلاحيات، والحذف محروسٌ بالصلاحيات **وحدها** — طبقةٌ واحدة لا اثنتان. وقِيس
-  في الدورة ٢٧ أن فتح القفل يكفي ليمحو غريبٌ طلباً ليس له. وهي الآن **مفحوصة**
-  في `preflight` على القاعدة الحيّة، والفحص كشفٌ لا منع: من فتح القفل ولم
-  يُشغّل الفحص لا يقف في وجهه شيء. **وحارسٌ ثانٍ على الحذف يبقى غير مكتوب.**
+- **الطبقة الثانية تمنع ولا تُصحّح.** `beforeSave`/`beforeDelete` يردّان الجلسة
+  حين يسقط القفل، **ولا يُعيدان القفل**. فالتقرير من `preflight` يبقى هو
+  الطريق إلى معرفة أن شيئاً سقط — والحارس يشتري الوقت لا يُغني عن الإصلاح.
+- **`_User` بلا `beforeDelete`.** بابُ الحذف عليه `requiresAuthentication`
+  قصداً (الحساب يُحذف من صاحبه)، فلا يدخل قائمة المقفلة. ولم يُقَس ما يقع
+  لطلباتٍ وقيودٍ تشير إلى حسابٍ محذوف — **وهو سؤالٌ مفتوح**.
 - **سرّ الـwebhook يُدار يدوياً.** لا تدوير للمفتاح ولا تحقق من توقيع البوابة
   نفسها (`HMAC`) — السرّ المشترك أضعف من التوقيع لكنه ما تدعمه ثواني حالياً.
 - **الاسترداد قيدٌ محاسبي لا تحويل.** `refundDonation` يُعيد الرصيد ويُرجع الطلب
@@ -4640,6 +4708,61 @@ Parse.Cloud.afterSave('ServiceRequests', async (request) => {
   mosque.set('openRequestsCount', openCount);
   await mosque.save(null, { useMasterKey: true });
 });
+
+/**
+ * الطبقة الثانية على الأصناف المقفلة — لا تقوم مقام الصلاحيات بل تقف خلفها.
+ *
+ * **العطب المقيس:** الأقفال كلُّها في `classLevelPermissions`، وهي سطرٌ يُقلب
+ * من لوحة Back4app بضغطة أو لا يصل القاعدة أصلاً إن تعثّر `npm run schema`.
+ * وفوقها `beforeSave` لثلاثة أصنافٍ من سبعة، **ولا `beforeDelete` لواحد**.
+ *
+ * وقِيس على خادمٍ حقيقي بفتح الأقفال، بحساب متطوّعٍ عاديّ لا صلة له بشيء:
+ *
+ *     AuditLog        إنشاء: نجح · تعديل: نجح · حذف: نجح
+ *     ServiceRequests إنشاء: رُدّ (119) · تعديل: رُدّ (119) · حذف: **نجح**
+ *     MosqueClaims · Notifications · TaskInterests        حذف: **نجح**
+ *
+ * فكُتب من متصفّحه قيدُ تدقيقٍ يقول `payout_released` بصفة `admin`. **وسجلٌّ
+ * يُزوَّر ويُمحى من متصفّح ليس سجلّ مساءلة** — وهو وعدُ المنصّة كلُّه.
+ *
+ * وما رُدّ من الباقي رُدّ بتحقّق المخطط (`142 … is required`) لا بحارس: من
+ * يملأ الحقول يمرّ. **ولا يُقرأ ردٌّ عارضٌ حمايةً.**
+ *
+ * والقاعدة المكتوبة في هذا المستودع: **الشرط الذي يُفحص عند بابٍ واحد ليس
+ * شرطاً** — الاعتماد يُفحص في `assignWorker` وفي `startWork`، وإيقافُ الحساب
+ * في `beforeLogin` وفي `requireUser`. فهذا بابُ الأصناف.
+ */
+const CLOUD_ONLY_WRITE = ['MosqueClaims', 'TaskInterests', 'AuditLog', 'Notifications'];
+
+/**
+ * والحذف على السبعة جميعاً.
+ *
+ * `Mosques` و`ServiceRequests` و`Transactions` لها `beforeSave` بالفعل، ولا
+ * يمنع أيٌّ منها حذفاً: `beforeSave` لا يُنادى عند الحذف أصلاً.
+ */
+const NO_CLIENT_DELETE = [...CLOUD_ONLY_WRITE, 'Mosques', 'ServiceRequests', 'Transactions'];
+
+for (const className of CLOUD_ONLY_WRITE) {
+  Parse.Cloud.beforeSave(className, (request) => {
+    if (!request.master) {
+      throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN,
+        `${className} تُكتب عبر دوال السحابة فقط.`);
+    }
+  });
+}
+
+for (const className of NO_CLIENT_DELETE) {
+  Parse.Cloud.beforeDelete(className, (request) => {
+    /*
+     * والمهام الدورية تحذف بالمفتاح الرئيس (`pruneAuditLog`,
+     * `pruneNotifications`)، فيمرّ ما يمرّ منها ويُردّ ما جاء من جلسة.
+     */
+    if (!request.master) {
+      throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN,
+        `${className} لا تُحذف من التطبيق.`);
+    }
+  });
+}
 ```
 
 #### `cloud/lib/errors.js`
@@ -8731,6 +8854,61 @@ Parse.Cloud.afterSave('ServiceRequests', async (request) => {
   mosque.set('openRequestsCount', openCount);
   await mosque.save(null, { useMasterKey: true });
 });
+
+/**
+ * الطبقة الثانية على الأصناف المقفلة — لا تقوم مقام الصلاحيات بل تقف خلفها.
+ *
+ * **العطب المقيس:** الأقفال كلُّها في `classLevelPermissions`، وهي سطرٌ يُقلب
+ * من لوحة Back4app بضغطة أو لا يصل القاعدة أصلاً إن تعثّر `npm run schema`.
+ * وفوقها `beforeSave` لثلاثة أصنافٍ من سبعة، **ولا `beforeDelete` لواحد**.
+ *
+ * وقِيس على خادمٍ حقيقي بفتح الأقفال، بحساب متطوّعٍ عاديّ لا صلة له بشيء:
+ *
+ *     AuditLog        إنشاء: نجح · تعديل: نجح · حذف: نجح
+ *     ServiceRequests إنشاء: رُدّ (119) · تعديل: رُدّ (119) · حذف: **نجح**
+ *     MosqueClaims · Notifications · TaskInterests        حذف: **نجح**
+ *
+ * فكُتب من متصفّحه قيدُ تدقيقٍ يقول `payout_released` بصفة `admin`. **وسجلٌّ
+ * يُزوَّر ويُمحى من متصفّح ليس سجلّ مساءلة** — وهو وعدُ المنصّة كلُّه.
+ *
+ * وما رُدّ من الباقي رُدّ بتحقّق المخطط (`142 … is required`) لا بحارس: من
+ * يملأ الحقول يمرّ. **ولا يُقرأ ردٌّ عارضٌ حمايةً.**
+ *
+ * والقاعدة المكتوبة في هذا المستودع: **الشرط الذي يُفحص عند بابٍ واحد ليس
+ * شرطاً** — الاعتماد يُفحص في `assignWorker` وفي `startWork`، وإيقافُ الحساب
+ * في `beforeLogin` وفي `requireUser`. فهذا بابُ الأصناف.
+ */
+const CLOUD_ONLY_WRITE = ['MosqueClaims', 'TaskInterests', 'AuditLog', 'Notifications'];
+
+/**
+ * والحذف على السبعة جميعاً.
+ *
+ * `Mosques` و`ServiceRequests` و`Transactions` لها `beforeSave` بالفعل، ولا
+ * يمنع أيٌّ منها حذفاً: `beforeSave` لا يُنادى عند الحذف أصلاً.
+ */
+const NO_CLIENT_DELETE = [...CLOUD_ONLY_WRITE, 'Mosques', 'ServiceRequests', 'Transactions'];
+
+for (const className of CLOUD_ONLY_WRITE) {
+  Parse.Cloud.beforeSave(className, (request) => {
+    if (!request.master) {
+      throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN,
+        `${className} تُكتب عبر دوال السحابة فقط.`);
+    }
+  });
+}
+
+for (const className of NO_CLIENT_DELETE) {
+  Parse.Cloud.beforeDelete(className, (request) => {
+    /*
+     * والمهام الدورية تحذف بالمفتاح الرئيس (`pruneAuditLog`,
+     * `pruneNotifications`)، فيمرّ ما يمرّ منها ويُردّ ما جاء من جلسة.
+     */
+    if (!request.master) {
+      throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN,
+        `${className} لا تُحذف من التطبيق.`);
+    }
+  });
+}
 
 
 // ======================================================================
@@ -13320,6 +13498,7 @@ function createMock() {
       job: (name, handler) => { jobs[name] = handler; },
       beforeSave: (target, handler) => { triggers[triggerKey(target, 'beforeSave')] = handler; },
       afterSave: (target, handler) => { triggers[triggerKey(target, 'afterSave')] = handler; },
+      beforeDelete: (target, handler) => { triggers[triggerKey(target, 'beforeDelete')] = handler; },
       // `beforeLogin` بلا هدف — Parse يربطه بـ`_User` وحده
       beforeLogin: (handler) => { triggers['beforeLogin:_User'] = handler; },
       httpRequest: async ({ method }) => (method === 'POST'
@@ -15241,6 +15420,29 @@ test('المخطط', async (t) => {
         `${definition.className} مقفلٌ في المخطط وغير مذكورٍ في LOCKED_CLASSES — فقفلُه بلا فحص`);
     }
 
+    /*
+     * **وخلف كل قفلٍ حارسٌ ثانٍ.**
+     *
+     * الصلاحيات سطرٌ واحد يُقلب من لوحة Back4app أو لا يصل القاعدة أصلاً، وقِيس
+     * أثرُ سقوطه: متطوّعٌ عاديّ كتب قيد تدقيقٍ يقول `payout_released` بصفة
+     * `admin`، ومحا طلب خدمةٍ ليس له. فكلُّ صنفٍ مقفلٍ في المخطط له `beforeDelete`
+     * — و`beforeSave` إن لم يكن له واحدٌ خاصّ به.
+     *
+     * والقراءة من المُشغّلات المسجَّلة لا من نصّ المصدر: هي ما يعمل فعلاً.
+     */
+    const { triggers } = loadCloud('modular');
+    for (const definition of schema.classes) {
+      const clp = definition.classLevelPermissions || {};
+      const shut = ['create', 'update', 'delete']
+        .every((door) => clp[door] && Object.keys(clp[door]).length === 0);
+      if (!shut) continue;
+
+      assert.ok(triggers[`beforeDelete:${definition.className}`],
+        `${definition.className} مقفلٌ بالصلاحيات وحدها — لا beforeDelete خلفها`);
+      assert.ok(triggers[`beforeSave:${definition.className}`],
+        `${definition.className} مقفلٌ بالصلاحيات وحدها — لا beforeSave خلفها`);
+    }
+
     for (const definition of schema.classes) {
       const hidden = (definition.classLevelPermissions || {}).protectedFields;
       for (const field of (hidden && hidden['*']) || []) {
@@ -15269,6 +15471,12 @@ test('نقاط الدخول', async (t) => {
     'beforeSave:_User', 'afterSave:_User', 'beforeLogin:_User', 'beforeSave:Mosques',
     'beforeSave:ServiceRequests', 'beforeSave:Transactions',
     'afterSave:ServiceRequests',
+    // الطبقة الثانية خلف الصلاحيات — أربعةٌ للكتابة وسبعةٌ للحذف
+    'beforeSave:MosqueClaims', 'beforeSave:TaskInterests',
+    'beforeSave:AuditLog', 'beforeSave:Notifications',
+    'beforeDelete:Mosques', 'beforeDelete:MosqueClaims', 'beforeDelete:ServiceRequests',
+    'beforeDelete:Transactions', 'beforeDelete:TaskInterests',
+    'beforeDelete:AuditLog', 'beforeDelete:Notifications',
   ];
 
   await t.test('النسختان تسجّلان الدوال والمُشغّلات نفسها', () => {
