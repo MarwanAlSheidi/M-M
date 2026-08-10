@@ -1,3 +1,65 @@
+/**
+ * الخطّ محزومٌ في التطبيق — لا يُجلب من خادمٍ خارجي.
+ *
+ * كان الخطّ **قائمة نظامٍ** لا خطاً: `'Segoe UI', Tahoma, …`. ومعناه أن شكل
+ * الحروف يتبدّل بتبدّل جهاز المستخدم — ويندوز غير أندرويد غير iOS — فلا يملك
+ * صاحب المنصّة أن يعرف ما يراه إمامٌ في نزوى، ولا أن يضمن اتّساق شاشاته.
+ *
+ * **ولا يُوصَل بخوادم Google Fonts**: التطبيق PWA يعمل بلا إنترنت، ورابطٌ
+ * خارجيّ يكسر ذلك، ويُسرّب زوّار المنصّة إلى طرفٍ ثالث، ويضيف اعتماداً لا
+ * يملكه المُشغّل. فالملفّات هنا، ويُخزّنها عامل الخدمة مسبقاً — ويحرس ذلك
+ * `app/scripts/check-pwa.mjs`.
+ *
+ * والمقطعان معاً — العربيّ **واللاتينيّ**. المقطع العربيّ وحده لا يحمل الأرقام
+ * (`unicode-range` يبدأ من U+0600)، فتُرسم «195.7 كم» و«34/157» و«99887766»
+ * بخطٍّ آخر يقع عليه الاختيار عرَضاً. وشاشات هذه المنصّة مليئة بالأرقام:
+ * المسافات ورقم الوزارة والهاتف. **فخطٌّ نصفُه من هنا ونصفُه من هناك أسوأ من
+ * خطٍّ واحدٍ متوسّط.**
+ *
+ * IBM Plex Sans Arabic — رخصة SIL OFL 1.1، نصُّها في `fonts/LICENSE.txt`،
+ * وهي حرّة تجارياً وقابلة لإعادة التوزيع مع المنتج.
+ */
+@font-face {
+  font-family: 'IBM Plex Sans Arabic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/plex-arabic-400.woff2') format('woff2');
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1,
+    U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74,
+    U+FE76-FEFC;
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/plex-latin-400.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/plex-arabic-700.woff2') format('woff2');
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1,
+    U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74,
+    U+FE76-FEFC;
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/plex-latin-700.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   --green: #0f5132;
   --green-soft: #e7f1ec;
@@ -15,7 +77,9 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: 'Segoe UI', Tahoma, 'Noto Naskh Arabic', system-ui, sans-serif;
+  /* والاحتياطيّ يبقى: أوّل زيارةٍ قبل وصول الملفّ، أو متصفّحٌ لا يقبل woff2 */
+  font-family: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, 'Noto Naskh Arabic',
+    system-ui, sans-serif;
   line-height: 1.7;
 }
 

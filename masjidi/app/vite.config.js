@@ -28,7 +28,10 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        // `woff2` لازمٌ هنا: الخطّ محزومٌ في التطبيق، وبلا ذكره لا يدخل التخزين
+        // المسبق — فيعمل التطبيق بلا إنترنت **بخطٍّ آخر**، وهو عطبٌ لا يظهر في
+        // بناءٍ ناجح ولا في تصفّحٍ متّصل.
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         cleanupOutdatedCaches: true,
         navigateFallback: 'index.html',
         // خرائط جوجل تُحمَّل من نطاق خارجي: تُخزَّن عند أول استعمال ولا تدخل

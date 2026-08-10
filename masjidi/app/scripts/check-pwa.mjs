@@ -58,6 +58,23 @@ if (files.includes('sw.js')) {
   const html = readFileSync(join(DIST, 'index.html'), 'utf8');
   check(/registerSW|serviceWorker/.test(html) || files.some((f) => /registerSW/.test(f)),
     'الصفحة تسجّل عامل الخدمة');
+
+  /*
+   * **والخطّ يُخزَّن مسبقاً كما تُخزَّن الشيفرة.**
+   *
+   * الواجهة تحمل خطّها بنفسها لأن قائمة النظام تتبدّل بتبدّل الجهاز. وكان
+   * `globPatterns` يذكر `js,css,html,svg,png,ico` **ولا يذكر `woff2`** — فالبناء
+   * ينجح، والتصفّح المتّصل يبدو سليماً، **ويعمل التطبيق بلا إنترنت بخطٍّ آخر**.
+   * وهو عطبٌ لا يُرى إلا في اللحظة التي وُضع التطبيق ليعمل فيها.
+   *
+   * والفحص على الاثنين معاً: أن الملفّات خرجت في البناء، وأن عامل الخدمة يعرفها.
+   */
+  const assets = existsSync(join(DIST, 'assets')) ? readdirSync(join(DIST, 'assets')) : [];
+  const fonts = assets.filter((name) => name.endsWith('.woff2'));
+  check(fonts.length > 0, 'الخطّ العربيّ مبنيٌّ مع الواجهة (woff2 في dist)');
+  for (const font of fonts) {
+    check(sw.includes(font), `الخطّ مخزَّنٌ مسبقاً فيعمل بلا إنترنت: ${font}`);
+  }
 }
 
 console.log(failures.length === 0
