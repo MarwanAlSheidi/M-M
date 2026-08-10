@@ -116,6 +116,21 @@ test('فحص ما قبل الإطلاق', options, async (t) => {
     assert.equal(unique.ok, false, 'قُبل معرّفٌ مكرَّر ومرّ الفحص');
     assert.match(unique.why, /Database → Indexes/, 'يُقال العطب ولا يُقال الدواء');
 
+    /*
+     * **والسببُ يُقاس لا الحُكم وحده.**
+     *
+     * أوّل صيغةٍ من هذا الفحص كانت تسقط على `governorate is required` — أي
+     * قبل أن تبلغ التكرار أصلاً — فتُعلن «لا فهرس فريد» على كل خادمٍ إلى
+     * الأبد. وكان هذا الاختبار يؤكّد `ok === false` **فيمرّ لسببٍ خاطئ**:
+     * أكّدتُ النتيجة ولم أؤكّد الآلية.
+     *
+     * وفحصٌ أحمرُ دائماً يُعلَّم أنه ضجيج فيُهمَل — وذلك أسوأ من لا فحص.
+     */
+    assert.match(unique.detail, /معرّفٌ خارجيّ مكرَّر/,
+      `سقط لسببٍ غير التكرار: ${unique.detail}`);
+    assert.doesNotMatch(unique.detail, /required/,
+      'يسقط على تحقّق المخطط لا على الفهرس — ولا يبلغ ما وُضع له');
+
     // وما كُتب للفحص يُحذف بعده — القاعدة حيّة، والفحص لا يترك أثراً
     const leftovers = await new Parse.Query('Mosques')
       .startsWith('externalId', '__preflight__').count({ useMasterKey: true });

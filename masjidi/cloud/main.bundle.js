@@ -3699,6 +3699,14 @@ async function manualSteps() {
      *
      * والكتابة على قاعدةٍ حيّة لا تُترك للحظّ: المعرّف موسومٌ بـ`__preflight__`
      * فلا يشبه معرّفاً حقيقياً، والحذف في `finally` فيقع وإن سقط الفحص.
+     *
+     * **والصفُّ يحمل كلَّ ما يشترطه المخطط.** وقِيس أن أوّل صيغةٍ منه كانت
+     * تسقط على `governorate is required` **قبل أن تبلغ التكرار أصلاً**، فتُعلن
+     * «لا فهرس فريد» على كل خادمٍ إلى الأبد — بسببٍ لا صلة له بالفهرس.
+     * **وفحصٌ أحمرُ دائماً يُعلَّم أنه ضجيج فيُهمَل**، وذلك أسوأ من لا فحص.
+     *
+     * ولذلك يُميَّز الردّ عن العطب: ما رُدّ لأجل التفرّد يُقبل، وما سقط لسببٍ
+     * آخر يُرفع كما هو لا يُقرأ نجاحاً ولا فشلاً في التفرّد.
      */
     check('الفهرس الفريد على Mosques.externalId',
       'بلا فهرسٍ فريد يُستورد المسجد مرّتين عند إعادة التشغيل، ولا يظهر ذلك إلا بالبحث — '
@@ -3706,21 +3714,35 @@ async function manualSteps() {
       async () => {
         const Mosque = Parse.Object.extend('Mosques');
         const externalId = `__preflight__${Date.now()}`;
+        // كلُّ ما يشترطه المخطط: externalId وname وgovernorate
+        const fields = {
+          externalId,
+          name: 'فحص ما قبل الإطلاق',
+          governorate: 'فحص',
+          hasLocation: false,
+        };
         const made = [];
         try {
           const first = new Mosque();
-          first.set({ externalId, name: 'فحص ما قبل الإطلاق', hasLocation: false });
+          first.set(fields);
           await first.save(null, { useMasterKey: true });
           made.push(first);
 
           const second = new Mosque();
-          second.set({ externalId, name: 'فحص ما قبل الإطلاق', hasLocation: false });
+          second.set(fields);
+          let rejection = null;
           await second.save(null, { useMasterKey: true }).then(
             () => made.push(second),
-            () => null, // الرفض هو المطلوب
+            (error) => { rejection = error; },
           );
 
           if (made.length > 1) throw new Error('قُبل معرّفٌ خارجيّ مكرَّر — لا فهرس فريد');
+
+          // الردّ لأجل التفرّد يُقبل؛ وردٌّ لسببٍ آخر ليس بيّنةً على الفهرس
+          const said = (rejection && rejection.message) || '';
+          if (!/duplicate|unique|E11000/i.test(said)) {
+            throw new Error(`رُدّ لسببٍ غير التفرّد: ${said || 'بلا رسالة'}`);
+          }
           return 'التكرار مرفوض';
         } finally {
           if (made.length) await Parse.Object.destroyAll(made, { useMasterKey: true })
