@@ -1,4 +1,6 @@
 const { ROLES, clampUserText } = require('./lib/auth');
+const { warnImamsOfWorkerLoss } = require('./lib/worker');
+const audit = require('./lib/audit');
 
 /** لا يُسمح للعميل بتعيين دوره بنفسه إلى admin، ولا بتعديل الحقول الحسّاسة. */
 Parse.Cloud.beforeSave(Parse.User, async (request) => {
@@ -108,6 +110,32 @@ Parse.Cloud.beforeLogin(async (request) => {
  * قراءة بيانات مستخدم آخر تبقى ممكنة من دوال السحابة عبر Master Key.
  */
 Parse.Cloud.afterSave(Parse.User, async (request) => {
+  /*
+   * إيقافُ الحساب يُبلَّغ به من ينتظر صاحبه.
+   *
+   * قِيس على خادمٍ حقيقي: أُوقف متطوّعٌ مكلَّفٌ بعملٍ في مسجد، فلم يتغيّر وارد
+   * الإمام (1 ← 1) ولا سجلّ المسجد (3 ← 3)، ثم رُدَّ الموقوف عن `startWork`،
+   * ثم سحب الإمام التكليف بالغياب فصار `abandonedJobs = 1`.
+   * **المنصّة تمنعه من الحضور ثم تُقيّد عليه غيابه.**
+   *
+   * والحارس هنا لا عند المستدعي: الإيقاف يقع من `scripts/promote_admin.js`
+   * بالمفتاح الرئيس، وقد يقع غداً من دالّةٍ أخرى — ومن ربط البلاغ بمستدعٍ
+   * واحد تركه مفتوحاً عند البقيّة.
+   *
+   * ولا يُحفظ المستخدم هنا بحال، فلا حلقة.
+   */
+  const was = request.original;
+  if (was && was.get('isActive') !== false && request.object.get('isActive') === false) {
+    await warnImamsOfWorkerLoss(request.object, {
+      action: audit.ACTIONS.WORKER_SUSPENDED,
+      actor: null, // الإيقاف بالمفتاح الرئيس — لا فاعلَ في الجلسة يُنسب إليه
+      alert: (name, serviceRequest, mosque) =>
+        `أُوقف حساب ${name} المكلَّف بـ "${serviceRequest.get('title')}" `
+        + `في ${mosque.get('name')}، فلا يستطيع الحضور. عاين العمل، ولك سحب `
+        + `التكليف — ولن يُقيَّد عليه غياب.`,
+    });
+  }
+
   if (request.original) return; // تحديث، لا إنشاء — وهو أيضاً ما يمنع الحلقة اللانهائية
 
   const user = request.object;

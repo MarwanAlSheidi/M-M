@@ -93,6 +93,7 @@ export const AUDIT_LABEL = {
   mosque_transferred: 'نُقلت إمامة المسجد',
   contractor_reviewed: 'روجع اعتماد شركة',
   contractor_suspended: 'سُحب اعتماد الشركة المكلَّفة بالعمل',
+  worker_suspended: 'أُوقف حساب المنفّذ المكلَّف بالعمل',
   donation_captured: 'قُيّد تبرّع',
   donation_expired: 'انتهت مهلة تبرّع',
   donation_refunded: 'استُرد تبرّع',

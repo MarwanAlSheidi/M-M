@@ -13,6 +13,7 @@ ORDER = [
     ("lib/audit.js", "سجل التدقيق"),
     ("lib/geo.js", "القرب الجغرافي"),
     ("lib/arabic.js", "تطبيع النصّ العربي"),
+    ("lib/worker.js", "خروج المنفّذ من الميدان"),
     ("triggers.js", "المُشغّلات (beforeSave / afterSave)"),
     ("functions/mosques.js", "دوال المساجد"),
     ("functions/requests.js", "دوال طلبات الصيانة"),
@@ -29,6 +30,7 @@ REPLACEMENTS = {
     "lib/audit.js": [(r"module\.exports = \{[^}]*\};", "const audit = { record, ACTIONS };")],
     "lib/geo.js": [(r"module\.exports = \{[^}]*\};",
                     "const geo = { distanceKm, boundingBox, withinBox, sortByDistance, validCoordinates };")],
+    "lib/worker.js": [(r"module\.exports = \{[^}]*\};", "")],
 }
 
 # يُحذف الاستيراد النسبي وحده (`./` و`../`): الملفات صارت واحداً فلا معنى له.

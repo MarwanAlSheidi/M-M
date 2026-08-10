@@ -535,8 +535,22 @@ Parse.Cloud.define('releaseAssignment', async (request) => {
     : await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
   if (!byImam && pointer.id !== user.id) E.forbidden('هذا الطلب غير مُسند إليك.');
 
-  // الغياب وحده يُقيَّد على المنفّذ؛ الانسحاب المُعلن لا يُعاقَب عليه
-  const noShow = byImam && reason === 'no_show';
+  /*
+   * الغياب وحده يُقيَّد على المنفّذ؛ الانسحاب المُعلن لا يُعاقَب عليه.
+   *
+   * **والموقوف لا يُقيَّد عليه غياب:** حسابُه مُنع من الدخول ومن `startWork`
+   * بيد الإدارة، فتغيّبُه فعلُ المنصّة لا فعلُه. وقِيس قبل هذا الشرط أن إيقاف
+   * متطوّعٍ مكلَّف ينتهي بـ`abandonedJobs = 1` عليه — وسمٌ يبقى بعد إعادة
+   * إتاحته ويقرؤه كل إمامٍ بعدها.
+   *
+   * والقيدُ هنا لا في الواجهة: الإمام لا يعرف حال حساب المنفّذ، ولا ينبغي.
+   */
+  // استعلامٌ صريح لا `fetchPointer`: تلك تُعيد المؤشّر كما هو إن ظنّته مُحمّلاً،
+  // و`isActive` قد لا يكون فيه — فيُقرأ الغياب من حقلٍ لم يُجلب.
+  const assignee = await new Parse.Query(Parse.User)
+    .get(pointer.id, { useMasterKey: true }).catch(() => null);
+  const suspended = Boolean(assignee) && assignee.get('isActive') === false;
+  const noShow = byImam && reason === 'no_show' && !suspended;
 
   // الرجوع إلى ما كان: طلبٌ بتكلفة مرّ بالتمويل، وطلب التطوّع العيني لا مال فيه
   const backTo = (serviceRequest.get('estimatedCost') || 0) > 0

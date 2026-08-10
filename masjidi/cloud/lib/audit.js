@@ -38,6 +38,8 @@ const ACTIONS = {
   // و`getMosqueAuditTrail` هي القارئ الوحيد وتستعلم بالمسجد — فقيدٌ بلا مسجد
   // لا يبلغ عيناً أبداً ثم يحذفه التقليم بعد 180 يوماً.
   CONTRACTOR_SUSPENDED: 'contractor_suspended',
+  // إيقافُ الحساب بيد الإدارة — يقع على أي دور، وكان يقع في صمتٍ تامّ
+  WORKER_SUSPENDED: 'worker_suspended',
   DONATION_REFUNDED: 'donation_refunded',
 };
 

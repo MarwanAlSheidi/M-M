@@ -437,6 +437,8 @@ const ACTIONS = {
   // و`getMosqueAuditTrail` هي القارئ الوحيد وتستعلم بالمسجد — فقيدٌ بلا مسجد
   // لا يبلغ عيناً أبداً ثم يحذفه التقليم بعد 180 يوماً.
   CONTRACTOR_SUSPENDED: 'contractor_suspended',
+  // إيقافُ الحساب بيد الإدارة — يقع على أي دور، وكان يقع في صمتٍ تامّ
+  WORKER_SUSPENDED: 'worker_suspended',
   DONATION_REFUNDED: 'donation_refunded',
 };
 
@@ -614,6 +616,101 @@ function normalizeArabic(text) {
 
 
 // ======================================================================
+// خروج المنفّذ من الميدان   [lib/worker.js]
+// ======================================================================
+
+/**
+ * حين يخرج المنفّذ من الميدان وله عملٌ قائم — من يُخبَر؟
+ *
+ * المنصّة تُخرج المنفّذ بطريقين: **سحبُ اعتماد الشركة** (`reviewContractor`)،
+ * و**إيقافُ الحساب** (`isActive = false` بيد الإدارة). والأوّل كان يُبلَّغ به
+ * أئمّةُ المساجد التي عنده فيها عمل، والثاني كان يقع في صمتٍ تامّ.
+ *
+ * وقِيس على خادمٍ حقيقي: أُوقف متطوّعٌ مكلَّفٌ بعملٍ في مسجد، فكانت النتيجة:
+ *
+ *     وارد الإمام:  1 ← 1        (لا خبر)
+ *     سجلّ المسجد:  3 ← 3        (لا قيد)
+ *     الموقوف مردود: «حسابك موقوف حالياً»
+ *     وُسم بالغياب:  abandonedJobs = 1
+ *
+ * **فالمنصّة تمنعه من الحضور، ولا تُخبر الإمام، ثم تُقيّد عليه غيابه.** والوسم
+ * يبقى بعد إعادة إتاحته، يقرؤه كل إمامٍ بعدها.
+ *
+ * فالحارس هنا لا عند المستدعي: الإيقاف يقع من `scripts/promote_admin.js`
+ * بالمفتاح الرئيس، وقد يقع غداً من دالّةٍ أخرى. ومن ربط البلاغ بالمستدعي ربطه
+ * بواحدٍ من أبوابٍ عدّة.
+ *
+ * **ولا يُسحب التكليف تلقائياً** — كما في سحب الاعتماد سواءً: عملٌ قد يكون
+ * نصفَ منجَز، وإسقاطه بلا معاينة يُضيّع جهداً بُذل في المسجد. تُعطى البيّنة
+ * ويبقى القرار للإمام.
+ */
+
+
+/** أعمالٌ قائمة: ما لم يُعتمد بعد. خروجُ المنفّذ يمسّ أصحابها لا المنفّذَ وحده. */
+const LIVE_STATUSES = ['assigned', 'in_progress', 'pending_imam_approval'];
+
+/** الاسم كما يعرفه الإمام: الشركة بسجلّها التجاري، والمتطوّع باسمه. */
+const describeWorker = (worker) => worker.get('companyName')
+  || worker.get('fullName') || 'المنفّذ المكلَّف';
+
+/**
+ * الأعمال القائمة المسنَدة إلى منفّذٍ — متطوّعاً كان أو شركة.
+ *
+ * استعلامان لا `Parse.Query.or`: الحقلان منفصلان على الخادم، والـ`or` صيغةٌ
+ * تختلف بين المحوّلين ويردّها `tests/portability.test.js`.
+ */
+async function liveAssignmentsOf(worker) {
+  const find = (field) => new Parse.Query('ServiceRequests')
+    .equalTo(field, worker)
+    .containedIn('status', LIVE_STATUSES)
+    .include('mosqueId')
+    .limit(100)
+    .find({ useMasterKey: true });
+
+  const [asVolunteer, asContractor] = await Promise.all([
+    find('assignedVolunteerId'), find('assignedContractorId'),
+  ]);
+  return [...asVolunteer, ...asContractor];
+}
+
+/**
+ * إبلاغ أئمّة المساجد التي عند المنفّذ فيها عملٌ قائم.
+ *
+ * @param {object} options.action فعلُ السجلّ (`audit.ACTIONS`)
+ * @param {function} options.alert يبني نصّ البلاغ من (الاسم، الطلب، المسجد)
+ * @returns {number} كم عملاً قائماً تأثّر
+ */
+async function warnImamsOfWorkerLoss(worker, { action, actor, alert }) {
+  const live = await liveAssignmentsOf(worker);
+  const name = describeWorker(worker);
+
+  for (const serviceRequest of live) {
+    const mosque = serviceRequest.get('mosqueId');
+    if (!mosque) continue;
+
+    // القيد على المسجد ليُقرأ في سجلّه — لا على المنفّذ حيث لا قارئ له
+    await audit.record({
+      action,
+      target: serviceRequest,
+      mosque,
+      actor,
+      note: `${name} — "${serviceRequest.get('title')}"`,
+    });
+
+    const imam = mosque.get('imamId');
+    if (imam) {
+      await pushToUsers(imam, {
+        alert: alert(name, serviceRequest, mosque),
+        requestId: serviceRequest.id,
+      });
+    }
+  }
+
+  return live.length;
+}
+
+
+// ======================================================================
 // المُشغّلات (beforeSave / afterSave)   [triggers.js]
 // ======================================================================
 
@@ -725,6 +822,32 @@ Parse.Cloud.beforeLogin(async (request) => {
  * قراءة بيانات مستخدم آخر تبقى ممكنة من دوال السحابة عبر Master Key.
  */
 Parse.Cloud.afterSave(Parse.User, async (request) => {
+  /*
+   * إيقافُ الحساب يُبلَّغ به من ينتظر صاحبه.
+   *
+   * قِيس على خادمٍ حقيقي: أُوقف متطوّعٌ مكلَّفٌ بعملٍ في مسجد، فلم يتغيّر وارد
+   * الإمام (1 ← 1) ولا سجلّ المسجد (3 ← 3)، ثم رُدَّ الموقوف عن `startWork`،
+   * ثم سحب الإمام التكليف بالغياب فصار `abandonedJobs = 1`.
+   * **المنصّة تمنعه من الحضور ثم تُقيّد عليه غيابه.**
+   *
+   * والحارس هنا لا عند المستدعي: الإيقاف يقع من `scripts/promote_admin.js`
+   * بالمفتاح الرئيس، وقد يقع غداً من دالّةٍ أخرى — ومن ربط البلاغ بمستدعٍ
+   * واحد تركه مفتوحاً عند البقيّة.
+   *
+   * ولا يُحفظ المستخدم هنا بحال، فلا حلقة.
+   */
+  const was = request.original;
+  if (was && was.get('isActive') !== false && request.object.get('isActive') === false) {
+    await warnImamsOfWorkerLoss(request.object, {
+      action: audit.ACTIONS.WORKER_SUSPENDED,
+      actor: null, // الإيقاف بالمفتاح الرئيس — لا فاعلَ في الجلسة يُنسب إليه
+      alert: (name, serviceRequest, mosque) =>
+        `أُوقف حساب ${name} المكلَّف بـ "${serviceRequest.get('title')}" `
+        + `في ${mosque.get('name')}، فلا يستطيع الحضور. عاين العمل، ولك سحب `
+        + `التكليف — ولن يُقيَّد عليه غياب.`,
+    });
+  }
+
   if (request.original) return; // تحديث، لا إنشاء — وهو أيضاً ما يمنع الحلقة اللانهائية
 
   const user = request.object;
@@ -2091,8 +2214,22 @@ Parse.Cloud.define('releaseAssignment', async (request) => {
     : await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
   if (!byImam && pointer.id !== user.id) E.forbidden('هذا الطلب غير مُسند إليك.');
 
-  // الغياب وحده يُقيَّد على المنفّذ؛ الانسحاب المُعلن لا يُعاقَب عليه
-  const noShow = byImam && reason === 'no_show';
+  /*
+   * الغياب وحده يُقيَّد على المنفّذ؛ الانسحاب المُعلن لا يُعاقَب عليه.
+   *
+   * **والموقوف لا يُقيَّد عليه غياب:** حسابُه مُنع من الدخول ومن `startWork`
+   * بيد الإدارة، فتغيّبُه فعلُ المنصّة لا فعلُه. وقِيس قبل هذا الشرط أن إيقاف
+   * متطوّعٍ مكلَّف ينتهي بـ`abandonedJobs = 1` عليه — وسمٌ يبقى بعد إعادة
+   * إتاحته ويقرؤه كل إمامٍ بعدها.
+   *
+   * والقيدُ هنا لا في الواجهة: الإمام لا يعرف حال حساب المنفّذ، ولا ينبغي.
+   */
+  // استعلامٌ صريح لا `fetchPointer`: تلك تُعيد المؤشّر كما هو إن ظنّته مُحمّلاً،
+  // و`isActive` قد لا يكون فيه — فيُقرأ الغياب من حقلٍ لم يُجلب.
+  const assignee = await new Parse.Query(Parse.User)
+    .get(pointer.id, { useMasterKey: true }).catch(() => null);
+  const suspended = Boolean(assignee) && assignee.get('isActive') === false;
+  const noShow = byImam && reason === 'no_show' && !suspended;
 
   // الرجوع إلى ما كان: طلبٌ بتكلفة مرّ بالتمويل، وطلب التطوّع العيني لا مال فيه
   const backTo = (serviceRequest.get('estimatedCost') || 0) > 0
@@ -3018,9 +3155,6 @@ function contractorStatusOf(user) {
   return user.get('contractorReviewedAt') ? 'revoked' : 'pending';
 }
 
-/** أعمالٌ قائمة: ما لم يُعتمد بعد. السحب يمسّ أصحابها لا الشركة وحدها. */
-const LIVE_STATUSES = ['assigned', 'in_progress', 'pending_imam_approval'];
-
 /**
  * إبلاغ أئمّة المساجد التي عند الشركة فيها عملٌ قائم.
  *
@@ -3028,45 +3162,16 @@ const LIVE_STATUSES = ['assigned', 'in_progress', 'pending_imam_approval'];
  * المسجد — وهو من يتحمّل نتيجة عملٍ يجري في مسجده — لا يعلم. والمشرف يظنّ
  * أنه أوقف شيئاً ولا يُعاد إليه ما أوقف.
  *
- * ولا يُسحب التكليف تلقائياً: عملٌ قد يكون نصفَ منجَز، وإسقاطه بلا معاينةٍ
- * يُضيّع جهداً بُذل في المسجد. تُعطى البيّنة ويبقى القرار للإمام — وله
- * `releaseAssignment` قبل بدء التنفيذ.
+ * والمنطق مشترَكٌ مع إيقاف الحساب في `lib/worker.js`: خروجُ المنفّذ من
+ * الميدان بابان، ومن كتب البلاغ عند أحدهما تركه مفتوحاً عند الآخر.
  */
-async function warnImamsOfSuspension(contractor, admin) {
-  const live = await new Parse.Query('ServiceRequests')
-    .equalTo('assignedContractorId', contractor)
-    .containedIn('status', LIVE_STATUSES)
-    .include('mosqueId')
-    .limit(100)
-    .find({ useMasterKey: true });
-
-  const company = contractor.get('companyName') || contractor.get('fullName') || 'الشركة المكلَّفة';
-
-  for (const serviceRequest of live) {
-    const mosque = serviceRequest.get('mosqueId');
-    if (!mosque) continue;
-
-    // القيد على المسجد ليُقرأ في سجلّه — لا على الشركة حيث لا قارئ له
-    await audit.record({
-      action: audit.ACTIONS.CONTRACTOR_SUSPENDED,
-      target: serviceRequest,
-      mosque,
-      actor: admin,
-      note: `${company} — "${serviceRequest.get('title')}"`,
-    });
-
-    const imam = mosque.get('imamId');
-    if (imam) {
-      await pushToUsers(imam, {
-        alert: `سُحب اعتماد ${company} المكلَّفة بـ "${serviceRequest.get('title')}" `
-          + `في ${mosque.get('name')}. عاين العمل، ولك سحب التكليف إن لم يبدأ.`,
-        requestId: serviceRequest.id,
-      });
-    }
-  }
-
-  return live.length;
-}
+const warnImamsOfSuspension = (contractor, admin) => warnImamsOfWorkerLoss(contractor, {
+  action: audit.ACTIONS.CONTRACTOR_SUSPENDED,
+  actor: admin,
+  alert: (name, serviceRequest, mosque) =>
+    `سُحب اعتماد ${name} المكلَّفة بـ "${serviceRequest.get('title')}" `
+    + `في ${mosque.get('name')}. عاين العمل، ولك سحب التكليف إن لم يبدأ.`,
+});
 
 /** اعتماد شركة أو سحب اعتمادها — مشرف فقط. */
 Parse.Cloud.define('reviewContractor', async (request) => {
