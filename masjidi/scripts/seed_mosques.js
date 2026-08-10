@@ -5,7 +5,7 @@
  * قابل لإعادة التشغيل (idempotent): يعتمد على externalId، فإعادة التشغيل
  * تُحدّث ولا تُكرّر. يستخدم Master Key، لذا يُشغّل من جهازك أو من CI فقط.
  *
- *   node scripts/seed_mosques.js            # استيراد كامل
+ *   node scripts/seed_mosques.js --all      # استيراد كامل — يُطلب صراحةً
  *   node scripts/seed_mosques.js --limit 100  # تجربة سريعة
  *   node scripts/seed_mosques.js --dry-run
  *   node scripts/seed_mosques.js --verify   # فحص التكرار بلا كتابة
@@ -50,6 +50,29 @@ const governorate = args.includes('--governorate')
   ? (args[args.indexOf('--governorate') + 1] || '').trim()
   : null;
 const allowDuplicates = args.includes('--allow-duplicates');
+
+/**
+ * الاستيراد الكامل يُطلب صراحةً — حمايةً لباقة المُشغّل في أوّل ساعة.
+ *
+ * `docs/DEPLOY.md` يقول: «شغّل محافظةً أولاً، وانظر عدّاد الطلبات في لوحة
+ * Back4app، ثم استورد الباقي». **وكان ذلك نصيحةً في وثيقةٍ لا يسندها السكربت**
+ * — ومن يقرأ `npm run seed` يُشغّلها.
+ *
+ * والكلفة مقيسة: SDK يجمع عشرين كائناً في طلب HTTP واحد، فالاستيراد الكامل
+ * ≈911 طلباً. لكن **إن كان Back4app يحتسب كل كائنٍ داخل الدفعة طلباً مستقلاً**
+ * صارت الكلفة ≈18,214 — أي ثلاثة أرباع الباقة المجانية (25 ألفاً) في عمليةٍ
+ * واحدة، **قبل أن يصل المنصّةَ مستخدمٌ واحد**. ولا تراجع فيها.
+ *
+ * فلا يُمنع الاستيراد الكامل — يُطلب باسمه. ومن قصده يكتب `--all` في ثانية،
+ * ومن لم يقصده يُنجَّى من خسارةٍ لا تُستردّ.
+ */
+const importAll = args.includes('--all');
+
+/** الطلبات التي يُنفقها استيراد `count` سجلاً، بالاحتسابين. */
+const requestCost = (count) => ({
+  batched: Math.ceil(count / 20),
+  perObject: count,
+});
 
 function initParse() {
   const { PARSE_APP_ID, PARSE_MASTER_KEY, PARSE_JS_KEY, PARSE_SERVER_URL } = process.env;
@@ -161,6 +184,26 @@ async function main() {
 
   const records = pool.slice(0, limit);
   console.log(`→ ${records.length} سجلاً جاهزاً للاستيراد`);
+
+  /*
+   * البابُ الوحيد الذي لا رجعة منه: كلُّ ما عداه في هذا السكربت idempotent
+   * ويُعاد تشغيله بلا ثمن، **وإنفاقُ الباقة لا يُعاد**.
+   */
+  const wholeCountry = !importAll && limit === Infinity && !governorate;
+  if (wholeCountry && !dryRun && !verifyOnly) {
+    const cost = requestCost(records.length);
+    console.error(`✗ هذا استيرادٌ كامل: ${records.length} مسجداً.`);
+    console.error(`  الكلفة المقيسة: ≈${cost.batched} طلباً إن احتُسبت الدفعة طلباً،`);
+    console.error(`  و≈${cost.perObject} إن احتُسب كلُّ كائنٍ على حدة — من باقةٍ شهرية 25,000.`);
+    console.error('');
+    console.error('  ابدأ بمحافظةٍ واحدة وانظر عدّاد الطلبات في لوحة Back4app:');
+    console.error('    node scripts/seed_mosques.js --governorate musandam   # 264 مسجداً');
+    console.error('');
+    console.error('  فإن تبيّن أن الاحتساب يحتمله:');
+    console.error('    node scripts/seed_mosques.js --all');
+    process.exitCode = 1;
+    return;
+  }
 
   const withdrawn = records.filter((row) => verdicts.has(row.externalId)).length;
   const unlocated = records.filter((row) => !row.hasLocation).length;
