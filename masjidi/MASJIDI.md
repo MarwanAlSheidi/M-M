@@ -59,7 +59,7 @@
 | دوال السحابة | ✅ مكتوبة ومُشغَّلة على `parse-server` حقيقي فوق PostgreSQL. ❌ لم تُجرَّب على MongoDB (وهو ما يعمل عليه Back4app) |
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
-| تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
+| تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA **يُثبَّت ويعمل بلا إنترنت** — ويحرسه `verify:pwa`. و**React Native ليس ناقصاً بل غير مطلوب**: الواجهة تُثبَّت على أندرويد وiOS، وعميلٌ ثانٍ يُضاعف السطح بلا أثرٍ للمستخدم في المرحلة الأولى |
 | الاختبارات | ✅ 312 حالة على بديل Parse (`npm test`) + 150 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 29 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
@@ -208,6 +208,7 @@ scripts/
   apply_schema.js      تطبيق schema.json — الحقول والصلاحيات والفهارس
   promote_admin.js     ترقية حساب إلى مشرف، وإيقاف حسابٍ وإعادته
   preflight.js         `npm run preflight` — فحص الخادم المنشور قبل أوّل مستخدم
+  verify.js            `npm run verify` — الطبقات الخمس، ويعدّ التخطّي سقوطاً
   resolve_locations.js استخراج مواقع المساجد المجهولة من OpenStreetMap — مجاناً، ويكتب تراكباً لا قاعدة
   lib/place-match.js   قبول موقعٍ من الخرائط أو ردُّه — نتيجتُه مرشَّحٌ لا حقيقة
   lib/mosque-record.js تحضير السجلّ للاستيراد — المصدر الواحد للاستيراد والمِرقاة
@@ -10926,7 +10927,8 @@ files/
     "seed:verify": "node scripts/seed_mosques.js --verify",
     "test:e2e": "node --test --test-timeout=180000 tests/e2e/*.test.js",
     "admin": "node scripts/promote_admin.js",
-    "preflight": "node scripts/preflight.js"
+    "preflight": "node scripts/preflight.js",
+    "verify": "node scripts/verify.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
