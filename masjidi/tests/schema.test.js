@@ -75,6 +75,51 @@ test('المخطط', async (t) => {
     assert.ok(classOf('Mosques').classLevelPermissions.protectedFields['*']
       .includes('walletBalance'));
   });
+
+  /*
+   * **وما يُقفل في الملفّ يُفحص على القاعدة.**
+   *
+   * كلُّ ما فوق يقرأ `cloud/schema.json` — أي **النيّة**. والحقيقة في القاعدة:
+   * قِيس أن فتح `ServiceRequests` بضغطةٍ من اللوحة يجعل غريباً يمحو طلباً ليس
+   * له، والملفُّ على حاله. فصار `preflight` يقرأ الأقفال من القاعدة الحيّة.
+   *
+   * وقائمتاه مكتوبتان فيه لا مقروءتان من الملفّ — **وذلك مقصود**: مقابلةُ
+   * الملفّ بنفسه تُخضِّر الحالةَ التي نبحث عنها بعينها (ملفٌّ صحيحٌ لم يُطبَّق).
+   * وثمنُها أن تنحرف القائمة عن الملفّ، **وصنفٌ يُقفل هناك ولا يُذكر هنا يبقى
+   * بلا فحص إلى الأبد ولا يسأل عنه أحد**. فهذا هو الحارس على ذلك الثمن.
+   */
+  await t.test('وكلُّ مقفلٍ ومحجوبٍ في الملفّ مذكورٌ في preflight', () => {
+    const source = fs.readFileSync(path.join(CLOUD, 'functions', 'preflight.js'), 'utf8');
+
+    const listed = (name) => {
+      const hit = source.match(new RegExp(`const ${name} = \\[([^\\]]*)\\]`));
+      return hit ? hit[1].match(/'([^']+)'/g).map((s) => s.slice(1, -1)) : [];
+    };
+    const hiddenBlock = source.match(/const HIDDEN_FIELDS = \{([\s\S]*?)\n\};/);
+
+    // **أداةُ القياس تُقاس أولاً**: استخراجٌ نمطيّ يُخفق صامتاً إن تغيّرت
+    // الصياغة، فيصير «لا انحراف» معناه «لم أقرأ شيئاً»
+    const locked = listed('LOCKED_CLASSES');
+    assert.ok(locked.length >= 5, `لم يُقرأ LOCKED_CLASSES من المصدر (${locked.length})`);
+    assert.ok(hiddenBlock, 'لم يُقرأ HIDDEN_FIELDS من المصدر');
+
+    for (const definition of schema.classes) {
+      const clp = definition.classLevelPermissions || {};
+      const shut = ['create', 'update', 'delete']
+        .every((door) => clp[door] && Object.keys(clp[door]).length === 0);
+      if (!shut) continue;
+      assert.ok(locked.includes(definition.className),
+        `${definition.className} مقفلٌ في المخطط وغير مذكورٍ في LOCKED_CLASSES — فقفلُه بلا فحص`);
+    }
+
+    for (const definition of schema.classes) {
+      const hidden = (definition.classLevelPermissions || {}).protectedFields;
+      for (const field of (hidden && hidden['*']) || []) {
+        assert.match(hiddenBlock[1], new RegExp(`'${field}'`),
+          `${definition.className}.${field} محجوبٌ في المخطط وغير مفحوصٍ في HIDDEN_FIELDS`);
+      }
+    }
+  });
 });
 
 test('نقاط الدخول', async (t) => {

@@ -16,6 +16,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { startStack, applySchema, seedMosques, unavailableReason } = require('./harness');
 
@@ -160,6 +162,83 @@ test('فحص ما قبل الإطلاق', options, async (t) => {
      */
     assert.match(text, /أخضرَ كاذباً/, 'يُقال «لا يُفحص» ولا يُقال لماذا');
     assert.match(text, /بحساب متطوّع/, 'لا يُدلّ القارئ على كيف يفحصه بنفسه');
+  });
+
+  /*
+   * **القفل يُقرأ من القاعدة لا من الملفّ.**
+   *
+   * كلُّ ما يمنع الكتابة من متصفّح في هذه المنصّة صلاحياتٌ في المخطط، وعلى
+   * الحذف **لا حارس غيرها**: لا `beforeDelete` في المستودع كلِّه. وقِيس على
+   * خادمٍ حقيقي أن فتح `ServiceRequests` بضغطةٍ يجعل متطوّعاً غريباً يمحو طلباً
+   * ليس له — والفحص لا يتغيّر فيه حرف: ستّةَ عشرَ فحصاً لا واحدَ منها يذكر
+   * الصلاحيات.
+   *
+   * والاختبار يؤكّد **أن الباب يُسمّى**، لا أن التقرير احمرّ: تقريرٌ أحمرُ
+   * لسببٍ آخر يمرّ على `assert.equal(ok, false)` والفحصُ لا يعمل.
+   */
+  await t.test('وقفلٌ يُفتح على القاعدة الحيّة يُرى ويُسمّى', async () => {
+    const named = (report) => report.checks.find((row) => row.name.includes('الكتابة من العميل'));
+
+    const before = named(await run());
+    assert.ok(before, 'الصلاحيات لا تُفحص أصلاً');
+    assert.equal(before.ok, true, `القفل المكتوب يُقرأ مفتوحاً: ${before.detail}`);
+
+    const written = JSON.parse(fs.readFileSync(
+      path.join(__dirname, '..', '..', 'cloud', 'schema.json'), 'utf8'))
+      .classes.find((row) => row.className === 'ServiceRequests').classLevelPermissions;
+
+    const open = new Parse.Schema('ServiceRequests');
+    open.setCLP({ ...written, create: { '*': true }, delete: { '*': true } });
+    await open.update();
+
+    try {
+      const report = await run();
+      const row = named(report);
+      assert.equal(row.ok, false, 'فُتح بابان ومرّ الفحص أخضر');
+
+      // ويُسمّى البابُ ومن فُتح له — لا «الصلاحيات غير مطابقة»
+      assert.match(row.detail, /ServiceRequests\.create/, `لم يُسمَّ الباب: ${row.detail}`);
+      assert.match(row.detail, /ServiceRequests\.delete/, `ذُكر بابٌ وسُكت عن آخر: ${row.detail}`);
+      assert.doesNotMatch(row.detail, /Mosques|AuditLog/,
+        `اتُّهم صنفٌ قفلُه سليم: ${row.detail}`);
+      assert.match(row.why, /beforeDelete|حارس آخر|npm run schema/,
+        'قيل إن الباب مفتوح ولم يُقل ما العمل');
+
+      assert.ok(report.failed.includes(row.name), 'سقط الفحص ولم يُذكر في الخلاصة');
+    } finally {
+      const restore = new Parse.Schema('ServiceRequests');
+      restore.setCLP(written);
+      await restore.update();
+    }
+
+    // وبعد الإعادة يعود أخضر — فليس أحمرَ دائماً بسببٍ لا صلة له
+    assert.equal(named(await run()).ok, true, 'بقي أحمرَ بعد إعادة القفل — فهو ضجيج');
+  });
+
+  await t.test('والحقول المحجوبة تُقرأ من القاعدة كذلك', async () => {
+    const named = (report) => report.checks.find((row) => row.name.includes('المحجوبة'));
+    const before = named(await run());
+    assert.ok(before, 'الحقول المحجوبة لا تُفحص أصلاً');
+    assert.equal(before.ok, true, `الحجب المكتوب يُقرأ ساقطاً: ${before.detail}`);
+
+    const clp = (await new Parse.Schema('_User').get({ useMasterKey: true }))
+      .classLevelPermissions;
+    const stripped = new Parse.Schema('_User');
+    stripped.setCLP({ ...clp, protectedFields: { '*': ['crNumber'] } });
+    await stripped.update();
+
+    try {
+      const row = named(await run());
+      assert.equal(row.ok, false, 'كُشف هاتف كلِّ إمامٍ ومرّ الفحص أخضر');
+      assert.match(row.detail, /phone/, `لم يُسمَّ الحقل المكشوف: ${row.detail}`);
+      assert.doesNotMatch(row.detail, /crNumber/, `عُدّ محجوبٌ مكشوفاً: ${row.detail}`);
+    } finally {
+      const restore = new Parse.Schema('_User');
+      restore.setCLP(clp);
+      await restore.update();
+    }
+
+    assert.equal(named(await run()).ok, true, 'بقي أحمرَ بعد إعادة الحجب');
   });
 
   await t.test('ولا يُفتح لغير المفتاح الرئيسي — يكشف بنيةً وأعداداً', async () => {

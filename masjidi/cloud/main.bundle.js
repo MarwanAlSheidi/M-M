@@ -3594,6 +3594,38 @@ const REQUIRED_CLASSES = [
 ];
 
 /**
+ * الأصناف التي **لا يكتب فيها عميلٌ بحال** — إنشاءً ولا تعديلاً ولا حذفاً.
+ *
+ * وهذه ليست تفضيلاً بل هي **الطبقة الوحيدة** على الحذف: الكتابة يحرسها
+ * `beforeSave` فوق الصلاحيات، **ولا `beforeDelete` في المستودع كلِّه**. وقِيس
+ * على خادمٍ حقيقي بفتح `ServiceRequests` بضغطةٍ كما تُفتح من لوحة Back4app:
+ *
+ *     بالقفل المكتوب — حذفَ غريبٌ الطلب: رُدّ (119) Permission denied
+ *     بالقفل المفتوح — حذفَ غريبٌ الطلب: **نجح** · ذهب فعلاً من القاعدة
+ *
+ * متطوّعٌ لا صلة له بالطلب محاه. ولو كان `AuditLog` لَمَحا الشفافيةَ نفسها.
+ *
+ * والقائمة تُقابَل بـ`cloud/schema.json` في `tests/schema.test.js`: صنفٌ يُقفل
+ * هناك ولا يُذكر هنا يبقى بلا فحص، وهو أخطر من ألّا يُقفل — لأن أحداً لن يسأل.
+ */
+const LOCKED_CLASSES = [
+  'Mosques', 'MosqueClaims', 'ServiceRequests',
+  'Transactions', 'TaskInterests', 'AuditLog', 'Notifications',
+];
+
+/**
+ * ما لا يصل العميلَ ولو قرأ الصفّ — `protectedFields` وحدها تحجبه.
+ *
+ * `_User` مقصودٌ هنا وليس في المقفلة: التسجيل يكتب عليه، فبابُ الإنشاء مفتوحٌ
+ * قصداً. والحاجب الوحيد على هاتف الإمام هو هذا السطر.
+ */
+const HIDDEN_FIELDS = {
+  Mosques: ['walletBalance', 'dataQuality'],
+  Transactions: ['donorId', 'paymentSessionId', 'paymentGatewayRef'],
+  _User: ['phone', 'lastKnownLocation', 'crNumber'],
+};
+
+/**
  * عدُّ كلِّ سجلّات صنف.
  *
  * **لا تُستعمل `count()` بلا قيد:** قِيست على `parse-server` فوق PostgreSQL
@@ -3672,6 +3704,76 @@ async function queryForms() {
           .include('mosqueId').include('mosqueId.imamId').limit(1)
           .find({ useMasterKey: true });
         return `${rows.length} طلباً`;
+      }),
+  ]);
+}
+
+/**
+ * الأقفال كما هي في القاعدة الآن — لا كما كُتبت في `cloud/schema.json`.
+ *
+ * **العطب الذي يسدّه:** كلُّ ما يمنع العميل من الكتابة في هذه المنصّة صلاحياتٌ
+ * في المخطط، ولا شيء غيرها على الحذف. وقِيس: فُتح `ServiceRequests` على خادمٍ
+ * حقيقي بـ`create/update/delete: {"*":true}`، ثم شُغّل الفحص:
+ *
+ *     قبل الفتح — الساقط: ["الفهرس الفريد على Mosques.externalId"]  · 16 فحصاً
+ *     بعد الفتح — الساقط: ["الفهرس الفريد على Mosques.externalId"]  · لا شيء تغيّر
+ *
+ * ستّةَ عشرَ فحصاً **لا واحدَ منها يذكر الصلاحيات**. وثلاثة أبوابٍ تُفتح من
+ * لوحة Back4app بثلاث ضغطات، أو لا تُطبَّق أصلاً إن تعثّر `npm run schema` —
+ * ولا يقول ذلك أحد.
+ *
+ * ولا يُقرأ الملفّ للمقابلة: **الحقيقة في القاعدة**. وملفٌّ صحيحٌ لم يُطبَّق هو
+ * الحالة التي نبحث عنها بعينها، فمقابلةُ الملفّ بنفسه تُخضِّرها.
+ */
+async function permissions() {
+  /** يقرأ صلاحيات صنفٍ من القاعدة، أو يُعيد سببَ تعذّرها. */
+  const clpOf = async (className) => new Parse.Schema(className)
+    .get({ useMasterKey: true })
+    .then((schema) => ({ clp: schema.classLevelPermissions || {} }))
+    .catch((error) => ({ failed: (error && error.message) || String(error) }));
+
+  return Promise.all([
+    check('الكتابة من العميل مقفلة (CLP)',
+      'هذه الأقفال هي كلُّ ما يمنع الكتابة من متصفّح، ولا حارس آخر على الحذف — '
+      + 'أعِد `npm run schema`، ولا تفتحها من اللوحة',
+      async () => {
+        const open = [];
+        await Promise.all(LOCKED_CLASSES.map(async (className) => {
+          const { clp, failed } = await clpOf(className);
+          if (failed) { open.push(`${className}: تعذّرت قراءة صلاحياته — ${failed}`); return; }
+
+          for (const door of ['create', 'update', 'delete']) {
+            const who = clp[door];
+            /*
+             * الغياب يُعدّ فتحاً لا قفلاً: `parse-server` يعيد المفاتيح كلَّها
+             * صريحةً (قِيس: `{}` للمقفل و`{"*":true}` للافتراضي)، فمفتاحٌ غائبٌ
+             * يعني محوّلاً يتكلّم غير ما نعرف — **وغيابُ البيّنة ليس بيّنةَ قفل**.
+             */
+            if (!who) { open.push(`${className}.${door}: لا جواب`); continue; }
+            const granted = Object.keys(who);
+            if (granted.length) open.push(`${className}.${door} ← ${granted.join('، ')}`);
+          }
+        }));
+
+        if (open.length) throw new Error(`أبوابٌ مفتوحة: ${open.join(' · ')}`);
+        return `${LOCKED_CLASSES.length} أصنافاً مقفلة`;
+      }),
+
+    check('الحقول المحجوبة محجوبةٌ فعلاً (protectedFields)',
+      'هواتف الأئمة ومراجع الدفع وأرصدة المساجد — تُقرأ من العميل إن سقط الحجب',
+      async () => {
+        const exposed = [];
+        await Promise.all(Object.entries(HIDDEN_FIELDS).map(async ([className, fields]) => {
+          const { clp, failed } = await clpOf(className);
+          if (failed) { exposed.push(`${className}: تعذّرت قراءة صلاحياته — ${failed}`); return; }
+
+          const hidden = (clp.protectedFields && clp.protectedFields['*']) || [];
+          const gap = fields.filter((field) => !hidden.includes(field));
+          if (gap.length) exposed.push(`${className}: ${gap.join('، ')}`);
+        }));
+
+        if (exposed.length) throw new Error(`مكشوفة للعميل: ${exposed.join(' · ')}`);
+        return `${Object.keys(HIDDEN_FIELDS).length} أصنافاً محجوبة الحقول`;
       }),
   ]);
 }
@@ -3816,7 +3918,9 @@ Parse.Cloud.define('preflight', async (request) => {
       }),
   ]);
 
-  const results = [...classes, ...forms, ...blockers, ...(await manualSteps())];
+  const results = [
+    ...classes, ...forms, ...(await permissions()), ...blockers, ...(await manualSteps()),
+  ];
 
   return {
     ok: results.every((row) => row.ok),
