@@ -749,6 +749,19 @@ Parse.Cloud.beforeSave('Mosques', async (request) => {
   }
 });
 
+/**
+ * الطلبات تُنشأ وتُحدّث عبر دوال السحابة وحدها.
+ *
+ * ولا حارسَ تحوّلٍ هنا. جُرّب: `request.original` **لا يعكس ما كتبه المتوازي
+ * معه** — نداءان متوازيان يقرآن الحالة قبل أن يكتب أحدهما، فالحارس لم يمنع
+ * شيئاً في القياس. ثم تبيّن أنه يكسر ما يعمل: `payoutContractor` يكتب
+ * `isPaidOut` على طلبٍ **منجَز**، فمنعُ تعديل المُقفَل يقطع الصرف — وهو مسارٌ
+ * معطّلٌ اليوم بقرار، فكان العطب سيظهر بعد أشهرٍ عند تفعيل التبرعات وحدها.
+ *
+ * **وما لا يُرى ساقطاً ولا يُصلح شيئاً لا يُترك في الطريق.** وعلاجُ التزامن
+ * حيث وقع أثرُه: `recordWorkerRating` تشتقّ العدد من الطلبات لا تزيده،
+ * و`assignWorker` لا تُبشّر إلا من صار التكليف له.
+ */
 Parse.Cloud.beforeSave('ServiceRequests', async (request) => {
   if (!request.master) {
     throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'الطلبات تُنشأ وتُحدّث عبر دوال السحابة فقط.');
@@ -1920,6 +1933,23 @@ Parse.Cloud.define('assignWorker', async (request) => {
 
   await closeInterests(serviceRequest);
 
+  /**
+   * لا يُبشَّر إلا من صار التكليف له فعلاً.
+   *
+   * قِيس بنداءين متوازيين لمنفّذين مختلفين: نجحا معاً، وكُتب الثاني في القاعدة،
+   * **وأُخبر كلاهما بأنه كُلِّف**. فيسافر أحدهما إلى المسجد وليس له فيه عمل —
+   * وهو أشدُّ من ضياع النداء نفسه.
+   *
+   * والقراءة بعد الحفظ تقول من صار له: من لم يكن هو، لا يُرسَل إليه شيء.
+   */
+  const settled = await new Parse.Query('ServiceRequests')
+    .get(serviceRequest.id, { useMasterKey: true }).catch(() => null);
+  const holder = settled
+    && (settled.get('assignedContractorId') || settled.get('assignedVolunteerId'));
+  if (!holder || holder.id !== worker.id) {
+    E.invalid('كُلِّف غيرك بهذا الطلب في هذه اللحظة — حدّث القائمة وأعد المحاولة.');
+  }
+
   await pushToUsers(worker, {
     alert: `تم تكليفك بـ "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
     requestId: serviceRequest.id,
@@ -2133,7 +2163,7 @@ Parse.Cloud.define('completeService', async (request) => {
   serviceRequest.set('volunteerHours', Math.min(Number(volunteerHours) || 0, 24));
   await serviceRequest.save(null, { useMasterKey: true });
 
-  await recordWorkerRating(serviceRequest, score);
+  await recordWorkerRating(serviceRequest);
 
   await audit.record({
     action: audit.ACTIONS.REQUEST_COMPLETED,
@@ -2201,21 +2231,53 @@ Parse.Cloud.define('cancelServiceRequest', async (request) => {
  * تحديث سجل المنفّذ عند اعتماد العمل.
  *
  * `completedJobs` و`avgRating` كانا معرّفين في المخطط ولا يُكتبان أبداً، فتقييم
- * المنفّذين معطّل فعلياً. المتوسط يُحسب تراكمياً من العدد السابق فلا نحتفظ بكل
- * التقييمات. قراءة‑ثم‑كتابة هنا مقبولة: اعتمادان متزامنان للمنفّذ نفسه نادران
- * وأثرهما تقييم منحرف قليلاً لا مال ضائع — بخلاف `walletBalance`.
+ * المنفّذين معطّل فعلياً.
+ *
+ * **والحساب من الطلبات لا بالزيادة.** كان `increment` وقراءةً‑ثم‑كتابة، وقيل
+ * إن اعتمادين متزامنين «نادران وأثرهما تقييم منحرف قليلاً». وقِيس على خادمٍ
+ * حقيقي بنداءين متوازيين — وهو ما تفعله ضغطتان على زرٍّ لا يُعطَّل بينهما:
+ * **`completedJobs = 2` لعملٍ واحد.** وليس انحرافاً قليلاً: هي السمعة التي
+ * يقرؤها الإمام ليختار، والتي حُصّنت للتوّ من أن يكتبها صاحبها.
+ *
+ * والعلاج ليس حارساً على التزامن — جُرّب `beforeSave` بـ`request.original`
+ * فلم يمنع شيئاً: المتوازيان يقرآن الحالة قبل أن يكتب أحدهما. **بل أن يُشتقّ
+ * العدد من مصدره:** الطلبات المنجَزة المسنَدة إليه. فاعتمادٌ مرّتين لطلبٍ
+ * واحد يعطي واحداً، لأن الطلب واحد.
+ *
+ * وهو نمط `openRequestsCount` نفسه في `triggers.js`: يُحسب باستعلامٍ لا
+ * بعدّادٍ يُزاد — **وما يُشتقّ لا ينحرف، وما ينحرف لا يُصحَّح إلا بيد.**
+ * وفوق ذلك **يُصلح ما انحرف قبله**: أوّل اعتمادٍ بعد هذا يُعيد العدّ إلى صوابه.
  */
-async function recordWorkerRating(serviceRequest, score) {
+const RATING_SAMPLE = 1000;
+
+async function recordWorkerRating(serviceRequest) {
   const pointer = serviceRequest.get('assignedContractorId')
     || serviceRequest.get('assignedVolunteerId');
   if (!pointer) return;
 
-  const worker = await fetchPointer(pointer, '_User');
-  const done = worker.get('completedJobs') || 0;
-  const average = worker.get('avgRating');
+  const field = serviceRequest.get('assignedContractorId')
+    ? 'assignedContractorId' : 'assignedVolunteerId';
+  const completedBy = () => new Parse.Query('ServiceRequests')
+    .equalTo(field, pointer)
+    .equalTo('status', STATUS.COMPLETED);
 
-  worker.set('avgRating', average == null ? score : ((average * done) + score) / (done + 1));
-  worker.increment('completedJobs', 1);
+  // العدد بالعدّ لا بالجلب: لا سقف عليه
+  const done = await completedBy().count({ useMasterKey: true });
+
+  // والمتوسط على آخر ألف — سقفٌ معلَنٌ خيرٌ من جلبٍ بلا حدّ
+  const rated = await completedBy()
+    .select('imamRating').descending('createdAt').limit(RATING_SAMPLE)
+    .find({ useMasterKey: true });
+  const scores = rated.map((row) => row.get('imamRating'))
+    .filter((value) => typeof value === 'number');
+
+  const worker = await fetchPointer(pointer, '_User');
+  worker.set('completedJobs', done);
+  if (scores.length) {
+    worker.set('avgRating', scores.reduce((sum, value) => sum + value, 0) / scores.length);
+  } else {
+    worker.unset('avgRating');
+  }
   await worker.save(null, { useMasterKey: true });
 }
 
