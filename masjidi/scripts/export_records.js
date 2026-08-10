@@ -50,7 +50,13 @@ const SKIPPED = {
   Notifications: 'خبرٌ عاجل لا سجلّ — والأثر الدائم في `AuditLog`',
 };
 
-const PAGE = 500;
+/**
+ * حجم الصفحة — ويُضبط من البيئة ليُختبر التصفّح فعلاً.
+ *
+ * بلا ذلك لا يُقاس التصفّح إلا بستّمئة صفٍّ حقيقي في كل تشغيل، فيُترك بلا
+ * حارس — **وهو أخطر ما في السكربت**.
+ */
+const PAGE = Math.max(Number(process.env.MASJIDI_EXPORT_PAGE) || 500, 1);
 
 const args = process.argv.slice(2);
 const only = args.includes('--class') ? args[args.indexOf('--class') + 1] : null;
@@ -59,9 +65,18 @@ const outArg = args.includes('--out') ? args[args.indexOf('--out') + 1] : null;
 /**
  * يقرأ صنفاً كاملاً بالصفحات.
  *
- * الترتيب صريحٌ بـ`createdAt`: بلا ترتيبٍ يكون التقسيم بالصفحات عشوائياً،
- * **فيتكرّر صفٌّ ويسقط آخر بلا أن يُعرف** — وهو أسوأ ما يقع في نسخةٍ احتياطية،
- * إذ لا يُكتشف إلا يوم يُحتاج إليها.
+ * **والترتيب بمفتاحين لا بواحد.** كان بـ`createdAt` وحده، وفوقه تعليقٌ يقول إن
+ * ذلك يمنع أن «يتكرّر صفٌّ ويسقط آخر بلا أن يُعرف». **ولم يمنعه**: الطابع ليس
+ * فريداً — وصفوفٌ تُكتب دفعةً واحدة (`saveAll` في `closeInterests`
+ * و`warnImamsOfWorkerLoss`) تحمل الطابع نفسه، وترتيبُ المتساويَين غير معرَّف.
+ *
+ * وقِيس على خادمٍ حقيقي بأربعين قيداً كُتبت دفعةً:
+ *
+ *     بالتصفّح: 56 صفّاً، منها 50 فريداً — **مفقود 6**
+ *     وبإضافة `objectId`: 56 من 56، مفقود 0
+ *
+ * **وضياعٌ صامتٌ في نسخةٍ احتياطية أسوأ ما يكون**: لا يُكتشف إلا يوم يُحتاج
+ * إليها، وحينها لا يُعرف ما الذي ضاع أصلاً.
  */
 async function readAll(className) {
   const rows = [];
@@ -69,7 +84,7 @@ async function readAll(className) {
 
   for (;;) {
     const page = await new Parse.Query(className)
-      .ascending('createdAt').skip(skip).limit(PAGE)
+      .ascending('createdAt').addAscending('objectId').skip(skip).limit(PAGE)
       .find({ useMasterKey: true });
 
     rows.push(...page.map((row) => row.toJSON()));

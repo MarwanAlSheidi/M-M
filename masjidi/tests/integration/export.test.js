@@ -140,4 +140,46 @@ test('السجلّ يُصدَّر، ولا تُصدَّر معه أسرارُ ا
   await t.test('ويقول على أي خادمٍ عمل — كسائر الأدوات', () => {
     assert.match(output, /التصدير على/, 'أداةٌ تقرأ خادماً ولا تقول أيَّه');
   });
+
+  await t.test('ولا يسقط صفٌّ في التصفّح ولو تساوت الطوابع', async () => {
+    /*
+     * أخطرُ ما في نسخةٍ احتياطية: أن تنقص ولا يُعلم.
+     *
+     * `createdAt` **ليس فريداً**: صفوفٌ تُكتب دفعةً واحدة (`saveAll` في
+     * `closeInterests` و`warnImamsOfWorkerLoss`) تحمل الطابع نفسه، وترتيبُ
+     * المتساويَين غير معرَّف — فيتكرّر صفٌّ في صفحةٍ ويسقط آخر.
+     *
+     * وقِيس قبل الإصلاح: 56 صفّاً، منها 50 فريداً — **مفقود 6**.
+     * فيلزم مفتاحٌ ثانٍ فريد (`objectId`).
+     */
+    const Log = Parse.Object.extend('AuditLog');
+    const batch = Array.from({ length: 60 }, (_, i) => {
+      const row = new Log();
+      row.set({ action: 'request_created', targetClass: 'Probe', targetId: `t${i}` });
+      return row;
+    });
+    await Parse.Object.saveAll(batch, { useMasterKey: true });
+
+    const expected = await new Parse.Query('AuditLog')
+      .exists('objectId').count({ useMasterKey: true });
+
+    const second = path.join(path.dirname(out), 'paged.json');
+    const run = await runScript([SCRIPT, '--class', 'AuditLog', '--out', second], {
+      ...process.env,
+      PARSE_APP_ID: APP_ID,
+      PARSE_MASTER_KEY: MASTER_KEY,
+      PARSE_JS_KEY: JS_KEY,
+      PARSE_SERVER_URL: stack.serverURL,
+      // صفحةٌ صغيرة تُجبر التصفّح على العمل — وبلا ذلك لا يُقاس شيء
+      MASJIDI_EXPORT_PAGE: '7',
+    });
+    assert.equal(run.status, 0, run.output);
+
+    const paged = JSON.parse(fs.readFileSync(second, 'utf8')).data.AuditLog;
+    const unique = new Set(paged.map((row) => row.objectId));
+
+    assert.equal(paged.length, expected,
+      `صُدّر ${paged.length} من ${expected} — نسخةٌ ناقصة لا يُعلم نقصُها`);
+    assert.equal(unique.size, paged.length, 'تكرّر صفٌّ في التصفّح');
+  });
 });

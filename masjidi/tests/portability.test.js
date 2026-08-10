@@ -45,6 +45,13 @@ const REVIEWED = {
   first: 'محمولة — سجلٌّ واحد، وتُغني عن limit(1) وقراءة الأوّل.',
   count: 'محمولة **بقيد**. وبلا قيدٍ واحدٍ على الأقل قِيست على PostgreSQL '
     + 'فأعادت صفراً بينما find تُعيد ثلاثين — بلا خطأ. استعمل exists("objectId").',
+  addAscending: 'محمولة — ترتيبٌ مركّب، ويُترجَم إلى فرزٍ بمفتاحين في المحوّلين. '
+    + '**ولازمةٌ مع التصفّح**: `ascending("createdAt")` وحدها لا تُرتّب المتساويين، '
+    + 'وقِيس أن التصفّح فوقها يفقد صفوفاً — 6 من 56 في `export_records.js`. '
+    + 'فالمفتاح الثاني يكون فريداً (`objectId`).',
+  skip: 'محمولة، **ومكلفة على الطرف البعيد**: MongoDB يمرّ على ما يتخطّاه، فتزداد '
+    + 'الكلفة مع الإزاحة. مقبولةٌ في تصديرٍ يُشغَّل شهرياً، **ولا تُستعمل في مسارٍ '
+    + 'يراه مستخدم** — وهي غير مستعملة في `cloud/` أصلاً. ولا تصحّ بلا ترتيبٍ فريد.',
 };
 
 /**
@@ -154,11 +161,34 @@ test('القوائم المغلقة مترجَمة كاملةً', async (t) => {
   });
 });
 
+/**
+ * والسكربتات تُمسح كما يُمسح كود السحابة.
+ *
+ * كان المسح على `cloud/` وحده، **و`scripts/` تستعلم من القاعدة الحيّة نفسها**:
+ * `seed_mosques` و`export_records` و`promote_admin` كلُّها تكتب وتقرأ من
+ * الإنتاج بالمفتاح الرئيس. وقِيس: صيغةُ تصفّحٍ أُضيفت في `export_records.js`
+ * لم يمرّ عليها هذا الحارس أصلاً — **لأن نطاقه أضيق من الخطر الذي وُضع له**.
+ */
+function scriptSources() {
+  const dir = path.join(__dirname, '..', 'scripts');
+  return fs.readdirSync(dir, { withFileTypes: true })
+    .flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        return fs.readdirSync(full).filter((f) => f.endsWith('.js'))
+          .map((f) => path.join(full, f));
+      }
+      return entry.name.endsWith('.js') ? [full] : [];
+    });
+}
+
 test('محمولية الاستعلامات', async (t) => {
-  const files = cloudSources();
+  const files = [...cloudSources(), ...scriptSources()];
 
   await t.test('الملفات تُقرأ فعلاً', () => {
     assert.ok(files.length >= 8, `وُجد ${files.length} ملفاً فقط — المسح لا يصل إلى الكود`);
+    assert.ok(files.some((file) => file.includes(`${path.sep}scripts${path.sep}`)),
+      'المسح لا يبلغ `scripts/` — وهي تستعلم من الإنتاج كما يستعلم كود السحابة');
   });
 
   await t.test('لا صيغة مرفوضة في كود السحابة', () => {
