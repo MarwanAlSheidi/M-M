@@ -116,6 +116,80 @@ async function queryForms() {
  * فحص ما قبل الإطلاق. بالمفتاح الرئيسي وحده — يكشف أعداداً وبنيةً لا تُعرض
  * لمستخدم، ويُشغَّل من `scripts/preflight.js` لا من التطبيق.
  */
+/**
+ * الخطوات اليدوية — تُفحص لا يُوثق بها.
+ *
+ * ثلاثُ خطواتٍ في `docs/DEPLOY.md` تُنفَّذ بيد إنسانٍ من لوحة Back4app: الفهرس
+ * الفريد، وجدولة المهام، وتفعيل رفع الملفات. **وكلُّ خطوةٍ يدوية في مسارٍ
+ * يُنفَّذ مرّةً تُنسى** — ثم لا يظهر أثرُها إلا بعد أشهر: قاعدةٌ تمتلئ، أو
+ * مساجد تتكرّر، أو متطوّعٌ يُصدّ عن رفع صورته.
+ *
+ * فاثنتان منها تُفحصان هنا فعلاً، والثالثة تبقى في `unverifiable` **مع سبب
+ * امتناعها** — لا مجرّد ذكرها.
+ */
+async function manualSteps() {
+  return Promise.all([
+    /*
+     * التفرّد يُختبر بمحاولته: مخطط Parse لا يعبّر عن الفهرس الفريد، فلا سبيل
+     * إلى قراءته — والسبيل الوحيد أن يُكتب صفٌّ مكرَّر ويُنظر أيُردّ.
+     *
+     * والكتابة على قاعدةٍ حيّة لا تُترك للحظّ: المعرّف موسومٌ بـ`__preflight__`
+     * فلا يشبه معرّفاً حقيقياً، والحذف في `finally` فيقع وإن سقط الفحص.
+     */
+    check('الفهرس الفريد على Mosques.externalId',
+      'بلا فهرسٍ فريد يُستورد المسجد مرّتين عند إعادة التشغيل، ولا يظهر ذلك إلا بالبحث — '
+      + 'أضِفه من لوحة Back4app: Database → Indexes',
+      async () => {
+        const Mosque = Parse.Object.extend('Mosques');
+        const externalId = `__preflight__${Date.now()}`;
+        const made = [];
+        try {
+          const first = new Mosque();
+          first.set({ externalId, name: 'فحص ما قبل الإطلاق', hasLocation: false });
+          await first.save(null, { useMasterKey: true });
+          made.push(first);
+
+          const second = new Mosque();
+          second.set({ externalId, name: 'فحص ما قبل الإطلاق', hasLocation: false });
+          await second.save(null, { useMasterKey: true }).then(
+            () => made.push(second),
+            () => null, // الرفض هو المطلوب
+          );
+
+          if (made.length > 1) throw new Error('قُبل معرّفٌ خارجيّ مكرَّر — لا فهرس فريد');
+          return 'التكرار مرفوض';
+        } finally {
+          if (made.length) await Parse.Object.destroyAll(made, { useMasterKey: true })
+            .catch(() => null);
+        }
+      }),
+
+    /*
+     * الجدولة لا تُقرأ من هنا، **لكن أثرَها يُقرأ**: كلُّ تشغيلٍ لمهمّةٍ يكتب
+     * صفّاً في `_JobStatus`. فغيابُه بعد أسبوعٍ من النشر يعني أنها لم تُجدوَل
+     * قطّ — وهو أشيعُ إخفاقٍ لهذه الخطوة.
+     *
+     * ولا يُسقط الفحصَ خادمٌ جديد: يُقال «لم تُشغَّل بعد» ويُترك القرار للقارئ،
+     * فالخادم في يومه الأول لا عيب فيه.
+     */
+    check('المهام الدورية شُغّلت فعلاً',
+      'صندوق الوارد وسجلّ التدقيق ينموان بلا حدّ حتى تمتلئ الباقة — '
+      + 'جدوِلهما من Server Settings → Background Jobs',
+      async () => {
+        const runs = await new Parse.Query('_JobStatus')
+          .containedIn('jobName', ['pruneAuditLog', 'pruneNotifications'])
+          .descending('createdAt').limit(1)
+          .find({ useMasterKey: true });
+
+        if (runs.length === 0) return 'لم تُشغَّل بعد — طبيعيٌّ قبل أوّل موعد، وعطبٌ بعده';
+        const last = runs[0].get('createdAt');
+        const days = Math.floor((Date.now() - last.getTime()) / 86400000);
+        if (days > 14) throw new Error(`آخر تشغيل منذ ${days} يوماً — الجدولة متوقّفة`);
+        return `آخر تشغيل منذ ${days} يوماً`;
+      }),
+  ]);
+}
+
 Parse.Cloud.define('preflight', async (request) => {
   if (!request.master) E.forbidden('هذا الفحص بالمفتاح الرئيسي وحده.');
 
@@ -156,7 +230,7 @@ Parse.Cloud.define('preflight', async (request) => {
       }),
   ]);
 
-  const results = [...classes, ...forms, ...blockers];
+  const results = [...classes, ...forms, ...blockers, ...(await manualSteps())];
 
   return {
     ok: results.every((row) => row.ok),
@@ -169,10 +243,15 @@ Parse.Cloud.define('preflight', async (request) => {
      * أن يُقرأ «كلُّ شيء سليم» وهو لا يقول ذلك.
      */
     unverifiable: [
-      'جدولة المهام الدورية (pruneAuditLog وpruneNotifications) — تُراجَع من لوحة Back4app',
-      'الفهرس الفريد على Mosques.externalId — يُضاف يدوياً، ويكشف تكرارَه `seed_mosques.js --verify`',
-      'تفعيل رفع الملفات للمستخدم المصادَق — يُراجَع من إعدادات التطبيق',
-      'وصول الدفع (Parse.Push) — لا Installation مسجَّل، والوارد داخل التطبيق هو القناة',
+      // ولكلٍّ **سببُ امتناعه** لا مجرّد ذكره: «لم يُفحص» بلا سبب يُقرأ كسلاً،
+      // فيُهمَل. وسببُ الامتناع هو ما يدلّ القارئ على كيف يفحصه بنفسه.
+      'تفعيل رفع الملفات للمستخدم المصادَق — **لا يُفحص من هنا بحال**: الفحص '
+      + 'يجري بالمفتاح الرئيس، والرفع بالمفتاح الرئيس ينجح ولو كان معطّلاً '
+      + 'للمصادَقين. فيُعطي أخضرَ كاذباً. جرِّبه من التطبيق بحساب متطوّع.',
+      'وصول الدفع (Parse.Push) — لا Installation مسجَّل، والوارد داخل التطبيق هو '
+      + 'القناة المعتمَدة، وهو مفحوصٌ في `tests/integration/inbox.test.js`',
+      'أن الجدولة قائمةٌ للمستقبل — يُفحص أثرُها الماضي أعلاه (`_JobStatus`) '
+      + 'لا وجودُها، فراجع اللوحة إن كان الخادم في أيامه الأولى',
     ],
   };
 });

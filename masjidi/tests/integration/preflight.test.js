@@ -89,9 +89,43 @@ test('فحص ما قبل الإطلاق', options, async (t) => {
     await admin.save(null, { useMasterKey: true });
 
     const report = await run();
-    assert.equal(report.ok, true, `بقي ساقطاً: ${report.failed.join('، ')}`);
     assert.ok(report.counts.مساجد > 0);
     assert.equal(report.counts.مشرفون, 1);
+
+    /*
+     * ولا يصير أخضر بالكود وحده — وهذا مقصود.
+     *
+     * الخطوات اليدوية صارت **مفحوصة** لا موثوقاً بها، والفهرس الفريد ليس في
+     * `schema.json` لأن مخطط Parse لا يعبّر عنه. فيبقى أحمر حتى يُضاف من
+     * لوحة Back4app، **وهو الغرض**: خطوةٌ تُنسى لا تُقرأ خضراء.
+     *
+     * وقِيس هنا: مكدّس الاختبار نفسه بلا فهرس فريد، فالفحص يكشفه.
+     */
+    assert.deepEqual(report.failed, ['الفهرس الفريد على Mosques.externalId'],
+      `سقط غيرُ المنتظَر: ${report.failed.join('، ')}`);
+    assert.equal(report.ok, false, 'أخضرُ بلا الخطوة اليدوية — فتُنسى وتُقرأ سليمة');
+  });
+
+  await t.test('والخطوات اليدوية تُفحص لا يُوثق بها', async () => {
+    const report = await run();
+    const named = (part) => report.checks.find((row) => row.name.includes(part));
+
+    // التفرّد يُختبر بمحاولته: لا سبيل إلى قراءة الفهرس من مخطط Parse
+    const unique = named('الفهرس الفريد');
+    assert.ok(unique, 'الفهرس الفريد لا يُفحص أصلاً');
+    assert.equal(unique.ok, false, 'قُبل معرّفٌ مكرَّر ومرّ الفحص');
+    assert.match(unique.why, /Database → Indexes/, 'يُقال العطب ولا يُقال الدواء');
+
+    // وما كُتب للفحص يُحذف بعده — القاعدة حيّة، والفحص لا يترك أثراً
+    const leftovers = await new Parse.Query('Mosques')
+      .startsWith('externalId', '__preflight__').count({ useMasterKey: true });
+    assert.equal(leftovers, 0, 'الفحص خلّف مساجد وهمية في قاعدةٍ حيّة');
+
+    // والجدولة تُقاس بأثرها الماضي: خادمٌ جديد لم تُشغَّل فيه بعد، وذلك ليس عطباً
+    const jobs = named('المهام الدورية');
+    assert.ok(jobs, 'الجدولة لا تُفحص ولا يُذكر أنها لا تُفحص');
+    assert.equal(jobs.ok, true, 'خادمٌ في يومه الأول لا عيب فيه');
+    assert.match(jobs.detail, /لم تُشغَّل بعد/);
   });
 
   await t.test('ويقول ما لم يفحصه — فالأخضر لا يعني «كلُّ شيء سليم»', async () => {
@@ -100,11 +134,17 @@ test('فحص ما قبل الإطلاق', options, async (t) => {
     assert.ok(report.unverifiable.length >= 3,
       'تقريرٌ أخضر بلا حدودٍ معلنة يُقرأ ضماناً وهو ليس ضماناً');
     const text = report.unverifiable.join('\n');
-    // ثلاثةٌ من خطوات النشر لا تُقرأ من داخل Cloud Code، وكلٌّ منها يُعطب
-    // المنصّة صامتاً: القاعدة تمتلئ، والتكرار يقع، والصور لا تُرفع
-    for (const item of ['جدولة المهام', 'الفهرس الفريد', 'رفع الملفات']) {
-      assert.match(text, new RegExp(item), `${item}: لا يُفحص ولا يُذكر أنه لا يُفحص`);
-    }
+    assert.match(text, /رفع الملفات/, 'أخطر ما لا يُفحص غير مذكور');
+
+    /*
+     * ولكلِّ متروكٍ **سببُ تركه**.
+     *
+     * «لم يُفحص» بلا سبب يُقرأ كسلاً فيُهمَل. وأهمُّها رفع الملفات: الفحص
+     * يجري بالمفتاح الرئيس، والرفع به ينجح ولو كان معطّلاً للمصادَقين —
+     * فلو فُحص من هنا لأعطى **أخضرَ كاذباً**، وهو أسوأ من لا فحص.
+     */
+    assert.match(text, /أخضرَ كاذباً/, 'يُقال «لا يُفحص» ولا يُقال لماذا');
+    assert.match(text, /بحساب متطوّع/, 'لا يُدلّ القارئ على كيف يفحصه بنفسه');
   });
 
   await t.test('ولا يُفتح لغير المفتاح الرئيسي — يكشف بنيةً وأعداداً', async () => {
