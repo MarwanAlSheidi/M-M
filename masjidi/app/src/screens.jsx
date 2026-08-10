@@ -110,6 +110,40 @@ export function useList(load, deps = []) {
   return { ...state, refresh };
 }
 
+/**
+ * فعلٌ لا يقع مرّتين بضغطتين.
+ *
+ * قِيس في متصفّح حقيقي: ضغطتان سريعتان على «يهمّني» تُرسلان نداءين. والخادم
+ * يردّ الثاني — فيُسجَّل اهتمامٌ واحد، **ويرى المتطوّع «سبق أن سجّلت اهتمامك
+ * بهذا الطلب»**. خطأٌ على فعلٍ نجح: يظنّه فشل، أو يظنّ نفسه سجّل من قبل ولم
+ * يفعل. ومعه نداءٌ ضائع من باقةٍ حدُّها الطلبات.
+ *
+ * وأثرُه أشدُّ على أزرارٍ أخرى: «كلّفه بالعمل» و«اعتماد العمل» — وقد قِيس
+ * ضررُ تزامنهما في `tests/integration/concurrency.test.js`. **وهذا علاجُ
+ * السبب، وذاك علاجُ الأثر: كلاهما لازم.**
+ *
+ * و`useRef` لا `useState` وحده: ضغطتان في دورةٍ واحدة تقرآن الحالة القديمة
+ * كلتاهما، فالمنع يحتاج قيمةً تتغيّر في اللحظة لا عند إعادة التركيب.
+ */
+export function useAction() {
+  const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
+
+  const run = useCallback(async (fn) => {
+    if (inFlight.current) return undefined;
+    inFlight.current = true;
+    setBusy(true);
+    try {
+      return await fn();
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  }, []);
+
+  return { run, busy };
+}
+
 export function Listing({ state, empty, children }) {
   if (state.loading) return <p className="empty">جارٍ التحميل…</p>;
   if (state.error) return <div className="error">{state.error}</div>;
@@ -542,7 +576,9 @@ export function Opportunities() {
     [settled, nearby, location.point && location.point.lat, radius],
   );
 
-  async function join(requestId) {
+  const action = useAction();
+
+  const join = (requestId) => action.run(async () => {
     setMessage('');
     try {
       const result = await api.expressInterest(requestId);
@@ -550,7 +586,7 @@ export function Opportunities() {
     } catch (error) {
       setMessage(api.messageOf(error));
     }
-  }
+  });
 
   return (
     <>
@@ -594,7 +630,7 @@ export function Opportunities() {
               <p>{row.description}</p>
               <div className="row">
                 <span className="tag">{api.CATEGORIES[row.category] || 'أخرى'}</span>
-                <button onClick={() => join(row.id)}>يهمّني</button>
+                <button onClick={() => join(row.id)} disabled={action.busy}>يهمّني</button>
               </div>
             </article>
           ))}
@@ -702,7 +738,9 @@ export function MyTasks() {
   const tasks = useList(api.assignedToMe);
   const [error, setError] = useState('');
 
-  async function act(action, ...args) {
+  const guard = useAction();
+
+  const act = (action, ...args) => guard.run(async () => {
     setError('');
     try {
       await action(...args);
@@ -711,7 +749,7 @@ export function MyTasks() {
     } catch (caught) {
       setError(api.messageOf(caught));
     }
-  }
+  });
 
   return (
     <>
@@ -777,9 +815,9 @@ export function MyTasks() {
               )}
               {row.status === 'assigned' && (
                 <div className="row">
-                  <button onClick={() => act(api.startWork, row.id)}>بدأت العمل</button>
+                  <button onClick={() => act(api.startWork, row.id)} disabled={guard.busy}>بدأت العمل</button>
                   {/* الاعتذار قبل الموعد خيرٌ من التغيّب عنه، ولا يُقيَّد على المنفّذ */}
-                  <button className="ghost" onClick={() => act(api.releaseAssignment, row.id)}>
+                  <button className="ghost" disabled={guard.busy} onClick={() => act(api.releaseAssignment, row.id)}>
                     أعتذر — أعيدوه لغيري
                   </button>
                 </div>
@@ -808,7 +846,7 @@ export function MyTasks() {
                 </span>
               </div>
               {row.status === 'active' && (
-                <button className="ghost" onClick={() => act(api.withdrawInterest, row.requestId)}>
+                <button className="ghost" disabled={guard.busy} onClick={() => act(api.withdrawInterest, row.requestId)}>
                   سحب الاهتمام
                 </button>
               )}
@@ -1093,7 +1131,9 @@ function RequestDetail({ request, onBack }) {
   const assignedLabel = sinceLabel(request.assignedAt);
   const startedLabel = sinceLabel(request.startedAt);
 
-  async function act(action, ...args) {
+  const guard = useAction();
+
+  const act = (action, ...args) => guard.run(async () => {
     setError('');
     try {
       const result = await action(...args);
@@ -1102,7 +1142,7 @@ function RequestDetail({ request, onBack }) {
     } catch (caught) {
       setError(api.messageOf(caught));
     }
-  }
+  });
 
   return (
     <>
@@ -1134,14 +1174,14 @@ function RequestDetail({ request, onBack }) {
                     <p className="warn">تغيّب عن {row.abandonedJobs} تكليفاً سابقاً.</p>
                   )}
                   {row.note && <p>«{row.note}»</p>}
-                  <button onClick={() => act(api.assignWorker, request.id, row.volunteerId)}>
+                  <button disabled={guard.busy} onClick={() => act(api.assignWorker, request.id, row.volunteerId)}>
                     كلّفه بالعمل
                   </button>
                 </article>
               ))}
             </div>
           </Listing>
-          <button className="danger" onClick={() => act(api.cancelServiceRequest, request.id)}>
+          <button className="danger" disabled={guard.busy} onClick={() => act(api.cancelServiceRequest, request.id)}>
             إلغاء الطلب
           </button>
         </>
@@ -1164,7 +1204,7 @@ function RequestDetail({ request, onBack }) {
               ? 'وقد طال الأمر: إن كنت على تواصلٍ معه فانتظاره أولى، وإلا فاسحب التكليف ليعود الطلب متاحاً لغيره.'
               : 'إن لم يحضر فاسحب التكليف ليعود الطلب متاحاً لغيره — لا حاجة إلى إلغائه وإنشاء طلب جديد.'}
           </p>
-          <button className="danger" onClick={() => act(api.releaseAssignment, request.id, 'no_show')}>
+          <button className="danger" disabled={guard.busy} onClick={() => act(api.releaseAssignment, request.id, 'no_show')}>
             سحب التكليف — لم يحضر
           </button>
         </>
@@ -1187,7 +1227,7 @@ function RequestDetail({ request, onBack }) {
           )}
           <Field label="ساعات التطوّع (اختياري)" value={note}
             onChange={(event) => setNote(event.target.value)} inputMode="numeric" />
-          <button onClick={() => act(api.completeService, request.id, 5, Number(note) || 0)}>
+          <button disabled={guard.busy} onClick={() => act(api.completeService, request.id, 5, Number(note) || 0)}>
             اعتماد العمل
           </button>
         </>
@@ -1337,7 +1377,9 @@ export function AdminHome() {
   const contractors = useList(api.listPendingContractors);
   const [error, setError] = useState('');
 
-  async function act(action, list, ...args) {
+  const guard = useAction();
+
+  const act = (action, list, ...args) => guard.run(async () => {
     setError('');
     try {
       await action(...args);
@@ -1345,7 +1387,7 @@ export function AdminHome() {
     } catch (caught) {
       setError(api.messageOf(caught));
     }
-  }
+  });
 
   const review = (contractorId, approve) =>
     act(api.reviewContractor, contractors, contractorId, approve);
@@ -1403,10 +1445,11 @@ export function AdminHome() {
               <p>الطالب: {row.imamName || 'بلا اسم'}{row.imamPhone ? ` · ${row.imamPhone}` : ''}</p>
               {row.evidenceNote && <p>«{row.evidenceNote}»</p>}
               <div className="row">
-                <button onClick={() => act(api.reviewMosqueClaim, claims, row.id, true)}>
+                <button disabled={guard.busy} onClick={() => act(api.reviewMosqueClaim, claims, row.id, true)}>
                   اعتماد الملكية
                 </button>
                 <button className="ghost"
+                  disabled={guard.busy}
                   onClick={() => act(api.reviewMosqueClaim, claims, row.id, false)}>
                   رفض
                 </button>

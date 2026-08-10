@@ -853,6 +853,54 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     });
   });
 
+  /**
+   * ضغطتان على زرٍّ لا تقعان فعلين.
+   *
+   * قِيس في هذا المتصفّح قبل الإصلاح: ضغطتان سريعتان على «يهمّني» تُرسلان
+   * نداءين. والخادم يردّ الثاني فيُسجَّل اهتمامٌ واحد — **ويرى المتطوّع
+   * «سبق أن سجّلت اهتمامك بهذا الطلب»**. خطأٌ على فعلٍ نجح: يظنّه فشل، أو
+   * يظنّ نفسه سجّل من قبل ولم يفعل.
+   *
+   * وهذا علاجُ السبب؛ وعلاجُ الأثر في `tests/integration/concurrency.test.js`.
+   */
+  await t.test('وضغطتان سريعتان لا تقعان فعلين', async () => {
+    const fresh = new (stack.Parse.Object.extend('ServiceRequests'))();
+    fresh.set({
+      mosqueId: mosque, title: 'عملٌ مفتوح للضغطتين', description: 'وصفٌ كافٍ لهذا الطلب',
+      category: 'other', urgency: 'normal', estimatedCost: 0, fundedAmount: 0,
+      status: 'open_for_volunteers',
+    });
+    await fresh.save(null, { useMasterKey: true });
+
+    const eager = await browser.newUserPage();
+    await signUpVia(eager, { username: `eager_${stamp}`, fullName: 'المتعجّل', role: 'volunteer' });
+
+    const calls = [];
+    eager.on('request', (event) => {
+      if (event.url().includes('/functions/expressInterest')) calls.push(event.url());
+    });
+
+    await onScreen(eager, 'ضغطتان سريعتان لا تقعان فعلين', async () => {
+      await eager.getByRole('button', { name: 'الفرص' }).click();
+      await eager.waitForSelector('button:has-text("يهمّني")');
+
+      const button = eager.getByRole('button', { name: 'يهمّني' }).first();
+      await button.click();
+      await button.click({ force: true }); // قبل أن يردّ الأوّل
+      await eager.waitForSelector('.notice');
+      await eager.waitForTimeout(1200);
+
+      assert.equal(calls.length, 1,
+        `أُرسل ${calls.length} نداءً بضغطتين — والباقة حدُّها الطلبات`);
+      assert.match(await eager.locator('.notice').innerText(), /سُجّل اهتمامك/,
+        'قيل للمتطوّع «سبق أن سجّلت» على فعلٍ نجح — فيظنّه فشل');
+
+      const count = await new stack.Parse.Query('TaskInterests')
+        .equalTo('requestId', fresh).count({ useMasterKey: true });
+      assert.equal(count, 1);
+    });
+  });
+
   await t.test('التطبيق يُفتح فعلاً بلا شبكة', async () => {
     const offline = await browser.newUserPage();
     await onScreen(offline, 'التطبيق يُفتح فعلاً بلا شبكة', async () => {
