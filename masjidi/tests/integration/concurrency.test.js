@@ -152,6 +152,59 @@ test('ضغطتان في لحظةٍ واحدة', options, async (t) => {
     assert.equal(salim.get('avgRating'), 4, 'المتوسط لم يُحسب من التقييمات نفسها');
   });
 
+  /**
+   * والعدّاد الثالث — وقد تُرك على `increment` حين اشتُقّ أخواه.
+   *
+   * `abandonedJobs` يُقرأ في موضعٍ واحد: بطاقةُ المهتمّ التي يختار الإمام على
+   * أساسها («تغيّب عن 3 تكليفات سابقة»). **فضغطةٌ زائدة على «سحب التكليف — لم
+   * يحضر» تَسِم متطوّعاً بغيابٍ لم يقع، ويراه كلُّ إمامٍ بعده.**
+   *
+   * وهو أذىً لإنسانٍ بعينه لا خطأ عدٍّ — كالسطر الذي كان يذكر منفّذاً لم
+   * يُكلَّف. **والإصلاح الجزئي يُخفي البقيّة لأنه يُطمئن.**
+   */
+  await t.test('وسحبان متوازيان لا يَسِمان بغيابين', async () => {
+    const requestId = await newRequest('سحبان');
+    await as(khalid, 'expressInterest', { requestId });
+    await as(imam, 'assignWorker', { requestId, workerId: khalid.id });
+
+    await Promise.allSettled([
+      as(imam, 'releaseAssignment', { requestId, reason: 'no_show' }),
+      as(imam, 'releaseAssignment', { requestId, reason: 'no_show' }),
+    ]);
+
+    await khalid.fetch({ useMasterKey: true });
+    assert.equal(khalid.get('abandonedJobs'), 1,
+      'وُسِم بغيابين لسحبٍ واحد — ويراه كلُّ إمامٍ بعده');
+  });
+
+  await t.test('والغياب يُشتقّ فيُصلح ما وُسِم به ظلماً', async () => {
+    // عدّادٌ منفوخ — أوّل سحبٍ بعده يُعيده إلى ما وقع فعلاً
+    khalid.set('abandonedJobs', 40);
+    await khalid.save(null, { useMasterKey: true });
+
+    const requestId = await newRequest('غيابٌ ثانٍ');
+    await as(khalid, 'expressInterest', { requestId });
+    await as(imam, 'assignWorker', { requestId, workerId: khalid.id });
+    await as(imam, 'releaseAssignment', { requestId, reason: 'no_show' });
+
+    await khalid.fetch({ useMasterKey: true });
+    assert.equal(khalid.get('abandonedJobs'), 2, 'العدد لم يُشتقّ — بقي منفوخاً');
+  });
+
+  await t.test('والانسحاب المُعلن لا يُقيَّد غياباً', async () => {
+    // الاعتذار قبل الموعد خيرٌ من التغيّب عنه — والتفريق بينهما هو ما يجعل
+    // الاعتذار متاحاً أصلاً
+    const before = khalid.get('abandonedJobs');
+    const requestId = await newRequest('اعتذار');
+    await as(khalid, 'expressInterest', { requestId });
+    await as(imam, 'assignWorker', { requestId, workerId: khalid.id });
+    await as(khalid, 'releaseAssignment', { requestId });
+
+    await khalid.fetch({ useMasterKey: true });
+    assert.equal(khalid.get('abandonedJobs'), before,
+      'قُيّد على من اعتذر ما يُقيَّد على من تغيّب');
+  });
+
   await t.test('والعدّ يصدق بعد إلغاءٍ وسحبٍ لا يُحسبان إنجازاً', async () => {
     const cancelled = await newRequest('ملغى');
     await as(imam, 'cancelServiceRequest', { requestId: cancelled });

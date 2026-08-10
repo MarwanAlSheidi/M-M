@@ -81,6 +81,20 @@ function createMock() {
       return this;
     }
 
+    /**
+     * إضافةٌ لا تُكرّر — ذرّيّة على خادمٍ حقيقي.
+     *
+     * عليها يقوم `noShowBy`: سحبان متوازيان يكتبان معرّفاً واحداً، فيُشتقّ منه
+     * عدُّ الغياب بلا انحراف. وغيابُها من البديل كان يُسقط مسار السحب كلَّه.
+     */
+    addUnique(key, value) {
+      const list = Array.isArray(this.attributes[key]) ? [...this.attributes[key]] : [];
+      if (!list.includes(value)) list.push(value);
+      this.attributes[key] = list;
+      this._dirty.add(key);
+      return this;
+    }
+
     isNew() {
       return this._new;
     }

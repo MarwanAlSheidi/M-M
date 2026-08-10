@@ -257,6 +257,9 @@
         "imamApprovalDate": {
           "type": "Date"
         },
+        "noShowBy": {
+          "type": "Array"
+        },
         "cancelledAt": {
           "type": "Date"
         }

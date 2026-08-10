@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 312 حالة على بديل Parse (`npm test`) + 147 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 29 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 312 حالة على بديل Parse (`npm test`) + 150 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 29 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -136,7 +136,9 @@
     واحد قام. **والسجلّ وعدُ الشفافية، فأثرٌ لفعلٍ لم يقم كذبٌ فيه.**
 22. **ما يُشتقّ لا ينحرف.** العدّادات التي يُبنى عليها قرارٌ تُحسب باستعلامٍ
     من مصدرها لا تُزاد بـ`increment`: `completedJobs` و`avgRating` من الطلبات
-    المنجَزة، و`openRequestsCount` من الطلبات المفتوحة. **و`request.original`
+    المنجَزة، و`abandonedJobs` من `noShowBy` (تُكتب بـ`addUnique` الذرّية)،
+    و`openRequestsCount` من الطلبات المفتوحة. **والثلاثة تُعرض للإمام في بطاقةٍ
+    واحدة، فاشتقاقُ بعضها دون بعض يترك الباقي ينحرف.** **و`request.original`
     في `beforeSave` لا يعكس ما كتبه المتوازي معه** — جُرّب فلم يمنع شيئاً،
     فلا تبنِ حارس تزامنٍ عليه.
 23. **حدُّ الطول على `beforeSave` لا في الدوال.** التسجيل يكتب على `_User`
@@ -2362,6 +2364,48 @@ Parse** — فيُضاف يدوياً من لوحة Back4app، كنظيره عل
 
 ---
 
+### 🔴 العدّاد الثالث: وَسْمٌ بغيابٍ لم يقع
+
+**كيف وُجد:** بسؤال درسِ الدورة السابقة على إصلاحي أنا. الدرس كان: «الإصلاح
+الجزئي يُخفي البقيّة لأنه يُطمئن». وفي الدورة الخامسة اشتققتُ `completedJobs`
+و`avgRating` من الطلبات بدل `increment`. **فماذا عن العدّاد الثالث؟**
+
+```
+سحبان متوازيان بعذر الغياب → abandonedJobs = 2   (المرجوّ 1)
+```
+
+**تُرك على `increment`.** وهو أشدُّ الثلاثة أذىً: يُقرأ في موضعٍ واحد — بطاقةُ
+المهتمّ التي يختار الإمام على أساسها — فيُعرض «تغيّب عن 3 تكليفات سابقة».
+**فضغطةٌ زائدة على «سحب التكليف — لم يحضر» تَسِم متطوّعاً بغيابٍ لم يقع، ويراه
+كلُّ إمامٍ بعده.**
+
+وهو أذىً لإنسانٍ بعينه لا خطأ عدٍّ — من صنف السطر الذي كان يذكر منفّذاً لم
+يُكلَّف، لا من صنف «اعتمد الإمام العمل» المكرّر.
+
+**والاشتقاق هنا لم يكن كاشتقاق أخويه.** الإنجاز يُشتقّ من الطلبات المنجَزة —
+سجلٌّ دائمٌ قائم. أمّا الغياب فلا سجلَّ له إلا العدّاد نفسه: سجلُّ التدقيق
+يُقلَّم بعد 180 يوماً، وصفُّ الاهتمام لا يوجد للشركات، ولا يُفرّق بين من تغيّب
+ومن اعتذر.
+
+**فأُنشئ له سجلُّه:** `noShowBy` على الطلب، تُكتب بـ`addUnique` — **عمليةٌ
+ذرّية**: السحبان المتوازيان يكتبان معرّفاً واحداً. ومنه يُشتقّ العدّ. ويُصلح
+ما وُسِم به ظلماً من قبل — واختُبر بعدّادٍ زُرع على أربعين فعاد إلى اثنين.
+
+**والانسحاب المُعلن لا يُقيَّد**، واختُبر صراحةً: التفريق بينه وبين الغياب هو
+ما يجعل الاعتذار متاحاً أصلاً.
+
+#### وبديل Parse كان ينقصه `addUnique`
+
+فسقط مسار السحب كلُّه في اختبارات الوحدة — لا لأن الإصلاح خاطئ، بل لأن البديل
+لا يعرف العملية. **وهذا ما يُراد من البديل**: أن يسقط حين يُستعمل ما لا يعرفه،
+لا أن يتظاهر. فأُضيفت إليه بسطورٍ أربعة.
+
+**والدرس:** حين يُشتقّ عدّادان من ثلاثة تُعرض في بطاقةٍ واحدة، **فالثالث لا
+يبقى على حاله بل يصير أسوأ**: صار محاطاً برقمين لا ينحرفان، فيُقرأ بثقتهما.
+**والانحراف الوحيد بين أرقامٍ سليمة أشدُّ تضليلاً من الانحراف بين أمثاله.**
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB — وهذا أكبر قيدٍ باقٍ.**
@@ -2684,6 +2728,9 @@ Parse** — فيُضاف يدوياً من لوحة Back4app، كنظيره عل
         },
         "imamApprovalDate": {
           "type": "Date"
+        },
+        "noShowBy": {
+          "type": "Array"
         },
         "cancelledAt": {
           "type": "Date"
@@ -5071,13 +5118,13 @@ Parse.Cloud.define('releaseAssignment', async (request) => {
   serviceRequest.unset('assignedVolunteerId');
   serviceRequest.unset('assignedContractorId');
   serviceRequest.unset('assignedAt');
+  // علامةٌ دائمة على الطلب نفسه، تُضاف بـ`addUnique` — عمليةٌ ذرّية لا تُكرّر
+  // ما وقع. وهي ما يُشتقّ منه العدّاد، فلا يزيده سحبان متوازيان مرّتين.
+  if (noShow) serviceRequest.addUnique('noShowBy', pointer.id);
   await serviceRequest.save(null, { useMasterKey: true });
 
   const worker = await fetchPointer(pointer, '_User');
-  if (noShow) {
-    worker.increment('abandonedJobs', 1);
-    await worker.save(null, { useMasterKey: true });
-  }
+  if (noShow) await recordAbsences(worker);
 
   // اهتمام هذا المنفّذ بالذات يُوسم `released` فلا يعود يسجّله على الطلب نفسه.
   // اهتمامات الآخرين تبقى `closed` كما أقفلها التكليف: الطلب عاد مفتوحاً
@@ -5329,6 +5376,31 @@ async function recordWorkerRating(serviceRequest) {
   } else {
     worker.unset('avgRating');
   }
+  await worker.save(null, { useMasterKey: true });
+}
+
+/**
+ * مرّات التغيّب — تُشتقّ من الطلبات لا تُزاد بـ`increment`.
+ *
+ * **قِيس على خادمٍ حقيقي بسحبين متوازيين** — وهو ما تفعله ضغطتان على «سحب
+ * التكليف — لم يحضر»: `abandonedJobs = 2` لسحبٍ واحد.
+ *
+ * وهذا العدّاد يُقرأ في موضعٍ واحد: بطاقةُ المهتمّ التي يختار الإمام على
+ * أساسها («تغيّب عن 3 تكليفات سابقة»). **فضغطةٌ زائدة تَسِم متطوّعاً بغيابٍ
+ * لم يقع، ويراه كلُّ إمامٍ بعده.** وهو أذىً لإنسانٍ بعينه لا خطأ عدٍّ.
+ *
+ * وقد اشتُقّ `completedJobs` و`avgRating` من قبل وتُرك هذا على `increment` —
+ * **والإصلاح الجزئي يُخفي البقيّة لأنه يُطمئن.**
+ *
+ * والاشتقاق من `noShowBy` على الطلب: `addUnique` ذرّيّة، فالسحبان يكتبان
+ * معرّفاً واحداً. **وما يُشتقّ لا ينحرف، ويُصلح ما انحرف قبله.**
+ */
+async function recordAbsences(worker) {
+  const absences = await new Parse.Query('ServiceRequests')
+    .containsAll('noShowBy', [worker.id])
+    .count({ useMasterKey: true });
+
+  worker.set('abandonedJobs', absences);
   await worker.save(null, { useMasterKey: true });
 }
 
@@ -8264,13 +8336,13 @@ Parse.Cloud.define('releaseAssignment', async (request) => {
   serviceRequest.unset('assignedVolunteerId');
   serviceRequest.unset('assignedContractorId');
   serviceRequest.unset('assignedAt');
+  // علامةٌ دائمة على الطلب نفسه، تُضاف بـ`addUnique` — عمليةٌ ذرّية لا تُكرّر
+  // ما وقع. وهي ما يُشتقّ منه العدّاد، فلا يزيده سحبان متوازيان مرّتين.
+  if (noShow) serviceRequest.addUnique('noShowBy', pointer.id);
   await serviceRequest.save(null, { useMasterKey: true });
 
   const worker = await fetchPointer(pointer, '_User');
-  if (noShow) {
-    worker.increment('abandonedJobs', 1);
-    await worker.save(null, { useMasterKey: true });
-  }
+  if (noShow) await recordAbsences(worker);
 
   // اهتمام هذا المنفّذ بالذات يُوسم `released` فلا يعود يسجّله على الطلب نفسه.
   // اهتمامات الآخرين تبقى `closed` كما أقفلها التكليف: الطلب عاد مفتوحاً
@@ -8522,6 +8594,31 @@ async function recordWorkerRating(serviceRequest) {
   } else {
     worker.unset('avgRating');
   }
+  await worker.save(null, { useMasterKey: true });
+}
+
+/**
+ * مرّات التغيّب — تُشتقّ من الطلبات لا تُزاد بـ`increment`.
+ *
+ * **قِيس على خادمٍ حقيقي بسحبين متوازيين** — وهو ما تفعله ضغطتان على «سحب
+ * التكليف — لم يحضر»: `abandonedJobs = 2` لسحبٍ واحد.
+ *
+ * وهذا العدّاد يُقرأ في موضعٍ واحد: بطاقةُ المهتمّ التي يختار الإمام على
+ * أساسها («تغيّب عن 3 تكليفات سابقة»). **فضغطةٌ زائدة تَسِم متطوّعاً بغيابٍ
+ * لم يقع، ويراه كلُّ إمامٍ بعده.** وهو أذىً لإنسانٍ بعينه لا خطأ عدٍّ.
+ *
+ * وقد اشتُقّ `completedJobs` و`avgRating` من قبل وتُرك هذا على `increment` —
+ * **والإصلاح الجزئي يُخفي البقيّة لأنه يُطمئن.**
+ *
+ * والاشتقاق من `noShowBy` على الطلب: `addUnique` ذرّيّة، فالسحبان يكتبان
+ * معرّفاً واحداً. **وما يُشتقّ لا ينحرف، ويُصلح ما انحرف قبله.**
+ */
+async function recordAbsences(worker) {
+  const absences = await new Parse.Query('ServiceRequests')
+    .containsAll('noShowBy', [worker.id])
+    .count({ useMasterKey: true });
+
+  worker.set('abandonedJobs', absences);
   await worker.save(null, { useMasterKey: true });
 }
 
@@ -10936,6 +11033,20 @@ function createMock() {
 
     increment(key, by = 1) {
       this.attributes[key] = (this.attributes[key] || 0) + by;
+      this._dirty.add(key);
+      return this;
+    }
+
+    /**
+     * إضافةٌ لا تُكرّر — ذرّيّة على خادمٍ حقيقي.
+     *
+     * عليها يقوم `noShowBy`: سحبان متوازيان يكتبان معرّفاً واحداً، فيُشتقّ منه
+     * عدُّ الغياب بلا انحراف. وغيابُها من البديل كان يُسقط مسار السحب كلَّه.
+     */
+    addUnique(key, value) {
+      const list = Array.isArray(this.attributes[key]) ? [...this.attributes[key]] : [];
+      if (!list.includes(value)) list.push(value);
+      this.attributes[key] = list;
       this._dirty.add(key);
       return this;
     }

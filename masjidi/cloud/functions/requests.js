@@ -470,13 +470,13 @@ Parse.Cloud.define('releaseAssignment', async (request) => {
   serviceRequest.unset('assignedVolunteerId');
   serviceRequest.unset('assignedContractorId');
   serviceRequest.unset('assignedAt');
+  // علامةٌ دائمة على الطلب نفسه، تُضاف بـ`addUnique` — عمليةٌ ذرّية لا تُكرّر
+  // ما وقع. وهي ما يُشتقّ منه العدّاد، فلا يزيده سحبان متوازيان مرّتين.
+  if (noShow) serviceRequest.addUnique('noShowBy', pointer.id);
   await serviceRequest.save(null, { useMasterKey: true });
 
   const worker = await fetchPointer(pointer, '_User');
-  if (noShow) {
-    worker.increment('abandonedJobs', 1);
-    await worker.save(null, { useMasterKey: true });
-  }
+  if (noShow) await recordAbsences(worker);
 
   // اهتمام هذا المنفّذ بالذات يُوسم `released` فلا يعود يسجّله على الطلب نفسه.
   // اهتمامات الآخرين تبقى `closed` كما أقفلها التكليف: الطلب عاد مفتوحاً
@@ -728,6 +728,31 @@ async function recordWorkerRating(serviceRequest) {
   } else {
     worker.unset('avgRating');
   }
+  await worker.save(null, { useMasterKey: true });
+}
+
+/**
+ * مرّات التغيّب — تُشتقّ من الطلبات لا تُزاد بـ`increment`.
+ *
+ * **قِيس على خادمٍ حقيقي بسحبين متوازيين** — وهو ما تفعله ضغطتان على «سحب
+ * التكليف — لم يحضر»: `abandonedJobs = 2` لسحبٍ واحد.
+ *
+ * وهذا العدّاد يُقرأ في موضعٍ واحد: بطاقةُ المهتمّ التي يختار الإمام على
+ * أساسها («تغيّب عن 3 تكليفات سابقة»). **فضغطةٌ زائدة تَسِم متطوّعاً بغيابٍ
+ * لم يقع، ويراه كلُّ إمامٍ بعده.** وهو أذىً لإنسانٍ بعينه لا خطأ عدٍّ.
+ *
+ * وقد اشتُقّ `completedJobs` و`avgRating` من قبل وتُرك هذا على `increment` —
+ * **والإصلاح الجزئي يُخفي البقيّة لأنه يُطمئن.**
+ *
+ * والاشتقاق من `noShowBy` على الطلب: `addUnique` ذرّيّة، فالسحبان يكتبان
+ * معرّفاً واحداً. **وما يُشتقّ لا ينحرف، ويُصلح ما انحرف قبله.**
+ */
+async function recordAbsences(worker) {
+  const absences = await new Parse.Query('ServiceRequests')
+    .containsAll('noShowBy', [worker.id])
+    .count({ useMasterKey: true });
+
+  worker.set('abandonedJobs', absences);
   await worker.save(null, { useMasterKey: true });
 }
 
