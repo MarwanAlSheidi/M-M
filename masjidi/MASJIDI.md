@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA **يُثبَّت ويعمل بلا إنترنت** — ويحرسه `verify:pwa`. و**React Native ليس ناقصاً بل غير مطلوب**: الواجهة تُثبَّت على أندرويد وiOS، وعميلٌ ثانٍ يُضاعف السطح بلا أثرٍ للمستخدم في المرحلة الأولى |
-| الاختبارات | ✅ 357 حالة على بديل Parse (`npm test`) + 186 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 31 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 357 حالة على بديل Parse (`npm test`) + 190 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 31 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -3546,6 +3546,86 @@ assert.equal(unique.ok, false, 'قُبل معرّفٌ مكرَّر ومرّ ال
 
 ---
 
+### 🔴 أوّلُ أمرٍ في النشر يخرج بصفر وقد سقط أخطرُ صنفٍ في المنصّة
+
+`docs/DEPLOY.md` يرتّب الساعة الأولى: املأ `.env`، ثم **`npm run schema`**، ثم
+ارفع كود السحابة، ثم `npm run preflight`. فبدأتُ من أوّلها.
+
+وقِيس على خادمٍ حقيقي، بحقن فهرسٍ واحدٍ على حقلٍ غير معرَّف في `ServiceRequests`:
+
+```
+✓ Mosques (+5 فهرساً)
+✓ Transactions (+2 فهرساً)
+…
+✓ الفهارس المطبَّقة في هذه الجولة: 17
+✗ ServiceRequests: Field fieldThatDoesNotExist does not exist, cannot add index.
+  ✗ فهرس status_mosque: Class ServiceRequests does not exist.
+رمز الخروج: 0
+```
+
+ثلاثةُ أكاذيب في مخرجٍ واحد. **الصنف لم يُنشأ أصلاً** — لا حقوله ولا صلاحياته،
+والمحاولة الثانية تُعيد الفهارس وحدها فتصطدم بأنه غير موجود. والعدّاد يقول
+سبعةَ عشر والمطبَّق أربعةَ عشر: `applied += plain.length` كان يجري خارج
+`try/catch` فيحسب الساقط ناجحاً. **ورمز الخروج صفر.**
+
+#### وأثرُه ليس فهرساً ناقصاً
+
+`ServiceRequests` أحد الثلاثة المقفلة للكتابة من العميل — والقفل **صلاحياتٌ في
+المخطط** (`create: {}`, `update: {}`, `delete: {}`)، لا شيء غيرها. وصنفٌ غائب
+يُنشئه أوّل من يكتب فيه بصلاحياتٍ افتراضية. و`beforeSave` يحرس الكتابة، **ولا
+`beforeDelete` في المستودع كلِّه** — فالحذف بلا حارسٍ ثانٍ.
+
+وأسوأ ما فيه أن **لا شيء بعده يلتقطه**: `preflight` يفحص وجود الأصناف وحقولها
+وصيغ الاستعلام، **ولا يفحص الصلاحيات إطلاقاً**. فلو قام الصنف ناقصَ قفله لَما
+قال أحدٌ شيئاً.
+
+#### القفل شرطُ تشغيل، والفهرس تحسينٌ يُؤجَّل
+
+فالإنقاذ صار على مرحلتين: **الحقول والصلاحيات أوّلاً وحدها بلا فهارس**، ثم
+الفهارس واحداً واحداً بعد أن يقوم الصنف. والحالة تُقرأ من القاعدة من جديد قبل
+الإنقاذ: `update` يضيف الحقول ثم الفهارس بلا معاملة، فقد تكون الحقول ثبتت وسقط
+الفهرس — وإعادةُ حقلٍ ثابت خطأ تُسقط الإنقاذ كلَّه.
+
+والخلاصة تفرّق بين **«أصنافٌ لم تقم»** (قف، لا تمضِ) و**«أصنافٌ بلا بعض
+فهارسها»** (تعمل، وبطيئةً على ثمانية عشر ألف مسجد)، وكلتاهما تخرج بغير صفر،
+**ولا يُطبع سطرُ نجاحٍ فوق عطب**.
+
+#### والحارس يجرّب مسار العطب على خادمٍ حقيقي
+
+ولا سبيل إليه إلا بمخططٍ مكسورٍ عمداً، فأُتيح `MASJIDI_SCHEMA_FILE` — كما أُتيح
+`MASJIDI_EXPORT_PAGE` من قبل، وللعلّة نفسها: **ما لا يُشتغَّل في الاختبار يبقى
+بلا حارس.** والاختبار يُشغّل السكربت الحقيقي بـ`execFile` غير المتزامن (المتزامن
+يُجمّد العملية التي تستضيف الخادم فيتعلّق إلى الأبد — وقعت فيها في الدورة ٢٣).
+
+وثلاث حالات: مخططٌ سليم يخرج بصفر رغم سقوط الفهرسين المكانيّين المعتاد — وبلا
+هذه لصار الأمر أحمرَ في كل تشغيلة؛ وفهرسٌ فاسد على صنفٍ **جديد كلَّ مرّة** —
+والاختبار يقرأ CLP من القاعدة ويطابقه بالمكتوب في `cloud/schema.json`، أي يؤكّد
+**أن القفل وصل** لا أن الأمر احمرّ؛ وصنفٌ لا يقوم أصلاً، فيُقال إنه لم يقم.
+
+وأُثبت سقوطه على `HEAD` بالسكربت القديم حرفاً بحرف ولا زيادة إلا منفذ الاختبار:
+
+```
+ok 1 - على مخططٍ سليم: يخرج بصفر…            ← يمرّ، فليس سقوطاً بيئياً
+not ok 2 - وفهرسٌ فاسد لا يمنع الصلاحيات…     سقط الفهرس وخرج الأمر بـ0
+not ok 3 - وصنفٌ لم يقم يُقال إنه لم يقم…     صنفٌ لم يقم وخرج الأمر بـ0
+```
+
+#### وأوّلُ قياسٍ لي في هذه الدورة لم يُثبت شيئاً
+
+أخرجتُ نسخة `HEAD` بـ`git show HEAD:scripts/apply_schema.js` — والمستودع جذرُه
+فوق `masjidi/`، فردّ git بالخطأ **وأنشأت إعادةُ التوجيه ملفاً فارغاً**. فنسختُ
+صفراً من البايتات فوق السكربت وشغّلتُ الاختبار: سقطت الحالات الثلاث، وكاد ذلك
+يُقرأ إثباتاً. **وسقوطُ اختبارٍ على ملفٍّ فارغ لا يقول شيئاً عن `HEAD`.**
+
+والذي كشفه ليس حَدْساً بل أن الحالة الأولى — «مخططٌ سليم يخرج بصفر» — سقطت هي
+أيضاً، ولا سبب لسقوطها في العطب المقيس. فأعدتُ القياس بالمسار الصحيح، وحينها
+مرّت الأولى وسقطت الأخريان: **وهذا هو شكل الإثبات.**
+
+وهو الدرس نفسه من زاويةٍ أخرى: نتيجةٌ حمراء ليست بيّنة حتى يُعرف **لماذا**
+احمرّت. ولولا أن في الحارس حالةً يجب أن تبقى خضراء لَمَرَّ الخطأ.
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB — وهذا أكبر قيدٍ باقٍ.**
@@ -3561,6 +3641,13 @@ assert.equal(unique.ok, false, 'قُبل معرّفٌ مكرَّر ومرّ ال
   PostGIS محلياً و`2dsphere` هناك)، وذرّية `increment` تحت التزامن الحقيقي.
   **أوّل نشرٍ على Back4app هو أوّل تشغيلٍ حقيقي على MongoDB** — فليكن على بيانات
   تجريبية أولاً.
+- **`preflight` لا يفحص الصلاحيات (CLP).** قِيس في الدورة ٢٦: يفحص وجود الأصناف
+  وحقولها وصيغ الاستعلام، ولا يقرأ `classLevelPermissions` من القاعدة ولا
+  يطابقها بـ`cloud/schema.json`. فقفلٌ فُتح من لوحة Back4app — أو لم يصل أصلاً —
+  لا يراه أحد. و`scripts/apply_schema.js` صار يضمن وصوله عند التطبيق، لكن
+  **لا حارس على ما بعد التطبيق**.
+- **لا `beforeDelete` في المستودع كلِّه.** الكتابة محروسة بـ`beforeSave`، والحذف
+  محروسٌ بالصلاحيات وحدها — فهي الطبقة الوحيدة، لا الثانية.
 - **سرّ الـwebhook يُدار يدوياً.** لا تدوير للمفتاح ولا تحقق من توقيع البوابة
   نفسها (`HMAC`) — السرّ المشترك أضعف من التوقيع لكنه ما تدعمه ثواني حالياً.
 - **الاسترداد قيدٌ محاسبي لا تحويل.** `refundDonation` يُعيد الرصيد ويُرجع الطلب
@@ -11919,12 +12006,41 @@ const Parse = require('parse/node');
 const { planIndexes, splitByKind } = require('./lib/index-plan');
 const { announceTarget } = require('./lib/target');
 
-const schemaFile = path.join(__dirname, '..', 'cloud', 'schema.json');
+/**
+ * ملفّ المخطط — ويُبدَّل من البيئة ليُختبر مسارُ العطب على خادمٍ حقيقي.
+ *
+ * بلا ذلك لا سبيل إلى قياس ما يقع حين يسقط فهرس إلا بتعديل `cloud/schema.json`
+ * أثناء الاختبار، وهو تلويثٌ للمستودع إن انقطع التشغيل. ومسارُ العطب هو
+ * **الوحيد الذي يهمّ هنا**: الطريق السليم يمرّ في كل تشغيلة تكامل أصلاً.
+ */
+const schemaFile = process.env.MASJIDI_SCHEMA_FILE
+  || path.join(__dirname, '..', 'cloud', 'schema.json');
 
 /** أخطاء Parse قد تصل بلا `message` — الرمز وحده خيرٌ من كلمة «undefined». */
 const reason = (error) => (error && error.message)
   || (error && error.code !== undefined && `رمز الخطأ ${error.code}`)
   || String(error);
+
+/**
+ * يضع الحقول الناقصة والصلاحيات على كائن مخطط — **بلا فهارس**.
+ *
+ * فُصلت لتُستدعى مرّتين: مرّةً مع الفهارس في المحاولة الأولى، ومرّةً وحدها في
+ * محاولة الإنقاذ. وما يجمعهما أن **الصلاحيات لا تُترك خلف فهرس**.
+ */
+function describe(schema, definition, existingFields) {
+  for (const [name, spec] of Object.entries(definition.fields || {})) {
+    if (existingFields[name]) continue;
+    const options = {};
+    if (spec.required) options.required = true;
+    if (spec.defaultValue !== undefined) options.defaultValue = spec.defaultValue;
+
+    if (spec.type === 'Pointer') schema.addPointer(name, spec.targetClass, options);
+    else schema[`add${spec.type}`](name, options);
+  }
+
+  if (definition.classLevelPermissions) schema.setCLP(definition.classLevelPermissions);
+  return schema;
+}
 
 async function main() {
   const { PARSE_APP_ID, PARSE_MASTER_KEY, PARSE_JS_KEY, PARSE_SERVER_URL } = process.env;
@@ -11938,9 +12054,14 @@ async function main() {
 
   const { classes } = JSON.parse(fs.readFileSync(schemaFile, 'utf8'));
   let applied = 0;
+  /** أصنافٌ لم تصل حقولها وصلاحياتها — أوّل أمرٍ في النشر لا يجوز أن يكذب فيها. */
+  const missing = [];
+  /** أصنافٌ قامت وينقصها فهرس — تعمل، وبطيئةً على ثمانية عشر ألف مسجد. */
+  const degraded = [];
 
   for (const definition of classes) {
-    const schema = new Parse.Schema(definition.className);
+    const { className } = definition;
+    const schema = new Parse.Schema(className);
     let existing = null;
     try {
       existing = await schema.get();
@@ -11949,20 +12070,7 @@ async function main() {
     }
 
     const existingFields = existing ? existing.fields : {};
-
-    for (const [name, spec] of Object.entries(definition.fields || {})) {
-      if (existingFields[name]) continue;
-      const options = {};
-      if (spec.required) options.required = true;
-      if (spec.defaultValue !== undefined) options.defaultValue = spec.defaultValue;
-
-      if (spec.type === 'Pointer') schema.addPointer(name, spec.targetClass, options);
-      else schema[`add${spec.type}`](name, options);
-    }
-
-    if (definition.classLevelPermissions) {
-      schema.setCLP(definition.classLevelPermissions);
-    }
+    describe(schema, definition, existingFields);
 
     const { plain, spatial } = splitByKind(
       planIndexes(definition.indexes, existing && existing.indexes),
@@ -11971,30 +12079,86 @@ async function main() {
 
     try {
       existing ? await schema.update() : await schema.save();
-      console.log(`✓ ${definition.className}${plain.length ? ` (+${plain.length} فهرساً)` : ''}`);
+      applied += plain.length;
+      console.log(`✓ ${className}${plain.length ? ` (+${plain.length} فهرساً)` : ''}`);
     } catch (error) {
-      console.error(`✗ ${definition.className}: ${reason(error)}`);
-      // فهرسٌ واحدٌ فاسد كان يُسقط الفئة كلّها ومعها بقية فهارسها — نعيد
-      // المحاولة واحداً واحداً ليُعرف الفاسد ويمرّ السليم
-      for (const { name, spec } of plain) {
-        const retry = new Parse.Schema(definition.className);
+      console.error(`✗ ${className}: ${reason(error)}`);
+
+      /*
+       * **الحقول والصلاحيات أولاً، وحدها.**
+       *
+       * كانت المحاولة الثانية تُعيد الفهارس واحداً واحداً ولا تُعيد الحقول ولا
+       * الصلاحيات. وقِيس على خادمٍ حقيقي بحقن فهرسٍ على حقلٍ غير معرَّف في
+       * `ServiceRequests`:
+       *
+       *     ✗ ServiceRequests: Field … does not exist, cannot add index.
+       *       ✗ فهرس status_mosque: Class ServiceRequests does not exist.
+       *
+       * أي أن الصنف **لم يُنشأ أصلاً**: لا حقوله ولا قفلُه. وهو أحد الثلاثة
+       * المقفلة للكتابة من العميل عبر CLP — وصنفٌ غائب يُنشئه أوّل عميلٍ يكتب
+       * فيه بصلاحياتٍ افتراضية. فالفهرس تحسينٌ يُؤجَّل، والقفل شرطُ التشغيل،
+       * ولا يُعلَّق الثاني على الأول.
+       */
+      /*
+       * وتُقرأ الحالة من جديد قبل الإنقاذ: `update` يضيف الحقول ثم الفهارس بلا
+       * معاملة، فقد تكون الحقول ثبتت وسقط الفهرس. وإعادةُ حقلٍ ثابتٍ خطأ يُسقط
+       * الإنقاذ كلَّه — فنبني على ما في القاعدة الآن لا على ما كان قبل المحاولة.
+       */
+      let current = null;
+      try { current = await new Parse.Schema(className).get(); } catch (_) { /* لم يقم */ }
+
+      const rescue = describe(
+        new Parse.Schema(className), definition, current ? current.fields : {},
+      );
+      let standing = false;
+      try {
+        current ? await rescue.update() : await rescue.save();
+        standing = true;
+        console.log('  ✓ الحقول والصلاحيات (بلا فهارس)');
+      } catch (e) {
+        console.error(`  ✗ الحقول والصلاحيات: ${reason(e)}`);
+      }
+
+      const lost = [];
+      // الفهارس واحداً واحداً ليُعرف الفاسد ويمرّ السليم — وبعد أن قام الصنف
+      for (const { name, spec } of standing ? plain : []) {
+        const retry = new Parse.Schema(className);
         retry.addIndex(name, spec);
         await retry.update()
-          .then(() => console.log(`  ✓ فهرس ${name}`))
-          .catch((e) => console.error(`  ✗ فهرس ${name}: ${reason(e)}`));
+          .then(() => { applied += 1; console.log(`  ✓ فهرس ${name}`); })
+          .catch((e) => { lost.push(name); console.error(`  ✗ فهرس ${name}: ${reason(e)}`); });
       }
+
+      if (!standing) missing.push(className);
+      else if (lost.length) degraded.push(`${className} (${lost.join('، ')})`);
     }
 
     // المكانيّ على حدة: يفشل حيث لا امتداد مكاني، وفشله لا يعني فشل الفئة
     for (const { name, spec } of spatial) {
-      const geoSchema = new Parse.Schema(definition.className);
+      const geoSchema = new Parse.Schema(className);
       geoSchema.addIndex(name, spec);
       await geoSchema.update()
         .then(() => console.log(`  ✓ فهرس مكاني ${name}`))
         .catch((e) => console.warn(`  ⚠ فهرس مكاني ${name} لم يُطبَّق: ${reason(e)}`));
     }
+  }
 
-    applied += plain.length;
+  /*
+   * **ولا يُطبع سطرُ نجاحٍ فوق عطب.** كان الأمر يخرج بصفرٍ مهما سقط، وينتهي
+   * بسطرٍ أخضر يعدّ فهارس لم تُطبَّق: قِيس ١٧ والمطبَّق ١٤. ومن يقرأ
+   * `docs/DEPLOY.md` يُشغّل هذا أوّلاً ثم يمضي.
+   */
+  if (missing.length || degraded.length) {
+    console.error('\n✗ لم يُطبَّق المخطط كما هو مكتوب.');
+    if (missing.length) {
+      console.error(`  أصنافٌ لم تقم: ${missing.join('، ')}`);
+      console.error('  **لا تُشغّل شيئاً بعدها**: صنفٌ غائب لا صلاحيات له،');
+      console.error('  ويُنشئه أوّل من يكتب فيه بصلاحياتٍ مفتوحة.');
+    }
+    if (degraded.length) console.error(`  أصنافٌ بلا بعض فهارسها: ${degraded.join('، ')}`);
+    console.error('\n  صحّح ما ذُكر أعلاه وأعد التشغيل — الأمر لا يحذف شيئاً فإعادته آمنة.');
+    process.exitCode = 1;
+    return;
   }
 
   console.log(`\n✓ الفهارس المطبَّقة في هذه الجولة: ${applied}`);
