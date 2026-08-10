@@ -30,16 +30,27 @@ const OVERDUE_REVIEW_DAYS = 7;
  * ونظيرُها عولج من قبل في `assignedAt`: «حكمٌ يُطلب بلا المدّة التي يقوم
  * عليها». والأداة نفسها (`sinceLabel`) كانت على هذه الشاشة تُستعمل لتاريخ سحب
  * اعتماد شركةٍ — أي لتفصيلٍ ثانوي — دون المدّة التي تنتظرها الناس.
+ *
+ * **ثم قِيست الجهة الأخرى**، فإذا الساعةُ غائبةٌ عن **المنتظِر** أيضاً:
+ * `createdAt` تعبر السلك في `getMyClaims` و`getMyInterests` ولا تُقرأ. فالإمام
+ * يرى «قيد المراجعة» والمتطوّع يرى «بانتظار اختيار الإمام» — بلا يومٍ ولا
+ * شهر، فلا يدري أنُسي أم لم يحن دوره بعد. **ومن لا يعرف كم انتظر لا يعرف
+ * متى يسأل.**
+ *
+ * `overdueAfter = null` تُعطّل الوسم حيث لا وعدَ قُطع: اختيارُ الإمام بين
+ * المهتمّين ليس موعوداً بمدّة، وتخويفُ المتطوّع بحدٍّ مخترَع أسوأ من السكوت.
  */
-const Waited = ({ since, label = 'قُدّم' }) => {
+const Waited = ({
+  since, label = 'قُدّم', overdueAfter = OVERDUE_REVIEW_DAYS,
+  overdueNote = ' — وقيل لصاحبه «يُراجَع خلال أيام عمل».',
+}) => {
   const days = daysSince(since);
   const said = sinceLabel(since);
   if (!said) return null;
+  const overdue = overdueAfter != null && days != null && days >= overdueAfter;
   return (
-    <p className={days != null && days >= OVERDUE_REVIEW_DAYS ? 'warn' : 'hint'}>
-      {label} {said}
-      {days != null && days >= OVERDUE_REVIEW_DAYS
-        && ' — وقيل لصاحبه «يُراجَع خلال أيام عمل».'}
+    <p className={overdue ? 'warn' : 'hint'}>
+      {label} {said}{overdue && overdueNote}
     </p>
   );
 };
@@ -881,6 +892,12 @@ export function MyTasks() {
                     : row.status === 'withdrawn' ? 'مسحوب' : 'أُغلق'}
                 </span>
               </div>
+              {/*
+                «بانتظار اختيار الإمام» بلا مدّة: يستوي عند المتطوّع اهتمامٌ
+                سجّله أمسِ وآخرُ منذ شهرين، وتحتهما زرُّ السحب. ولا وعدَ هنا
+                بمدّة — فتُعرض المدّة بلا وسمٍ ولا تخويفٍ بحدٍّ مخترَع.
+              */}
+              <Waited since={row.createdAt} label="سُجّل" overdueAfter={null} />
               {row.status === 'active' && (
                 <button className="ghost" disabled={guard.busy} onClick={() => act(api.withdrawInterest, row.requestId)}>
                   سحب الاهتمام
@@ -973,6 +990,18 @@ export function ImamHome() {
                 <p>{claim.isTransfer
                   ? 'هذا طلب نقل إمامة: المسجد مسجَّل باسم إمامٍ آخر، وللمشرف أن يتواصل بكما قبل القرار.'
                   : 'سيراجع المشرف طلبك خلال أيام عمل.'}</p>
+              )}
+              {/*
+                والمدّة تحت الوعد مباشرةً. فوقها مكتوبٌ «خلال أيام عمل»، وبلا
+                يومٍ ولا شهر يبقى السطر صادقاً في اليوم الأول وكاذباً في الشهر
+                الثالث — **والشاشة تُطمئن من ينبغي أن يسأل.**
+              */}
+              {claim.status === 'pending' ? (
+                <Waited since={claim.createdAt}
+                  overdueNote=" — وقد تجاوز ما وُعدت به، فراجع الإدارة." />
+              ) : (
+                <Waited since={claim.reviewedAt || claim.createdAt} label="رُوجع"
+                  overdueAfter={null} />
               )}
             </article>
           ))}
@@ -1243,6 +1272,8 @@ function RequestDetail({ request, onBack }) {
                     <p className="warn">تغيّب عن {row.abandonedJobs} تكليفاً سابقاً.</p>
                   )}
                   {row.note && <p>«{row.note}»</p>}
+                  {/* من سبق: القائمة مرتَّبة بالأقدم، والمدّة تجعل الترتيب مقروءاً */}
+                  <Waited since={row.createdAt} label="سجّل اهتمامه" overdueAfter={null} />
                   <button disabled={guard.busy} onClick={() => act(api.assignWorker, request.id, row.volunteerId)}>
                     كلّفه بالعمل
                   </button>

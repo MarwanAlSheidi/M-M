@@ -216,6 +216,9 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     await imam.waitForSelector('button:has-text("كلّفه بالعمل")');
     const card = await imam.locator('.card').first().innerText();
     assert.match(card, /سالم بن راشد/);
+    // من سبق: القائمة مرتَّبة بالأقدم، و`createdAt` كانت تعبر السلك ولا تُقرأ
+    assert.match(card, /سجّل اهتمامه اليوم/,
+      'الإمام يختار بين مهتمّين بلا أن يعرف من سبق');
     assert.match(card, /مهارات: كهرباء/,
       'المهارات تُعرض ولا تُجمع قطّ — فالإمام يختار المنفّذ بلا بيّنة');
 
@@ -264,6 +267,15 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       await salim.getByRole('button', { name: 'مهامّي' }).click();
       await salim.waitForSelector('button:has-text("بدأت العمل")');
       assert.match(await salim.locator('main').innerText(), /كُلِّفت به منذ 12 يوماً/);
+
+      // و«اهتماماتي» تحتها: «بانتظار اختيار الإمام» كانت بلا يومٍ ولا شهر،
+      // فيستوي اهتمامٌ سُجّل أمسِ وآخرُ منذ شهرين وتحتهما زرُّ السحب.
+      //
+      // وتُنتظَر على حدة: قائمتان تُجلبان بنداءين، فظهورُ زرّ «بدأت العمل»
+      // لا يعني أن «اهتماماتي» وصلت. وقد سقط هذا السطر مرّةً ثم قام مرّتين
+      // بلا تغيير شيفرة — **وحارسٌ يتذبذب أسوأ من لا حارس.**
+      await waitUntil(salim, 'وصول «اهتماماتي»',
+        async () => /سُجّل اليوم/.test(await salim.locator('main').innerText()));
     });
 
     stale.set('assignedAt', new Date());

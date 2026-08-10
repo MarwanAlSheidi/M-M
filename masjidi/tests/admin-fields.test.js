@@ -30,7 +30,15 @@ const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
 
 /** حقولٌ تُرسَل عمداً ولا تُعرض — ولكلٍّ سببُه مكتوباً. */
 const ALLOWED_UNREAD = {
-  // (فارغة قصداً — انظر رأس الملف)
+  // `evidenceNote` ما كتبه الطالب بنفسه قبل لحظات، و`mosqueId` معرّفٌ لا نصّ.
+  // وقرارُ عدم إعادتهما إليه مأخوذٌ لا مسكوتٌ عنه: الشاشة تعرض ما يُعينه على
+  // فعلٍ تالٍ، وكلماتُه هو ليست منها.
+  getMyClaims: ['evidenceNote', 'mosqueId'],
+  // `requestId` يُستعمل في `withdrawInterest` لا في العرض، و`requestStatus`
+  // يقوله وسمُ الاهتمام نفسه (نشط/مسحوب/أُغلق)، و`note` كلماتُ صاحبه.
+  getMyInterests: ['requestId', 'requestStatus', 'note'],
+  // `interestId` و`volunteerId` معرّفان للتكليف لا للقراءة
+  getRequestInterests: ['interestId', 'volunteerId'],
 };
 
 /** الكائن الذي تُعيده الدالّة، حقلاً حقلاً. */
@@ -48,30 +56,40 @@ function returnedFields(source, fn) {
 /** جسم مكوّن React كما هو في المصدر. */
 function component(name) {
   const screens = read('app/src/screens.jsx');
-  const hit = screens.match(new RegExp(`export function ${name}\\(\\)[\\s\\S]*?\\n\\}\\n`));
+  const hit = screens.match(new RegExp(`function ${name}\\([^)]*\\)[\\s\\S]*?\\n\\}\\n`));
   assert.ok(hit, `تعذّر استخراج \`${name}\` من screens.jsx — الأداة عمياء`);
   return hit[0];
 }
 
-test('لوحة المشرف تقرأ ما يصلها', async (t) => {
+/**
+ * الشاشات وما يُغذّيها — ومعها اسمُ المتغيّر الذي تربطه.
+ *
+ * الاسم يلزم لأن `ImamHome` تربط `mosque.` و`claim.` لا `row.` — وأداةٌ تفترض
+ * `row.` وحده أعلنت أن **كلّ** حقلٍ فيها غير مقروء، وهو كذبٌ صريح.
+ */
+const SCREENS = [
+  { screen: 'AdminHome', fn: 'listPendingClaims', from: 'cloud/functions/mosques.js', bind: 'row' },
+  { screen: 'AdminHome', fn: 'listPendingContractors', from: 'cloud/functions/users.js', bind: 'row' },
+  { screen: 'ImamHome', fn: 'getMyClaims', from: 'cloud/functions/mosques.js', bind: 'claim' },
+  { screen: 'MyTasks', fn: 'getMyInterests', from: 'cloud/functions/requests.js', bind: 'row' },
+  { screen: 'RequestDetail', fn: 'getRequestInterests', from: 'cloud/functions/requests.js', bind: 'row' },
+];
+
+test('ما يُرسَل إلى الشاشة يُقرأ فيها', async (t) => {
   const admin = component('AdminHome');
 
-  const QUEUES = [
-    { fn: 'listPendingClaims', from: 'cloud/functions/mosques.js' },
-    { fn: 'listPendingContractors', from: 'cloud/functions/users.js' },
-  ];
-
-  for (const queue of QUEUES) {
-    await t.test(`${queue.fn} — لا حقلَ يُرسَل ولا يُقرأ`, () => {
+  for (const queue of SCREENS) {
+    await t.test(`${queue.screen} ← ${queue.fn}`, () => {
       const fields = returnedFields(read(queue.from), queue.fn);
       const allowed = ALLOWED_UNREAD[queue.fn] || [];
+      const body = component(queue.screen);
 
       const unread = fields
-        .filter((name) => !new RegExp(`row\\.${name}\\b`).test(admin))
+        .filter((name) => !new RegExp(`${queue.bind}\\.${name}\\b`).test(body))
         .filter((name) => !allowed.includes(name));
 
       assert.deepEqual(unread, [],
-        `حقولٌ تعبر السلك ولا تصل عين المشرف: ${unread.join('، ')}`);
+        `حقولٌ تعبر السلك ولا تصل عيناً: ${unread.join('، ')}`);
     });
   }
 
@@ -82,6 +100,11 @@ test('لوحة المشرف تقرأ ما يصلها', async (t) => {
     assert.match(read('app/src/screens.jsx'), /const Waited = /,
       'حساب المدّة مبثوثٌ في البطاقات بدل مكوّنٍ واحد');
     assert.match(admin, /<Waited\s/, 'اللوحة لا تعرض مدّة الانتظار أصلاً');
+    // والمنتظِر نفسه أولى بها من الناظر في انتظاره
+    assert.match(component('ImamHome'), /<Waited\s/,
+      'الإمام يرى «قيد المراجعة» بلا يومٍ ولا شهر');
+    assert.match(component('MyTasks'), /<Waited\s/,
+      'المتطوّع يرى «بانتظار اختيار الإمام» بلا مدّة');
   });
 
   await t.test('والوعد المقطوع هو الحدّ — لا رقمٌ مخترَع', () => {
