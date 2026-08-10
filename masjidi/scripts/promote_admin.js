@@ -24,6 +24,7 @@
 
 require('dotenv').config();
 const Parse = require('parse/node');
+const { announceTarget } = require('./lib/target');
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -40,6 +41,7 @@ function initParse() {
   }
   Parse.initialize(PARSE_APP_ID, PARSE_JS_KEY || '', PARSE_MASTER_KEY);
   Parse.serverURL = PARSE_SERVER_URL;
+  announceTarget('إدارة الحسابات');
 }
 
 async function listAdmins() {

@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const Parse = require('parse/node');
 const { planIndexes, splitByKind } = require('./lib/index-plan');
+const { announceTarget } = require('./lib/target');
 
 const schemaFile = path.join(__dirname, '..', 'cloud', 'schema.json');
 
@@ -27,6 +28,7 @@ async function main() {
   }
   Parse.initialize(PARSE_APP_ID, PARSE_JS_KEY || '', PARSE_MASTER_KEY);
   Parse.serverURL = PARSE_SERVER_URL;
+  announceTarget('تطبيق المخطط');
 
   const { classes } = JSON.parse(fs.readFileSync(schemaFile, 'utf8'));
   let applied = 0;

@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const Parse = require('parse/node');
 const { prepare, descriptiveFields } = require('./lib/mosque-record');
+const { announceTarget, hostOf } = require('./lib/target');
 
 /**
  * مصادر الموقع التي يكتبها الاستيراد نفسه — وما عداها أثبته إنسان.
@@ -82,6 +83,7 @@ function initParse() {
   }
   Parse.initialize(PARSE_APP_ID, PARSE_JS_KEY || '', PARSE_MASTER_KEY);
   Parse.serverURL = PARSE_SERVER_URL;
+  announceTarget('الاستيراد');
 }
 
 /**
@@ -192,7 +194,9 @@ async function main() {
   const wholeCountry = !importAll && limit === Infinity && !governorate;
   if (wholeCountry && !dryRun && !verifyOnly) {
     const cost = requestCost(records.length);
-    console.error(`✗ هذا استيرادٌ كامل: ${records.length} مسجداً.`);
+    // والوجهة في نصّ الردّ: من يُوقَف عن فعلٍ يحتاج أن يعرف **أين** كان سيقع
+    console.error(`✗ هذا استيرادٌ كامل: ${records.length} مسجداً`
+      + ` على ${hostOf(process.env.PARSE_SERVER_URL)}.`);
     console.error(`  الكلفة المقيسة: ≈${cost.batched} طلباً إن احتُسبت الدفعة طلباً،`);
     console.error(`  و≈${cost.perObject} إن احتُسب كلُّ كائنٍ على حدة — من باقةٍ شهرية 25,000.`);
     console.error('');

@@ -17,6 +17,7 @@
 
 require('dotenv').config();
 const Parse = require('parse/node');
+const { announceTarget } = require('./lib/target');
 
 const { PARSE_APP_ID, PARSE_MASTER_KEY, PARSE_SERVER_URL } = process.env;
 
@@ -35,7 +36,8 @@ const line = (row) => {
 };
 
 async function main() {
-  console.log(`فحص ${PARSE_SERVER_URL}\n`);
+  announceTarget('الفحص');
+  console.log('');
 
   const report = await Parse.Cloud.run('preflight', {}, { useMasterKey: true });
 
