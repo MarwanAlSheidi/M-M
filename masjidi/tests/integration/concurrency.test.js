@@ -89,6 +89,33 @@ test('ضغطتان في لحظةٍ واحدة', options, async (t) => {
       1, 'ولا يصل المكلَّف خبرُ تكليفه');
   });
 
+  /**
+   * ولا أثرَ لتكليفٍ لم يقم.
+   *
+   * أُصلحت البشرى أوّلاً — فلا يُخبَر بالتكليف إلا صاحبه — ثم قِيس ثانيةً فإذا
+   * **سجلّ المسجد يقول «كُلّف منفّذ بالعمل» مرّتين** لتكليفٍ واحد قام. والسجلّ
+   * أداةُ الشفافية التي تقوم عليها المنصّة، يقرؤه المصلّي والمتبرّع، ولا
+   * يُميّز قارئُه تكليفاً قام من تكليفٍ نُسخ فوقه بعد لحظة.
+   *
+   * **فالتحقّق يسبق كلَّ أثر لا البشرى وحدها.**
+   */
+  await t.test('ولا يُقيَّد في سجلّ المسجد تكليفٌ لم يقم', async () => {
+    const requestId = await newRequest('أثرُ التكليف');
+    await as(salim, 'expressInterest', { requestId });
+    await as(khalid, 'expressInterest', { requestId });
+
+    await Promise.allSettled([
+      as(imam, 'assignWorker', { requestId, workerId: salim.id }),
+      as(imam, 'assignWorker', { requestId, workerId: khalid.id }),
+    ]);
+
+    const trail = await as(imam, 'getMosqueAuditTrail', { mosqueId: mosque.id, limit: 100 });
+    const entries = trail.filter((row) => row.action === 'worker_assigned'
+      && row.targetId === requestId);
+    assert.equal(entries.length, 1,
+      'سجلّ المسجد يقول «كُلّف منفّذ» مرّتين لتكليفٍ واحد قام — والسجلّ وعدُ الشفافية');
+  });
+
   await t.test('واعتمادان متوازيان لا يرفعان السمعة مرّتين', async () => {
     const requestId = await newRequest('اعتمادان');
     await as(salim, 'expressInterest', { requestId });

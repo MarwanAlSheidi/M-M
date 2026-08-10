@@ -1922,6 +1922,28 @@ Parse.Cloud.define('assignWorker', async (request) => {
   serviceRequest.set('assignedAt', new Date());
   await serviceRequest.save(null, { useMasterKey: true });
 
+  /**
+   * **لا أثرَ لتكليفٍ لم يقم** — والقراءة بعد الحفظ تقول أيُّهما قام.
+   *
+   * قِيس بنداءين متوازيين لمنفّذين مختلفين: نجحا معاً، وكُتب الثاني في القاعدة،
+   * **وأُخبر كلاهما بأنه كُلِّف** — فيسافر أحدهما إلى المسجد وليس له فيه عمل.
+   *
+   * ثم قِيس ثانيةً بعد إصلاح البشرى وحدها، **فإذا سجلّ المسجد يقول «كُلّف
+   * منفّذ بالعمل» مرّتين** لتكليفٍ واحد قام. والسجلّ هو أداةُ الشفافية التي
+   * تقوم عليها المنصّة: يقرؤه المصلّي والمتبرّع، ولا يُميّز قارئُه تكليفاً
+   * قام من تكليفٍ نُسخ فوقه بعد لحظة.
+   *
+   * **فالتحقّق يسبق كلَّ أثر لا البشرى وحدها:** القيد، وإقفال الاهتمامات،
+   * والإشعار. ومن لم يقم تكليفُه لا يترك في المسجد أثراً.
+   */
+  const settled = await new Parse.Query('ServiceRequests')
+    .get(serviceRequest.id, { useMasterKey: true }).catch(() => null);
+  const holder = settled
+    && (settled.get('assignedContractorId') || settled.get('assignedVolunteerId'));
+  if (!holder || holder.id !== worker.id) {
+    E.invalid('كُلِّف غيرك بهذا الطلب في هذه اللحظة — حدّث القائمة وأعد المحاولة.');
+  }
+
   await audit.record({
     action: audit.ACTIONS.WORKER_ASSIGNED,
     target: serviceRequest,
@@ -1932,23 +1954,6 @@ Parse.Cloud.define('assignWorker', async (request) => {
   });
 
   await closeInterests(serviceRequest);
-
-  /**
-   * لا يُبشَّر إلا من صار التكليف له فعلاً.
-   *
-   * قِيس بنداءين متوازيين لمنفّذين مختلفين: نجحا معاً، وكُتب الثاني في القاعدة،
-   * **وأُخبر كلاهما بأنه كُلِّف**. فيسافر أحدهما إلى المسجد وليس له فيه عمل —
-   * وهو أشدُّ من ضياع النداء نفسه.
-   *
-   * والقراءة بعد الحفظ تقول من صار له: من لم يكن هو، لا يُرسَل إليه شيء.
-   */
-  const settled = await new Parse.Query('ServiceRequests')
-    .get(serviceRequest.id, { useMasterKey: true }).catch(() => null);
-  const holder = settled
-    && (settled.get('assignedContractorId') || settled.get('assignedVolunteerId'));
-  if (!holder || holder.id !== worker.id) {
-    E.invalid('كُلِّف غيرك بهذا الطلب في هذه اللحظة — حدّث القائمة وأعد المحاولة.');
-  }
 
   await pushToUsers(worker, {
     alert: `تم تكليفك بـ "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
