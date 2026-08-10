@@ -486,6 +486,13 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     await khalid.getByRole('button', { name: 'حسابي' }).click();
     await khalid.waitForSelector('.card');
     assert.match(await khalid.locator('.card').innerText(), /أعمال منجزة: 1/);
+
+    // وسمعتُه تُكتب في هذه اللحظة — فلا تُكتب وهو لا يعلم. قِيس على خادمٍ
+    // حقيقي: وارده بعد الاعتماد كما هو قبله، ورقمُه أعلاه صار 1.
+    await khalid.getByRole('button', { name: /التنبيهات/ }).click();
+    await khalid.waitForSelector('.card');
+    assert.match(await khalid.locator('main').innerText(), /اعتمد الإمام عملك/,
+      'قُيِّم المتطوّع ولم يبلغه خبرُ اعتماد عمله');
     });
   });
 

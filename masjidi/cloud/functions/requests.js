@@ -246,6 +246,23 @@ Parse.Cloud.define('withdrawInterest', async (request) => {
     actor: volunteer,
   });
 
+  /*
+   * والإمام يُخبَر بالانصراف كما أُخبر بالاهتمام.
+   *
+   * `expressInterest` تقول له «متطوّع مهتمّ — اختر المنفّذ من قائمة
+   * المهتمّين»، وهذه كانت صامتة. **فيُدعى إلى قائمةٍ صارت فارغة** ولا يعلم
+   * لماذا، أو ينتظر من انصرف. والإخبار بالبدء دون النهاية أسوأ من الصمت
+   * فيهما جميعاً.
+   */
+  const mosque = stored ? await fetchPointer(stored.get('mosqueId'), 'Mosques') : null;
+  const imam = mosque && mosque.get('imamId');
+  if (imam) {
+    await pushToUsers(imam, {
+      alert: `اعتذر متطوّع عن "${stored.get('title')}" — راجع قائمة المهتمّين.`,
+      requestId: stored.id,
+    });
+  }
+
   return { status: 'withdrawn' };
 });
 
@@ -607,6 +624,16 @@ Parse.Cloud.define('startWork', async (request) => {
     toStatus: STATUS.IN_PROGRESS,
   });
 
+  // ويعلم الإمام أن العمل بدأ في مسجده — وهو من كان يُعرض عليه «لم يحضر»
+  const mosque = await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
+  const imam = mosque.get('imamId');
+  if (imam) {
+    await pushToUsers(imam, {
+      alert: `بدأ العمل في "${serviceRequest.get('title')}" بمسجد ${mosque.get('name')}.`,
+      requestId: serviceRequest.id,
+    });
+  }
+
   return serviceRequest.toJSON();
 });
 
@@ -683,6 +710,32 @@ Parse.Cloud.define('completeService', async (request) => {
     fromStatus: STATUS.PENDING_APPROVAL,
     toStatus: STATUS.COMPLETED,
   });
+
+  /*
+   * ويُخبَر صاحبُ العمل أنّ عملَه اعتُمد.
+   *
+   * قِيس على خادمٍ حقيقي: وارد المتطوّع بعد الاعتماد **كما هو قبله** — رسالةٌ
+   * واحدة هي «تم تكليفك». وفي اللحظة نفسها صارت سمعته `completedJobs=1`
+   * و`avgRating=5`. **قُيِّم ولم يُخبَر.**
+   *
+   * وكلُّ انتقالٍ آخر في دورة الطلب يُبلَّغ به صاحبُه: النشرُ للمتطوّعين،
+   * والاهتمامُ للإمام، والتكليفُ للمنفّذ، والسحبُ للطرف الآخر، والإنجازُ
+   * للإمام، والإلغاءُ للمنفّذ. **والصمت الوحيد كان على اللحظة التي يُكافأ
+   * فيها المتطوّع** — وهي التي يقوم عليها المسار كلُّه في المرحلة الأولى.
+   *
+   * وكانت «بارك الله فيكم» تُقال في ردّ الدالّة — أي للإمام الذي ضغط الزرّ،
+   * لا لمن عمل.
+   */
+  const worker = serviceRequest.get('assignedVolunteerId')
+    || serviceRequest.get('assignedContractorId');
+  if (worker) {
+    const hours = serviceRequest.get('volunteerHours');
+    await pushToUsers(worker, {
+      alert: `اعتمد الإمام عملك في "${serviceRequest.get('title')}" — بارك الله فيك.`
+        + (hours > 0 ? ` وسُجّلت لك ${hours} ساعة تطوّع.` : ''),
+      requestId: serviceRequest.id,
+    });
+  }
 
   // TODO: صرف المستحقات للشركة يتم عبر دالة payout منفصلة بعد الاعتماد (functions/donations.js)
   // TODO: تسجيل ساعات التطوّع في منصة "أيادي" — يحتاج اتفاقية وAPI key رسمي.
