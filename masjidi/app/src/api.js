@@ -317,8 +317,14 @@ export const withdrawInterest = (requestId) => run('withdrawInterest', { request
 export const getMyInterests = () => run('getMyInterests');
 export const getRequestInterests = (requestId) => run('getRequestInterests', { requestId });
 export const assignWorker = (requestId, workerId) => run('assignWorker', { requestId, workerId });
-/** الطرف الآخر من التكليف — اسماً ورقماً. الهاتف محميّ فلا يُقرأ باستعلام. */
-export const getRequestContact = (requestId) => run('getRequestContact', { requestId });
+/**
+ * الطرف الآخر من التكليف — اسماً ورقماً. الهاتف محميّ فلا يُقرأ باستعلام.
+ *
+ * وبالجمع: نداءٌ واحد للقائمة كلّها لا نداءٌ لكل بطاقة. تُعيد خريطةً
+ * `{ [requestId]: {role, name, phone} }`، وما ليس المستدعي طرفاً فيه يغيب.
+ */
+export const getRequestContacts = (requestIds) =>
+  (requestIds.length ? run('getRequestContacts', { requestIds }) : Promise.resolve({}));
 export const releaseAssignment = (requestId, reason) => run('releaseAssignment', { requestId, reason });
 export const startWork = (requestId) => run('startWork', { requestId });
 export const markWorkDone = (requestId, notes, photoUrls) =>

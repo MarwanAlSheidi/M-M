@@ -474,41 +474,81 @@ const LIVE_ASSIGNMENT = [STATUS.ASSIGNED, STATUS.IN_PROGRESS, STATUS.PENDING_APP
  * والهاتف محميّ في المخطط (`protectedFields` على `_User`) فلا يُقرأ باستعلامٍ
  * من العميل — وهذا صواب. فيُعطى هنا **للطرف الآخر وحده، وفي مدّة التكليف
  * وحدها**: لا قبله فلا منفّذ، ولا بعده فقد انقضى ما يُتواصل بشأنه.
+ *
+ * **وبالجمع لا بالواحد.** كانت تُستدعى لكل بطاقةٍ على حدة، فقِيس في متصفّح
+ * حقيقي على متطوّعٍ له ثلاثة تكليفات:
+ *
+ *     مجموع النداءات لفتح «مهامّي»: 8 — منها getRequestContact ثلاثاً
+ *
+ * وحدُّ التكليفات ثلاثة، فثلاثة نداءٍ ضائعة في كل زيارة. وباقةُ Back4app
+ * المجانية 25 ألف طلبٍ شهرياً: خمسون منفّذاً يفتحون شاشتهم خمس مرّاتٍ يومياً
+ * يُنفقون **الباقةَ كلَّها** على هذا وحده. ونظيرُه قِيس من قبل في شارة الوارد
+ * وعولج بالطريقة نفسها: **ما يُطلب لقائمةٍ يُطلب مرّةً للقائمة.**
  */
-Parse.Cloud.define('getRequestContact', async (request) => {
+const MAX_CONTACTS = 20;
+
+Parse.Cloud.define('getRequestContacts', async (request) => {
   const user = requireUser(request);
-  const { requestId } = request.params;
-  if (!requestId) E.invalid('معرّف الطلب مطلوب.');
+  const ids = request.params.requestIds;
+  if (!Array.isArray(ids) || ids.length === 0) E.invalid('معرّفات الطلبات مطلوبة.');
+  if (ids.length > MAX_CONTACTS) E.invalid(`لا تتجاوز ${MAX_CONTACTS} طلباً في المرّة.`);
 
-  const serviceRequest = await new Parse.Query('ServiceRequests')
-    .get(requestId, { useMasterKey: true })
-    .catch(() => E.notFound('الطلب غير موجود.'));
+  const requests = await new Parse.Query('ServiceRequests')
+    .containedIn('objectId', ids)
+    .containedIn('status', LIVE_ASSIGNMENT)
+    .include('mosqueId')
+    .limit(MAX_CONTACTS)
+    .find({ useMasterKey: true });
 
-  if (!LIVE_ASSIGNMENT.includes(serviceRequest.get('status'))) {
-    E.invalid('لا تواصل إلا في مدّة التكليف.');
+  /*
+   * الحسابات تُجلب دفعةً واحدة: المسجد الواحد له إمامٌ واحد، والمنفّذ قد
+   * يكون هو نفسه في أكثر من طلب — فاستعلامٌ لكلٍّ يُعيد الشيء مرّاتٍ.
+   */
+  const parties = new Map();
+  for (const serviceRequest of requests) {
+    const worker = serviceRequest.get('assignedVolunteerId')
+      || serviceRequest.get('assignedContractorId');
+    const mosque = serviceRequest.get('mosqueId');
+    const imam = mosque && mosque.get('imamId');
+    if (!worker || !imam) continue;
+    parties.set(serviceRequest.id, { worker, imam });
   }
 
-  const worker = serviceRequest.get('assignedVolunteerId')
-    || serviceRequest.get('assignedContractorId');
-  if (!worker) E.invalid('لا يوجد منفّذ مكلَّف بهذا الطلب.');
+  const wanted = new Set();
+  for (const { worker, imam } of parties.values()) {
+    wanted.add(worker.id);
+    wanted.add(imam.id);
+  }
+  if (wanted.size === 0) return {};
 
-  const mosque = await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
-  const imam = mosque.get('imamId');
+  const people = new Map();
+  for (const row of await new Parse.Query(Parse.User)
+    .containedIn('objectId', [...wanted]).limit(MAX_CONTACTS * 2)
+    .find({ useMasterKey: true })) {
+    people.set(row.id, row);
+  }
 
-  // الصفة تُقرأ من الكائن المخزَّن لا من الطلب، والهوية تُقارَن بالمعرّف —
-  // فمن ليس طرفاً في هذا التكليف لا يقرأ رقم أحد.
-  const isImam = Boolean(imam) && imam.id === user.id;
-  const isWorker = worker.id === user.id;
-  if (!isImam && !isWorker) E.forbidden('لست طرفاً في هذا التكليف.');
+  const out = {};
+  for (const [requestId, { worker, imam }] of parties) {
+    // الصفة تُقرأ من الكائن المخزَّن لا من الطلب، والهوية تُقارَن بالمعرّف —
+    // فمن ليس طرفاً في هذا التكليف لا يقرأ رقم أحد. وما ليس طرفاً فيه
+    // **يُسقَط بصمت** لا يُسقِط الدفعة: القائمةُ تُطلب لصفوفٍ بيد صاحبها.
+    const isImam = imam.id === user.id;
+    const isWorker = worker.id === user.id;
+    if (!isImam && !isWorker) continue;
 
-  const other = await (isImam ? worker : imam).fetch({ useMasterKey: true });
+    const other = people.get(isImam ? worker.id : imam.id);
+    if (!other) continue;
 
-  return {
-    role: other.get('role'),
-    // الشركة تُعرف باسمها التجاري لا باسم من سجّلها
-    name: other.get('companyName') || other.get('fullName') || null,
-    phone: other.get('phone') || null,
-  };
+    out[requestId] = {
+      role: other.get('role'),
+      // الشركة تُعرف باسمها التجاري لا باسم من سجّلها
+      name: other.get('companyName') || other.get('fullName') || null,
+      phone: other.get('phone') || null,
+    };
+  }
+
+  return out;
 });
 
 Parse.Cloud.define('releaseAssignment', async (request) => {

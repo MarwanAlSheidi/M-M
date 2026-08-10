@@ -19,6 +19,9 @@ const STALE_ASSIGNED_DAYS = 7;
  */
 const OVERDUE_REVIEW_DAYS = 7;
 
+/** الحالات التي يلتقي فيها طرفا التكليف — نظيرُ `LIVE_ASSIGNMENT` على الخادم. */
+const CONTACT_STATUSES = ['assigned', 'in_progress', 'pending_imam_approval'];
+
 /**
  * كم انتظر صاحبُ الطلب — تحت عينَي من يقرّر.
  *
@@ -781,6 +784,13 @@ export function MyTasks() {
   // الاستدعاء لا يُشترط: `getMyInterests` مقصورة على المتطوّعين فتردّ الشركة
   const interests = useList(async () => (isVolunteer ? api.getMyInterests() : []));
   const tasks = useList(api.assignedToMe);
+  // نداءٌ واحد لكل البطاقات — ويُعاد جلبه حين تتغيّر القائمة أو حالاتها
+  const live = tasks.rows.filter((row) => CONTACT_STATUSES.includes(row.status));
+  const contacts = useList(
+    async () => [await api.getRequestContacts(live.map((row) => row.id))],
+    [live.map((row) => `${row.id}:${row.status}`).join(',')],
+  );
+  const contactOf = (id) => (contacts.rows[0] || {})[id];
   const [error, setError] = useState('');
 
   const guard = useAction();
@@ -859,7 +869,7 @@ export function MyTasks() {
                 </p>
               )}
               {/* من يُسأل عنه إذا وصل — البطاقة كانت تحمل الطريق ولا تحمل أحداً */}
-              <Counterpart requestId={row.id} status={row.status} />
+              <Counterpart contact={contactOf(row.id)} />
               {row.status === 'assigned' && (
                 <div className="row">
                   <button onClick={() => act(api.startWork, row.id)} disabled={guard.busy}>بدأت العمل</button>
@@ -1196,15 +1206,12 @@ function NewRequest({ mosque, onBack }) {
  *
  * ولا يُعرض شيءٌ إن أخفق النداء أو رُدّ: هذا سطرُ عونٍ لا شرطٌ للعمل، وخطأٌ
  * أحمر فوق بطاقةٍ سليمة يُقلق بلا فائدة.
+ *
+ * **والجلب لا يقع هنا.** كان كلُّ مكوّنٍ يجلب لنفسه، فقِيس في متصفّح حقيقي أن
+ * فتح «مهامّي» لمتطوّعٍ له ثلاثة تكليفات يُنفق ثمانية نداءات، ثلاثةٌ منها
+ * لهذا وحده. فصار الجلب في الشاشة مرّةً للقائمة كلّها، وهذا يعرض ما وصل.
  */
-function Counterpart({ requestId, status }) {
-  const live = ['assigned', 'in_progress', 'pending_imam_approval'].includes(status);
-  const state = useList(
-    async () => (live ? [await api.getRequestContact(requestId)] : []),
-    [requestId, live],
-  );
-
-  const contact = state.rows[0];
+function Counterpart({ contact }) {
   if (!contact || !contact.name) return null;
 
   return (
@@ -1223,6 +1230,13 @@ function RequestDetail({ request, onBack }) {
   );
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
+
+  const linked = CONTACT_STATUSES.includes(status);
+  const contacts = useList(
+    async () => [await api.getRequestContacts(linked ? [request.id] : [])],
+    [request.id, linked],
+  );
+  const contact = (contacts.rows[0] || {})[request.id];
 
   // الصفحة تُركَّب مع كل دخول، فالمدّة محسوبةٌ من وقت الجلب لا مخزّنة
   const waited = daysSince(request.assignedAt);
@@ -1291,7 +1305,7 @@ function RequestDetail({ request, onBack }) {
         <>
           <h2>بانتظار المنفّذ</h2>
           {/* من يُحكم عليه بالغياب أدناه — اسمُه ورقمُه فوق الزرّ لا بعده */}
-          <Counterpart requestId={request.id} status={status} />
+          <Counterpart contact={contact} />
           {/*
             «لم يحضر» حكمٌ يُقيَّد على المنفّذ في `abandonedJobs` ويراه كل إمامٍ
             بعده. وكان يُعرض بلا مدّة، فيستوي عند الإمام منفّذٌ كُلِّف أمسِ وآخرُ
@@ -1316,7 +1330,7 @@ function RequestDetail({ request, onBack }) {
         <>
           <h2>معاينة واعتماد</h2>
           {/* والتقييم يُكتب في `avgRating` — فلا يُعتمد عملُ من لا يُعرف */}
-          <Counterpart requestId={request.id} status={status} />
+          <Counterpart contact={contact} />
           {request.workerNotes && <p className="notice">«{request.workerNotes}»</p>}
           {request.completionPhotos.length > 0 ? (
             <div className="gallery" data-testid="gallery">
@@ -1343,7 +1357,7 @@ function RequestDetail({ request, onBack }) {
       */}
       {status === 'in_progress' && (
         <>
-          <Counterpart requestId={request.id} status={status} />
+          <Counterpart contact={contact} />
           <p className="notice">
             {startedLabel ? `بدأ العمل ${startedLabel}. ` : ''}
             يُبلّغك المنفّذ عند الإنجاز.

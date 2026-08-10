@@ -82,7 +82,7 @@ test('نقاط الدخول', async (t) => {
     'getNearbyMosques', 'getNearbyOpportunities', 'updateMyLocation', 'searchMosques', 'claimMosque', 'getMyMosques', 'getMyClaims', 'confirmMosqueLocation', 'listPendingClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'expressInterest', 'withdrawInterest',
     'getRequestInterests', 'getMyInterests', 'assignWorker', 'releaseAssignment',
-    'startWork', 'markWorkDone', 'getRequestContact',
+    'startWork', 'markWorkDone', 'getRequestContacts',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
     'confirmDonation', 'paymentWebhook', 'payoutContractor', 'refundDonation',
     'getMosqueLedger', 'listPendingContractors', 'reviewContractor',

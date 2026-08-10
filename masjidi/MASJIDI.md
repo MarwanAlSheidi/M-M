@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA **يُثبَّت ويعمل بلا إنترنت** — ويحرسه `verify:pwa`. و**React Native ليس ناقصاً بل غير مطلوب**: الواجهة تُثبَّت على أندرويد وiOS، وعميلٌ ثانٍ يُضاعف السطح بلا أثرٍ للمستخدم في المرحلة الأولى |
-| الاختبارات | ✅ 337 حالة على بديل Parse (`npm test`) + 177 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 29 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 337 حالة على بديل Parse (`npm test`) + 178 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 31 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -198,6 +198,11 @@
     `tests/admin-fields.test.js`: ما تُرسله دوالُّ الشاشات يُقرأ فيها، أو
     يُكتب سببُ تركه في `ALLOWED_UNREAD`.
 
+34. **ما يُطلب لقائمةٍ يُطلب مرّةً للقائمة.** لا نداءَ داخل `map` على الصفوف:
+    الباقة 25 ألف طلبٍ شهرياً، وشاشةٌ تُفتح يومياً تستهلكها. ويحرسه
+    `tests/e2e/requests-per-screen.test.js` بالعدّ **على الشبكة**، ويُسقط أيَّ
+    نداءٍ يتكرّر لا نداءً بعينه. والدفعةُ تُسقط ما ليس لصاحبها ولا تسقط كلُّها.
+
 ### القيود المهمة
 
 **تنظيمي — اقرأ هذا قبل لمس مسار التبرعات:**
@@ -307,6 +312,7 @@ tests/
   e2e/                 متصفّح حقيقي فوق خادم حقيقي — `npm run test:e2e`
     harness.js         يبني الواجهة على منفذ الاختبار، ويقدّمها، ويفتح Chromium
     journey.test.js    الرحلة كاملة: التسجيل، الطلب، الاهتمام، السحب، التنبيهات
+    requests-per-screen.test.js  عدُّ النداءات على الشبكة — لا نداءَ يتكرّر بعدد الصفوف
 data/
   mosques.json         18,214 سجلاً جاهزاً
   cleaning_report.json تقرير جودة البيانات
@@ -3026,6 +3032,64 @@ RequestDetail ← getRequestInterests createdAt              لا يُقرأ
 تحمل الآن أسباباً مكتوبة لما لا يُعرض قصداً — كنصّ الطالب الذي كتبه هو قبل
 لحظات. **والقرار مكتوبٌ لا مسكوتٌ عنه**، وذاك كلُّ ما يُطلب من قائمةٍ كهذه.
 وسقط على `HEAD` في أربعٍ من ثمان.
+
+---
+
+### 🟠 نداءٌ لكل بطاقة — وأنا من أوقعه قبل ستّ دورات
+
+نتيجتان سالبتان أوّلاً: رسائلُ القوائم الفارغة معقولة، وأهمُّها يدلّ على الفعل
+التالي («ابحث عنه من تبويب تسجيل مسجد»). و`Listing` **يقدّم الخطأ على
+الفراغ**، فلا يُقال «لا توجد فرص» لمن انقطعت عنه الشبكة — وهو عطبٌ عولج من قبل
+في شاشة «حسابي» ولم يتكرّر هنا.
+
+ثم نظرتُ فيما أضفتُه أنا. `Counterpart` — المكوّن الذي كتبتُه في الدورة
+الثانية عشرة ليرى كلُّ طرفٍ الطرفَ الآخر — يُجلب **لنفسه** داخل `map` على
+البطاقات. فقِيس في متصفّح حقيقي على متطوّعٍ له ثلاثة تكليفات:
+
+```
+مجموع النداءات لفتح «مهامّي»: 8
+  getMyNotifications 1 · updateMyLocation 1 · getNearbyOpportunities 1
+  getMyInterests 1 · ServiceRequests 1 · getRequestContact 3   ←
+```
+
+**ثلاثةٌ حيث يكفي واحد.** وحدُّ التكليفات ثلاثة، فهذه أسوأ حالةٍ ممكنة —
+والباقة المجانية 25 ألف طلبٍ شهرياً: خمسون منفّذاً يفتحون شاشتهم خمس مرّاتٍ
+يومياً يُنفقونها **كلَّها على هذا وحده**.
+
+ونظيرُه قِيس مرّتين من قبل في هذا المستودع — شارةُ الوارد، ثم قائمةٌ تُجلب
+لتُرمى. **والقاعدة واحدة: ما يُطلب لقائمةٍ يُطلب مرّةً للقائمة.**
+
+#### والدفعة تُسقط ما ليس لصاحبها ولا تسقط كلُّها
+
+`getRequestContacts` تأخذ قائمة معرّفات وتُعيد خريطة. وما ليس المستدعي طرفاً
+فيه **يغيب من الخريطة** ولا يرمي: القائمةُ تُطلب لصفوفٍ بيد صاحبها، **وسقوطها
+كلِّها لأجل صفٍّ واحد يُعمي البقيّة**. والحرس نفسه لم يتغيّر — الصفة من الكائن
+المخزَّن، والهوية بمقارنة المعرّف، والحالة في مدّة التكليف وحدها. وقِيس ذلك
+صراحةً بدفعةٍ فيها معرّفٌ غريب.
+
+والحسابات تُجلب دفعةً واحدة أيضاً: المسجد الواحد له إمامٌ واحد، والمنفّذ قد
+يكون هو نفسه في أكثر من طلب — فاستعلامٌ لكلٍّ يُعيد الشيء مرّاتٍ.
+
+#### والحارس يعدّ على الشبكة لا في الشيفرة
+
+`tests/e2e/requests-per-screen.test.js` يفتح «مهامّي» بثلاثة تكليفات ويعدّ ما
+يمرّ فعلاً، **ويُسقط أيَّ نداءٍ يتكرّر** — لا نداءً بعينه. فقاعدةُ «مرّةً
+للقائمة» محروسةٌ لكل نداءٍ يُضاف بعد اليوم، لا لهذا وحده. وسقط على `HEAD`
+بالتفصيل المقيس نفسه.
+
+**ولا يُقاس هذا إلا في متصفّح:** الشيفرة تبدو سليمة في الحالين، والفرق على
+الشبكة.
+
+#### وإضافةُ ملفٍّ ثانٍ للمتصفّح كسرت الرحلة
+
+بعد إضافة الحارس سقطت الرحلة كلُّها. والسبب أن `test:e2e` كان يُشغّل الملفات
+**بالتوازي**، وكلُّ ملفٍّ يرفع PostgreSQL وparse-server ومتصفّحاً — فتزاحمت
+على المنافذ. واختبارُ التكامل محروسٌ بـ`--test-concurrency=1` منذ حين، والمتصفّح
+لم يكن يحتاجه لأنه كان ملفاً واحداً.
+
+**والدرس:** إعدادٌ يصحّ لملفٍّ واحد ليس إعداداً — هو صدفةٌ لم تُختبر. وقد ظهر
+هذا فوراً لا بعد حين، لأن الطبقات تُشغَّل كلُّها في `npm run verify` قبل كل
+دفع.
 
 ---
 
@@ -5810,41 +5874,81 @@ const LIVE_ASSIGNMENT = [STATUS.ASSIGNED, STATUS.IN_PROGRESS, STATUS.PENDING_APP
  * والهاتف محميّ في المخطط (`protectedFields` على `_User`) فلا يُقرأ باستعلامٍ
  * من العميل — وهذا صواب. فيُعطى هنا **للطرف الآخر وحده، وفي مدّة التكليف
  * وحدها**: لا قبله فلا منفّذ، ولا بعده فقد انقضى ما يُتواصل بشأنه.
+ *
+ * **وبالجمع لا بالواحد.** كانت تُستدعى لكل بطاقةٍ على حدة، فقِيس في متصفّح
+ * حقيقي على متطوّعٍ له ثلاثة تكليفات:
+ *
+ *     مجموع النداءات لفتح «مهامّي»: 8 — منها getRequestContact ثلاثاً
+ *
+ * وحدُّ التكليفات ثلاثة، فثلاثة نداءٍ ضائعة في كل زيارة. وباقةُ Back4app
+ * المجانية 25 ألف طلبٍ شهرياً: خمسون منفّذاً يفتحون شاشتهم خمس مرّاتٍ يومياً
+ * يُنفقون **الباقةَ كلَّها** على هذا وحده. ونظيرُه قِيس من قبل في شارة الوارد
+ * وعولج بالطريقة نفسها: **ما يُطلب لقائمةٍ يُطلب مرّةً للقائمة.**
  */
-Parse.Cloud.define('getRequestContact', async (request) => {
+const MAX_CONTACTS = 20;
+
+Parse.Cloud.define('getRequestContacts', async (request) => {
   const user = requireUser(request);
-  const { requestId } = request.params;
-  if (!requestId) E.invalid('معرّف الطلب مطلوب.');
+  const ids = request.params.requestIds;
+  if (!Array.isArray(ids) || ids.length === 0) E.invalid('معرّفات الطلبات مطلوبة.');
+  if (ids.length > MAX_CONTACTS) E.invalid(`لا تتجاوز ${MAX_CONTACTS} طلباً في المرّة.`);
 
-  const serviceRequest = await new Parse.Query('ServiceRequests')
-    .get(requestId, { useMasterKey: true })
-    .catch(() => E.notFound('الطلب غير موجود.'));
+  const requests = await new Parse.Query('ServiceRequests')
+    .containedIn('objectId', ids)
+    .containedIn('status', LIVE_ASSIGNMENT)
+    .include('mosqueId')
+    .limit(MAX_CONTACTS)
+    .find({ useMasterKey: true });
 
-  if (!LIVE_ASSIGNMENT.includes(serviceRequest.get('status'))) {
-    E.invalid('لا تواصل إلا في مدّة التكليف.');
+  /*
+   * الحسابات تُجلب دفعةً واحدة: المسجد الواحد له إمامٌ واحد، والمنفّذ قد
+   * يكون هو نفسه في أكثر من طلب — فاستعلامٌ لكلٍّ يُعيد الشيء مرّاتٍ.
+   */
+  const parties = new Map();
+  for (const serviceRequest of requests) {
+    const worker = serviceRequest.get('assignedVolunteerId')
+      || serviceRequest.get('assignedContractorId');
+    const mosque = serviceRequest.get('mosqueId');
+    const imam = mosque && mosque.get('imamId');
+    if (!worker || !imam) continue;
+    parties.set(serviceRequest.id, { worker, imam });
   }
 
-  const worker = serviceRequest.get('assignedVolunteerId')
-    || serviceRequest.get('assignedContractorId');
-  if (!worker) E.invalid('لا يوجد منفّذ مكلَّف بهذا الطلب.');
+  const wanted = new Set();
+  for (const { worker, imam } of parties.values()) {
+    wanted.add(worker.id);
+    wanted.add(imam.id);
+  }
+  if (wanted.size === 0) return {};
 
-  const mosque = await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
-  const imam = mosque.get('imamId');
+  const people = new Map();
+  for (const row of await new Parse.Query(Parse.User)
+    .containedIn('objectId', [...wanted]).limit(MAX_CONTACTS * 2)
+    .find({ useMasterKey: true })) {
+    people.set(row.id, row);
+  }
 
-  // الصفة تُقرأ من الكائن المخزَّن لا من الطلب، والهوية تُقارَن بالمعرّف —
-  // فمن ليس طرفاً في هذا التكليف لا يقرأ رقم أحد.
-  const isImam = Boolean(imam) && imam.id === user.id;
-  const isWorker = worker.id === user.id;
-  if (!isImam && !isWorker) E.forbidden('لست طرفاً في هذا التكليف.');
+  const out = {};
+  for (const [requestId, { worker, imam }] of parties) {
+    // الصفة تُقرأ من الكائن المخزَّن لا من الطلب، والهوية تُقارَن بالمعرّف —
+    // فمن ليس طرفاً في هذا التكليف لا يقرأ رقم أحد. وما ليس طرفاً فيه
+    // **يُسقَط بصمت** لا يُسقِط الدفعة: القائمةُ تُطلب لصفوفٍ بيد صاحبها.
+    const isImam = imam.id === user.id;
+    const isWorker = worker.id === user.id;
+    if (!isImam && !isWorker) continue;
 
-  const other = await (isImam ? worker : imam).fetch({ useMasterKey: true });
+    const other = people.get(isImam ? worker.id : imam.id);
+    if (!other) continue;
 
-  return {
-    role: other.get('role'),
-    // الشركة تُعرف باسمها التجاري لا باسم من سجّلها
-    name: other.get('companyName') || other.get('fullName') || null,
-    phone: other.get('phone') || null,
-  };
+    out[requestId] = {
+      role: other.get('role'),
+      // الشركة تُعرف باسمها التجاري لا باسم من سجّلها
+      name: other.get('companyName') || other.get('fullName') || null,
+      phone: other.get('phone') || null,
+    };
+  }
+
+  return out;
 });
 
 Parse.Cloud.define('releaseAssignment', async (request) => {
@@ -9283,41 +9387,81 @@ const LIVE_ASSIGNMENT = [STATUS.ASSIGNED, STATUS.IN_PROGRESS, STATUS.PENDING_APP
  * والهاتف محميّ في المخطط (`protectedFields` على `_User`) فلا يُقرأ باستعلامٍ
  * من العميل — وهذا صواب. فيُعطى هنا **للطرف الآخر وحده، وفي مدّة التكليف
  * وحدها**: لا قبله فلا منفّذ، ولا بعده فقد انقضى ما يُتواصل بشأنه.
+ *
+ * **وبالجمع لا بالواحد.** كانت تُستدعى لكل بطاقةٍ على حدة، فقِيس في متصفّح
+ * حقيقي على متطوّعٍ له ثلاثة تكليفات:
+ *
+ *     مجموع النداءات لفتح «مهامّي»: 8 — منها getRequestContact ثلاثاً
+ *
+ * وحدُّ التكليفات ثلاثة، فثلاثة نداءٍ ضائعة في كل زيارة. وباقةُ Back4app
+ * المجانية 25 ألف طلبٍ شهرياً: خمسون منفّذاً يفتحون شاشتهم خمس مرّاتٍ يومياً
+ * يُنفقون **الباقةَ كلَّها** على هذا وحده. ونظيرُه قِيس من قبل في شارة الوارد
+ * وعولج بالطريقة نفسها: **ما يُطلب لقائمةٍ يُطلب مرّةً للقائمة.**
  */
-Parse.Cloud.define('getRequestContact', async (request) => {
+const MAX_CONTACTS = 20;
+
+Parse.Cloud.define('getRequestContacts', async (request) => {
   const user = requireUser(request);
-  const { requestId } = request.params;
-  if (!requestId) E.invalid('معرّف الطلب مطلوب.');
+  const ids = request.params.requestIds;
+  if (!Array.isArray(ids) || ids.length === 0) E.invalid('معرّفات الطلبات مطلوبة.');
+  if (ids.length > MAX_CONTACTS) E.invalid(`لا تتجاوز ${MAX_CONTACTS} طلباً في المرّة.`);
 
-  const serviceRequest = await new Parse.Query('ServiceRequests')
-    .get(requestId, { useMasterKey: true })
-    .catch(() => E.notFound('الطلب غير موجود.'));
+  const requests = await new Parse.Query('ServiceRequests')
+    .containedIn('objectId', ids)
+    .containedIn('status', LIVE_ASSIGNMENT)
+    .include('mosqueId')
+    .limit(MAX_CONTACTS)
+    .find({ useMasterKey: true });
 
-  if (!LIVE_ASSIGNMENT.includes(serviceRequest.get('status'))) {
-    E.invalid('لا تواصل إلا في مدّة التكليف.');
+  /*
+   * الحسابات تُجلب دفعةً واحدة: المسجد الواحد له إمامٌ واحد، والمنفّذ قد
+   * يكون هو نفسه في أكثر من طلب — فاستعلامٌ لكلٍّ يُعيد الشيء مرّاتٍ.
+   */
+  const parties = new Map();
+  for (const serviceRequest of requests) {
+    const worker = serviceRequest.get('assignedVolunteerId')
+      || serviceRequest.get('assignedContractorId');
+    const mosque = serviceRequest.get('mosqueId');
+    const imam = mosque && mosque.get('imamId');
+    if (!worker || !imam) continue;
+    parties.set(serviceRequest.id, { worker, imam });
   }
 
-  const worker = serviceRequest.get('assignedVolunteerId')
-    || serviceRequest.get('assignedContractorId');
-  if (!worker) E.invalid('لا يوجد منفّذ مكلَّف بهذا الطلب.');
+  const wanted = new Set();
+  for (const { worker, imam } of parties.values()) {
+    wanted.add(worker.id);
+    wanted.add(imam.id);
+  }
+  if (wanted.size === 0) return {};
 
-  const mosque = await fetchPointer(serviceRequest.get('mosqueId'), 'Mosques');
-  const imam = mosque.get('imamId');
+  const people = new Map();
+  for (const row of await new Parse.Query(Parse.User)
+    .containedIn('objectId', [...wanted]).limit(MAX_CONTACTS * 2)
+    .find({ useMasterKey: true })) {
+    people.set(row.id, row);
+  }
 
-  // الصفة تُقرأ من الكائن المخزَّن لا من الطلب، والهوية تُقارَن بالمعرّف —
-  // فمن ليس طرفاً في هذا التكليف لا يقرأ رقم أحد.
-  const isImam = Boolean(imam) && imam.id === user.id;
-  const isWorker = worker.id === user.id;
-  if (!isImam && !isWorker) E.forbidden('لست طرفاً في هذا التكليف.');
+  const out = {};
+  for (const [requestId, { worker, imam }] of parties) {
+    // الصفة تُقرأ من الكائن المخزَّن لا من الطلب، والهوية تُقارَن بالمعرّف —
+    // فمن ليس طرفاً في هذا التكليف لا يقرأ رقم أحد. وما ليس طرفاً فيه
+    // **يُسقَط بصمت** لا يُسقِط الدفعة: القائمةُ تُطلب لصفوفٍ بيد صاحبها.
+    const isImam = imam.id === user.id;
+    const isWorker = worker.id === user.id;
+    if (!isImam && !isWorker) continue;
 
-  const other = await (isImam ? worker : imam).fetch({ useMasterKey: true });
+    const other = people.get(isImam ? worker.id : imam.id);
+    if (!other) continue;
 
-  return {
-    role: other.get('role'),
-    // الشركة تُعرف باسمها التجاري لا باسم من سجّلها
-    name: other.get('companyName') || other.get('fullName') || null,
-    phone: other.get('phone') || null,
-  };
+    out[requestId] = {
+      role: other.get('role'),
+      // الشركة تُعرف باسمها التجاري لا باسم من سجّلها
+      name: other.get('companyName') || other.get('fullName') || null,
+      phone: other.get('phone') || null,
+    };
+  }
+
+  return out;
 });
 
 Parse.Cloud.define('releaseAssignment', async (request) => {
@@ -10867,7 +11011,7 @@ Parse.Cloud.define('health', async () => ({
 | `getMyInterests` | volunteer | اهتماماته وحالة كلٍّ منها |
 | `getRequestInterests` | imam | قائمة المهتمّين بمهاراتهم وتقييمهم |
 | `assignWorker` | imam | تعيين متطوع أو شركة |
-| `getRequestContact` | طرفا التكليف | اسم الطرف الآخر ورقمه — في مدّة التكليف وحدها. الهاتف محميّ في المخطط فلا يُقرأ باستعلام |
+| `getRequestContacts` | طرفا التكليف | أسماء الأطراف الأخرى وأرقامها لقائمة طلبات — في مدّة التكليف وحدها، ونداءٌ واحد للقائمة. الهاتف محميّ في المخطط فلا يُقرأ باستعلام |
 | `startWork` | المنفّذ | بدء التنفيذ |
 | `markWorkDone` | المنفّذ | إبلاغ بالإنجاز + صور |
 | `completeService` | imam | معاينة واعتماد وتقييم |
@@ -11969,7 +12113,7 @@ files/
     "lint": "eslint cloud scripts tests --ext .js",
     "test:integration": "node --test --test-concurrency=1 tests/integration/*.test.js",
     "seed:verify": "node scripts/seed_mosques.js --verify",
-    "test:e2e": "node --test --test-timeout=180000 tests/e2e/*.test.js",
+    "test:e2e": "node --test --test-concurrency=1 --test-timeout=180000 tests/e2e/*.test.js",
     "admin": "node scripts/promote_admin.js",
     "preflight": "node scripts/preflight.js",
     "verify": "node scripts/verify.js"
@@ -14120,7 +14264,7 @@ test('نقاط الدخول', async (t) => {
     'getNearbyMosques', 'getNearbyOpportunities', 'updateMyLocation', 'searchMosques', 'claimMosque', 'getMyMosques', 'getMyClaims', 'confirmMosqueLocation', 'listPendingClaims', 'reviewMosqueClaim',
     'createServiceRequest', 'expressInterest', 'withdrawInterest',
     'getRequestInterests', 'getMyInterests', 'assignWorker', 'releaseAssignment',
-    'startWork', 'markWorkDone', 'getRequestContact',
+    'startWork', 'markWorkDone', 'getRequestContacts',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
     'confirmDonation', 'paymentWebhook', 'payoutContractor', 'refundDonation',
     'getMosqueLedger', 'listPendingContractors', 'reviewContractor',
