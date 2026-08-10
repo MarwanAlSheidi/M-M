@@ -1,5 +1,5 @@
 const E = require('../lib/errors');
-const { requireUser, requireRole } = require('../lib/auth');
+const { requireUser, requireRole, TEXT_LIMITS } = require('../lib/auth');
 const { pushToUsers } = require('../lib/push');
 const audit = require('../lib/audit');
 const geo = require('../lib/geo');
@@ -213,9 +213,11 @@ Parse.Cloud.define('updateMyProfile', async (request) => {
   const user = requireUser(request);
   const { fullName, phone, skills, governorate, wilayat } = request.params;
 
-  if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, 80));
-  if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, 20));
-  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, 60));
+  // الأطوال من `TEXT_LIMITS` لا مكتوبةً هنا: `beforeSave` يقصّ بها كذلك،
+  // ورقمان في موضعين يفترقان بلا أن يُلحَظ
+  if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, TEXT_LIMITS.fullName));
+  if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, TEXT_LIMITS.phone));
+  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, TEXT_LIMITS.wilayat));
 
   if (skills !== undefined) {
     if (!Array.isArray(skills)) E.invalid('المهارات تُرسل كقائمة.');

@@ -91,4 +91,45 @@ async function fetchPointer(pointer, className) {
   return pointer.fetch({ useMasterKey: true });
 }
 
-module.exports = { ROLES, requireUser, requireRole, mosqueForImam, fetchPointer };
+/**
+ * أطوال حقول الحساب النصّية — **مصدرٌ واحد**.
+ *
+ * كانت مكتوبةً في `updateMyProfile` وحدها، والتسجيل يكتب على `_User` مباشرةً
+ * بلا دالة سحابة فلا يمرّ بها. قِيس على خادمٍ حقيقي: **تسجيلٌ باسمٍ من مئتي
+ * ألف حرفٍ يُقبل ويُحفَظ**، والحقل نفسه يُقصّ إلى ثمانين عبر الدالة.
+ *
+ * وثلاثة آثار: قاعدةٌ سعتها 250 ميغابايت يملؤها بضع مئات من التسجيلات،
+ * واسمٌ يُعرض للإمام في بطاقة المهتمّ **فيكسر الشاشة**، والتسجيل مفتوحٌ
+ * لغير المصادَق فالكلفة صفر على فاعله.
+ *
+ * فالحدُّ هنا لا هناك: `beforeSave` يمرّ به **كل** كتابة — تسجيلاً كانت أو
+ * تحديثاً أو حفظاً مباشراً. **والحدُّ الذي يُطبَّق على بابٍ ويُترك آخر ليس حدّاً.**
+ */
+const TEXT_LIMITS = {
+  fullName: 80,
+  phone: 20,
+  wilayat: 60,
+  governorate: 40,
+  companyName: 120,
+  crNumber: 30,
+};
+
+/** يقصّ حقول الحساب النصّية إلى حدودها، ويُعيد ما قُصّ منها. */
+function clampUserText(user) {
+  const trimmed = [];
+  for (const [field, limit] of Object.entries(TEXT_LIMITS)) {
+    const value = user.get(field);
+    if (typeof value !== 'string') continue;
+    const cleaned = value.trim().slice(0, limit);
+    if (cleaned !== value) {
+      user.set(field, cleaned);
+      trimmed.push(field);
+    }
+  }
+  return trimmed;
+}
+
+module.exports = {
+  ROLES, requireUser, requireRole, mosqueForImam, fetchPointer,
+  TEXT_LIMITS, clampUserText,
+};

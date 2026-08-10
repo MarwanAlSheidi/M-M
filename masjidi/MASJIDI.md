@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA يعمل بلا إنترنت. ❌ لا React Native |
-| الاختبارات | ✅ 312 حالة على بديل Parse (`npm test`) + 127 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 27 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 312 حالة على بديل Parse (`npm test`) + 134 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 27 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -121,13 +121,17 @@
 18. **قيدُ تدقيقٍ بلا `mosqueId` لا يبلغ عيناً أبداً** — `getMosqueAuditTrail`
     هي القارئ الوحيد وتستعلم بالمسجد، ثم يحذفه التقليم بعد 180 يوماً. فكل
     فعلٍ له مسجدٌ يُعرف فليُقيَّد به.
-19. **`count()` بلا قيدٍ واحد تُعيد صفراً صامتاً** على `parse-server` فوق
+19. **حدُّ الطول على `beforeSave` لا في الدوال.** التسجيل يكتب على `_User`
+    مباشرةً بلا دالة سحابة، فحدٌّ مكتوبٌ في `updateMyProfile` وحدها لا يمرّ به.
+    الأطوال في `TEXT_LIMITS` بـ`lib/auth.js` — **مصدرٌ واحد** تقرؤه الدالة
+    والمُشغّل معاً. وقِيس قبل الإصلاح: اسمٌ من مئتي ألف حرفٍ قُبل وحُفظ.
+20. **`count()` بلا قيدٍ واحد تُعيد صفراً صامتاً** على `parse-server` فوق
     PostgreSQL بينما `find()` تُعيد السجلّات — قِيس في هذا المستودع. للعدّ
     الكامل استعمل `exists('objectId')`، ويحرس ذلك سلكُ تعثّر.
-20. **`health` تقول إن الكود حُمّل ولا تقول غير ذلك.** ما يُفحص قبل الإطلاق
+21. **`health` تقول إن الكود حُمّل ولا تقول غير ذلك.** ما يُفحص قبل الإطلاق
     هو `npm run preflight`: يُشغّل الصيغ المشبوهة على القاعدة الحيّة، **ويطبع
     ما لم يفحصه** — فالأخضر لا يعني «كلُّ شيء سليم».
-21. **الكود 209 يعني أن الجلسة زالت** — يُعالَج مركزياً في `api.js`: يُمحى
+22. **الكود 209 يعني أن الجلسة زالت** — يُعالَج مركزياً في `api.js`: يُمحى
     المحلّي ويُطلق `SESSION_EXPIRED`، فيعيد `App` شاشة الدخول. لا تلتقطه في
     شاشة، ولا تعرضه كخطأٍ عاديّ.
 
@@ -225,6 +229,7 @@ tests/
     revoked-contractor.test.js  سحب اعتماد شركةٍ مكلَّفة — من يُخبَر وما يُمنع
     mosque-transfer.test.js  انتقال المسجد من إمامٍ إلى إمام، وحدُّ الطلبات
     preflight.test.js  الفحص على خادمٍ معطوب: يقول ما العطب ولا يرمي
+    user-text.test.js  حدود نصّ الحساب على باب التسجيل لا على الدوال وحدها
   e2e/                 متصفّح حقيقي فوق خادم حقيقي — `npm run test:e2e`
     harness.js         يبني الواجهة على منفذ الاختبار، ويقدّمها، ويفتح Chromium
     journey.test.js    الرحلة كاملة: التسجيل، الطلب، الاهتمام، السحب، التنبيهات
@@ -2036,6 +2041,53 @@ exists(objectId)     : 30      hasLocation=false    : 5
 
 ---
 
+### 🔴 حدٌّ مكتوبٌ على بابٍ واحد، والباب الآخر مفتوح
+
+**كيف وُجد:** الدورة بدأت بقياس **حجم** الحمولات — بعد أن قِيس عددُها وأيُّها.
+والنتيجة: لا شيء. أكبر شاشة 6.6 كيلوبايت على بيانات وزارةٍ حقيقية. **فلم
+يُختلق عطبٌ حيث لم يجد القياس واحداً**، وانتقل السؤال إلى المدخلات: أيُّ نصٍّ
+يكتبه العميل بلا حدّ؟
+
+مسحُ `cloud/` أظهر أن كل كتابةٍ مارّةٍ بدالة سحابة مقصوصة: `title` 120،
+و`description` 2000، و`evidenceNote` 500، و`workerNotes` 1000، و`fullName` 80.
+**ثم التسجيل.** `api.js#signUp` لا يمرّ بدالة سحابة أصلاً — يكتب على `_User`
+مباشرةً بـ`user.signUp()`، و`beforeSave` يحرس الدور والاعتماد ولا يحرس طولاً.
+
+**قِيس على خادمٍ حقيقي:**
+
+```
+حُفظ. طول الاسم: 200000 — الهاتف: 200000 — السجل: 200000
+عبر الدالة — الاسم: 80 — الهاتف: 20
+```
+
+**الحدُّ معلومٌ ومكتوب، ولا يُطبَّق على الباب الذي يدخل منه كلُّ مستخدمٍ جديد.**
+
+**والأثر ثلاثة:**
+
+1. **قاعدةٌ سعتها 250 ميغابايت** يملؤها بضع مئات من التسجيلات — والتسجيل
+   مفتوحٌ لغير المصادَق، **فالكلفة صفرٌ على فاعله.**
+2. **`fullName` يُعرض للإمام** في بطاقة المهتمّ وهو يختار المنفّذ — واسمٌ من
+   مئتي ألف حرفٍ يكسر الشاشة التي يُتّخذ فيها القرار.
+3. وثالثٌ لم يكن في الحسبان: **بابٌ ثالث** — `_User` مفتوحةٌ لصاحبها، فيستطيع
+   بعد الدخول أن يحفظ عليها مباشرةً بلا دالةٍ ولا تسجيل.
+
+**الإصلاح — في `beforeSave` لا في الدوال:** `TEXT_LIMITS` و`clampUserText` في
+`lib/auth.js`، **مصدرٌ واحد** تقرؤه `updateMyProfile` والمُشغّل معاً. و`beforeSave`
+يمرّ به كلُّ كتابة: تسجيلاً كانت أو تحديثاً أو حفظاً مباشراً — **الأبواب
+الثلاثة بحدٍّ واحد.** والقصُّ لا الرفض: من لصق اسمه بمسافاتٍ حوله لا يُردّ
+تسجيلُه، ولا يُحفظ الفراغ معه.
+
+**واختُبرت الأبواب الثلاثة كلٌّ على حدة**، وجُرّب الملفّ على النسخة السابقة
+فسقط في أربعةٍ من ستّة.
+
+**والدرس:** رقمان صحيحان في موضعين لا يصنعان حدّاً — **الحدُّ هو أن يمرّ كلُّ
+داخلٍ من موضعٍ يُطبَّق فيه.** وقد كتبتُ `80` في `updateMyProfile` وأنا أحسبني
+حددتُ الاسم، والحقيقة أنّي حددتُ **تعديلَه** لا **إنشاءه**. وهذا ثالث عطبٍ من
+صنف «حارسٌ على بابٍ دون باب» في هذا المستودع: الحساب الموقوف، واعتماد الشركة،
+وهذا. **فليُسأل عن كل حارس: كم باباً لهذه الغرفة؟**
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB — وهذا أكبر قيدٍ باقٍ.**
@@ -2758,7 +2810,7 @@ Parse.Cloud.define('health', async () => ({
 #### `cloud/triggers.js`
 
 ```javascript
-const { ROLES } = require('./lib/auth');
+const { ROLES, clampUserText } = require('./lib/auth');
 
 /** لا يُسمح للعميل بتعيين دوره بنفسه إلى admin، ولا بتعديل الحقول الحسّاسة. */
 Parse.Cloud.beforeSave(Parse.User, async (request) => {
@@ -2795,6 +2847,11 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
   }
 
   if (user.isNew()) user.set('isActive', true);
+
+  // القصّ هنا لا في الدوال: التسجيل يكتب على `_User` مباشرةً بلا دالة سحابة،
+  // فكان يُقبل اسمٌ من مئتي ألف حرف — قِيس على خادمٍ حقيقي. و`beforeSave` يمرّ
+  // به كلُّ كتابة، فالحدُّ واحدٌ لكل الأبواب.
+  clampUserText(user);
 });
 
 /**
@@ -3008,7 +3065,48 @@ async function fetchPointer(pointer, className) {
   return pointer.fetch({ useMasterKey: true });
 }
 
-module.exports = { ROLES, requireUser, requireRole, mosqueForImam, fetchPointer };
+/**
+ * أطوال حقول الحساب النصّية — **مصدرٌ واحد**.
+ *
+ * كانت مكتوبةً في `updateMyProfile` وحدها، والتسجيل يكتب على `_User` مباشرةً
+ * بلا دالة سحابة فلا يمرّ بها. قِيس على خادمٍ حقيقي: **تسجيلٌ باسمٍ من مئتي
+ * ألف حرفٍ يُقبل ويُحفَظ**، والحقل نفسه يُقصّ إلى ثمانين عبر الدالة.
+ *
+ * وثلاثة آثار: قاعدةٌ سعتها 250 ميغابايت يملؤها بضع مئات من التسجيلات،
+ * واسمٌ يُعرض للإمام في بطاقة المهتمّ **فيكسر الشاشة**، والتسجيل مفتوحٌ
+ * لغير المصادَق فالكلفة صفر على فاعله.
+ *
+ * فالحدُّ هنا لا هناك: `beforeSave` يمرّ به **كل** كتابة — تسجيلاً كانت أو
+ * تحديثاً أو حفظاً مباشراً. **والحدُّ الذي يُطبَّق على بابٍ ويُترك آخر ليس حدّاً.**
+ */
+const TEXT_LIMITS = {
+  fullName: 80,
+  phone: 20,
+  wilayat: 60,
+  governorate: 40,
+  companyName: 120,
+  crNumber: 30,
+};
+
+/** يقصّ حقول الحساب النصّية إلى حدودها، ويُعيد ما قُصّ منها. */
+function clampUserText(user) {
+  const trimmed = [];
+  for (const [field, limit] of Object.entries(TEXT_LIMITS)) {
+    const value = user.get(field);
+    if (typeof value !== 'string') continue;
+    const cleaned = value.trim().slice(0, limit);
+    if (cleaned !== value) {
+      user.set(field, cleaned);
+      trimmed.push(field);
+    }
+  }
+  return trimmed;
+}
+
+module.exports = {
+  ROLES, requireUser, requireRole, mosqueForImam, fetchPointer,
+  TEXT_LIMITS, clampUserText,
+};
 ```
 
 #### `cloud/lib/push.js`
@@ -5406,7 +5504,7 @@ Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
 
 ```javascript
 const E = require('../lib/errors');
-const { requireUser, requireRole } = require('../lib/auth');
+const { requireUser, requireRole, TEXT_LIMITS } = require('../lib/auth');
 const { pushToUsers } = require('../lib/push');
 const audit = require('../lib/audit');
 const geo = require('../lib/geo');
@@ -5620,9 +5718,11 @@ Parse.Cloud.define('updateMyProfile', async (request) => {
   const user = requireUser(request);
   const { fullName, phone, skills, governorate, wilayat } = request.params;
 
-  if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, 80));
-  if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, 20));
-  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, 60));
+  // الأطوال من `TEXT_LIMITS` لا مكتوبةً هنا: `beforeSave` يقصّ بها كذلك،
+  // ورقمان في موضعين يفترقان بلا أن يُلحَظ
+  if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, TEXT_LIMITS.fullName));
+  if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, TEXT_LIMITS.phone));
+  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, TEXT_LIMITS.wilayat));
 
   if (skills !== undefined) {
     if (!Array.isArray(skills)) E.invalid('المهارات تُرسل كقائمة.');
@@ -5890,6 +5990,44 @@ async function fetchPointer(pointer, className) {
     return pointer; // مُحمّل مسبقاً عبر include()
   }
   return pointer.fetch({ useMasterKey: true });
+}
+
+/**
+ * أطوال حقول الحساب النصّية — **مصدرٌ واحد**.
+ *
+ * كانت مكتوبةً في `updateMyProfile` وحدها، والتسجيل يكتب على `_User` مباشرةً
+ * بلا دالة سحابة فلا يمرّ بها. قِيس على خادمٍ حقيقي: **تسجيلٌ باسمٍ من مئتي
+ * ألف حرفٍ يُقبل ويُحفَظ**، والحقل نفسه يُقصّ إلى ثمانين عبر الدالة.
+ *
+ * وثلاثة آثار: قاعدةٌ سعتها 250 ميغابايت يملؤها بضع مئات من التسجيلات،
+ * واسمٌ يُعرض للإمام في بطاقة المهتمّ **فيكسر الشاشة**، والتسجيل مفتوحٌ
+ * لغير المصادَق فالكلفة صفر على فاعله.
+ *
+ * فالحدُّ هنا لا هناك: `beforeSave` يمرّ به **كل** كتابة — تسجيلاً كانت أو
+ * تحديثاً أو حفظاً مباشراً. **والحدُّ الذي يُطبَّق على بابٍ ويُترك آخر ليس حدّاً.**
+ */
+const TEXT_LIMITS = {
+  fullName: 80,
+  phone: 20,
+  wilayat: 60,
+  governorate: 40,
+  companyName: 120,
+  crNumber: 30,
+};
+
+/** يقصّ حقول الحساب النصّية إلى حدودها، ويُعيد ما قُصّ منها. */
+function clampUserText(user) {
+  const trimmed = [];
+  for (const [field, limit] of Object.entries(TEXT_LIMITS)) {
+    const value = user.get(field);
+    if (typeof value !== 'string') continue;
+    const cleaned = value.trim().slice(0, limit);
+    if (cleaned !== value) {
+      user.set(field, cleaned);
+      trimmed.push(field);
+    }
+  }
+  return trimmed;
 }
 
 
@@ -6371,6 +6509,11 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
   }
 
   if (user.isNew()) user.set('isActive', true);
+
+  // القصّ هنا لا في الدوال: التسجيل يكتب على `_User` مباشرةً بلا دالة سحابة،
+  // فكان يُقبل اسمٌ من مئتي ألف حرف — قِيس على خادمٍ حقيقي. و`beforeSave` يمرّ
+  // به كلُّ كتابة، فالحدُّ واحدٌ لكل الأبواب.
+  clampUserText(user);
 });
 
 /**
@@ -8648,9 +8791,11 @@ Parse.Cloud.define('updateMyProfile', async (request) => {
   const user = requireUser(request);
   const { fullName, phone, skills, governorate, wilayat } = request.params;
 
-  if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, 80));
-  if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, 20));
-  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, 60));
+  // الأطوال من `TEXT_LIMITS` لا مكتوبةً هنا: `beforeSave` يقصّ بها كذلك،
+  // ورقمان في موضعين يفترقان بلا أن يُلحَظ
+  if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, TEXT_LIMITS.fullName));
+  if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, TEXT_LIMITS.phone));
+  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, TEXT_LIMITS.wilayat));
 
   if (skills !== undefined) {
     if (!Array.isArray(skills)) E.invalid('المهارات تُرسل كقائمة.');

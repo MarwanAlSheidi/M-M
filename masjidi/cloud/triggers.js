@@ -1,4 +1,4 @@
-const { ROLES } = require('./lib/auth');
+const { ROLES, clampUserText } = require('./lib/auth');
 
 /** لا يُسمح للعميل بتعيين دوره بنفسه إلى admin، ولا بتعديل الحقول الحسّاسة. */
 Parse.Cloud.beforeSave(Parse.User, async (request) => {
@@ -35,6 +35,11 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
   }
 
   if (user.isNew()) user.set('isActive', true);
+
+  // القصّ هنا لا في الدوال: التسجيل يكتب على `_User` مباشرةً بلا دالة سحابة،
+  // فكان يُقبل اسمٌ من مئتي ألف حرف — قِيس على خادمٍ حقيقي. و`beforeSave` يمرّ
+  // به كلُّ كتابة، فالحدُّ واحدٌ لكل الأبواب.
+  clampUserText(user);
 });
 
 /**

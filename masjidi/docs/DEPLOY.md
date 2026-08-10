@@ -329,7 +329,7 @@ node scripts/seed_mosques.js                          # الباقي — ١٨٬�
 ```bash
 npm test                  # 312 حالة — على بديل Parse في الذاكرة
 npm run lint
-npm run test:integration  # 127 حالة (على التوالي — كلٌّ يُقلع قاعدةً) — خادم parse-server حقيقي
+npm run test:integration  # 134 حالة (على التوالي — كلٌّ يُقلع قاعدةً) — خادم parse-server حقيقي
 npm run test:e2e          # 27 حالة — متصفّح حقيقي
 ```
 

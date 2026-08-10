@@ -135,6 +135,44 @@ async function fetchPointer(pointer, className) {
   return pointer.fetch({ useMasterKey: true });
 }
 
+/**
+ * أطوال حقول الحساب النصّية — **مصدرٌ واحد**.
+ *
+ * كانت مكتوبةً في `updateMyProfile` وحدها، والتسجيل يكتب على `_User` مباشرةً
+ * بلا دالة سحابة فلا يمرّ بها. قِيس على خادمٍ حقيقي: **تسجيلٌ باسمٍ من مئتي
+ * ألف حرفٍ يُقبل ويُحفَظ**، والحقل نفسه يُقصّ إلى ثمانين عبر الدالة.
+ *
+ * وثلاثة آثار: قاعدةٌ سعتها 250 ميغابايت يملؤها بضع مئات من التسجيلات،
+ * واسمٌ يُعرض للإمام في بطاقة المهتمّ **فيكسر الشاشة**، والتسجيل مفتوحٌ
+ * لغير المصادَق فالكلفة صفر على فاعله.
+ *
+ * فالحدُّ هنا لا هناك: `beforeSave` يمرّ به **كل** كتابة — تسجيلاً كانت أو
+ * تحديثاً أو حفظاً مباشراً. **والحدُّ الذي يُطبَّق على بابٍ ويُترك آخر ليس حدّاً.**
+ */
+const TEXT_LIMITS = {
+  fullName: 80,
+  phone: 20,
+  wilayat: 60,
+  governorate: 40,
+  companyName: 120,
+  crNumber: 30,
+};
+
+/** يقصّ حقول الحساب النصّية إلى حدودها، ويُعيد ما قُصّ منها. */
+function clampUserText(user) {
+  const trimmed = [];
+  for (const [field, limit] of Object.entries(TEXT_LIMITS)) {
+    const value = user.get(field);
+    if (typeof value !== 'string') continue;
+    const cleaned = value.trim().slice(0, limit);
+    if (cleaned !== value) {
+      user.set(field, cleaned);
+      trimmed.push(field);
+    }
+  }
+  return trimmed;
+}
+
 
 // ======================================================================
 // الإشعارات   [lib/push.js]
@@ -614,6 +652,11 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
   }
 
   if (user.isNew()) user.set('isActive', true);
+
+  // القصّ هنا لا في الدوال: التسجيل يكتب على `_User` مباشرةً بلا دالة سحابة،
+  // فكان يُقبل اسمٌ من مئتي ألف حرف — قِيس على خادمٍ حقيقي. و`beforeSave` يمرّ
+  // به كلُّ كتابة، فالحدُّ واحدٌ لكل الأبواب.
+  clampUserText(user);
 });
 
 /**
@@ -2891,9 +2934,11 @@ Parse.Cloud.define('updateMyProfile', async (request) => {
   const user = requireUser(request);
   const { fullName, phone, skills, governorate, wilayat } = request.params;
 
-  if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, 80));
-  if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, 20));
-  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, 60));
+  // الأطوال من `TEXT_LIMITS` لا مكتوبةً هنا: `beforeSave` يقصّ بها كذلك،
+  // ورقمان في موضعين يفترقان بلا أن يُلحَظ
+  if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, TEXT_LIMITS.fullName));
+  if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, TEXT_LIMITS.phone));
+  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, TEXT_LIMITS.wilayat));
 
   if (skills !== undefined) {
     if (!Array.isArray(skills)) E.invalid('المهارات تُرسل كقائمة.');
