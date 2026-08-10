@@ -1,0 +1,87 @@
+/**
+ * لا تصل المستخدمَ العربيَّ رسالةٌ إنجليزية.
+ *
+ * رسائلُنا نحن عربية، تُصاغ في `cloud/lib/errors.js`. لكنّ **Parse نفسه**
+ * يردّ بالإنجليزية، ويصل ردُّه المستخدمَ في مسارات لا تمرّ بدوال السحابة:
+ * الدخول، والتسجيل، **ورفع الصور**.
+ *
+ * وقِيس على خادمٍ حقيقي: خادمٌ لم يُفعَّل فيه الرفع يردّ
+ * `130 · File upload by public is disabled.` — وتفعيلُ الرفع **خطوةُ نشرٍ
+ * يدوية** في `docs/DEPLOY.md`، أي أنها تُنسى. فيقف المتطوّع في المسجد يُبلغ
+ * عن عمله، فيُصدّه سطرٌ إنجليزيّ لا يقرؤه، ولا يعرف أن بوسعه الإبلاغ بلا صور.
+ *
+ * فهذه الاختبارات تسأل السؤال الوحيد الذي يهمّ القارئ: **هل ما سيُعرض عربيّ؟**
+ *
+ * والملفُّ المُختبَر ESM في `app/` والاختبارات CJS — فيُستورد ديناميكياً،
+ * كما في `tests/time.test.js` و`tests/unread.test.js`.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+
+const MODULE = pathToFileURL(path.join(__dirname, '../app/src/errors.js')).href;
+const load = () => import(MODULE);
+
+/** حرفٌ عربيّ واحد يكفي للحكم؛ وغيابُه كلُّه يكفي للسقوط. */
+const hasArabic = (text) => /[؀-ۿ]/.test(text);
+/** ولا يكفي أن تكون فيها عربية: يجب ألّا يتسرّب نصُّ Parse معها. */
+const hasLatinWords = (text) => /[A-Za-z]{3,}/.test(text);
+
+/** أخطاءُ Parse كما تصل فعلاً: كودٌ ورسالةٌ إنجليزية. */
+const parseError = (code, message) => ({ code, message });
+
+test('رسائل الأخطاء كما تُعرض للمستخدم', async (t) => {
+  const { messageOf, PARSE_MESSAGES } = await load();
+
+  await t.test('رفعٌ غير مفعَّل على الخادم — أرجحُ ما يقع', () => {
+    // النصّ الإنجليزي منقولٌ حرفياً كما ردّ به خادمٌ حقيقي
+    const shown = messageOf(parseError(130, 'File upload by public is disabled.'));
+
+    assert.ok(hasArabic(shown), `عُرضت بلا عربية: «${shown}»`);
+    assert.ok(!hasLatinWords(shown), `تسرّب نصُّ Parse: «${shown}»`);
+    // ولا يُترك المتطوّع في طريقٍ مسدود: له مخرجٌ في الرسالة نفسها
+    assert.match(shown, /بلا صور/);
+  });
+
+  await t.test('كودٌ لا ترجمة له: عربيةٌ ومعها رمزُه', () => {
+    // 141 = خطأ في دالة سحابية لم تُصغ رسالته عندنا. وكان يُعرض نصُّه كما هو.
+    const shown = messageOf(parseError(141, 'Cloud function failed.'));
+
+    assert.ok(hasArabic(shown), `عُرضت بلا عربية: «${shown}»`);
+    assert.ok(!hasLatinWords(shown), `تسرّب نصُّ Parse: «${shown}»`);
+    // الرمزُ يبقى: يُعين الإدارةَ على التشخيص ولا يُربك القارئ
+    assert.match(shown, /141/);
+  });
+
+  await t.test('ولا كودٍ أصلاً — انقطاعُ شبكةٍ أو خطأٌ غفل', () => {
+    for (const error of [null, undefined, {}, new Error('Network request failed')]) {
+      const shown = messageOf(error);
+      assert.ok(hasArabic(shown), `عُرضت بلا عربية: «${shown}»`);
+      assert.ok(!hasLatinWords(shown), `تسرّب نصٌّ إنجليزي: «${shown}»`);
+    }
+  });
+
+  await t.test('رسالتُنا نحن تمرّ كما هي — الفصلُ بالحرف لا بالكود', () => {
+    // 119 يأتي من الطرفين: من حارسنا بالعربية، ومن Parse بالإنجليزية.
+    // فما فيه حرفٌ عربيّ فهو منّا، ويُعرض بنصّه لأنه أدقُّ من العامّ.
+    const ours = 'هذا الطلب ليس لمسجدك.';
+    assert.equal(messageOf(parseError(119, ours)), ours);
+    assert.equal(messageOf(parseError(undefined, ours)), ours);
+  });
+
+  await t.test('وكلُّ ما في الجدول عربيّ خالص', () => {
+    for (const [code, text] of Object.entries(PARSE_MESSAGES)) {
+      assert.ok(hasArabic(text), `الرمز ${code} بلا عربية: «${text}»`);
+      assert.ok(!hasLatinWords(text), `الرمز ${code} فيه إنجليزية: «${text}»`);
+    }
+  });
+
+  await t.test('والأكواد التي تبلغ المستخدم فعلاً مغطّاة', () => {
+    // كلُّ واحدٍ منها قِيس وصولُه إلى الواجهة في مسارٍ لا يمرّ بدوال السحابة
+    for (const code of [100, 101, 119, 124, 130, 200, 201, 202, 203, 209]) {
+      assert.ok(PARSE_MESSAGES[code], `الرمز ${code} غائب عن الجدول`);
+    }
+  });
+});
