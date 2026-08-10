@@ -515,11 +515,31 @@ export function Opportunities() {
   // المتطوّع يبحث عن عمل قريب منه، فالترتيب بالمسافة. وإن تعذّر الموقع تُعرض
   // الفرص كلها بالأحدث بدل شاشة فارغة.
   const nearby = Boolean(location.point);
+
+  /**
+   * **لا جلب قبل أن يُحسم الموقع.**
+   *
+   * قِيست الشاشة في متصفّح حقيقي فإذا كل زيارةٍ لها ثلاثة نداءات:
+   * `openOpportunities` ثم `updateMyLocation` ثم `getNearbyOpportunities`.
+   * الأوّل يقع لأن `useLocation` تبدأ بـ`loading` و`point` فارغ، فتُقرأ الحالة
+   * «تعذّر الموقع» وهي «لم يُحسم بعد» — فتُجلب فرصُ السلطنة كلَّها **ثم
+   * تُرمى** بعد ثانية. وهي أثقل الاستعلامين إذ لا يحدّها موقع.
+   *
+   * والمستخدم يرى «جارٍ تحديد موقعك…» وتحتها قائمةٌ كاملة تُبدَّل تحت عينه.
+   *
+   * و«حولي» لا تفعل ذلك — تنتظر بـ`LocationGate`. لكنّ الانتظار وحده لا يصلح
+   * هنا: **تعذُّر الموقع ليس مانعاً من العمل**، بل يُعرض حينها كلُّ مفتوح.
+   * فالفرق بين «لم يُحسم» و«حُسم بالتعذّر» هو ما كان مفقوداً.
+   */
+  const settled = !location.loading;
   const state = useList(
-    async () => (nearby
-      ? api.nearbyOpportunities(location.point.lat, location.point.lng, radius)
-      : api.openOpportunities()),
-    [nearby, location.point && location.point.lat, radius],
+    async () => {
+      if (!settled) return [];
+      return nearby
+        ? api.nearbyOpportunities(location.point.lat, location.point.lng, radius)
+        : api.openOpportunities();
+    },
+    [settled, nearby, location.point && location.point.lat, radius],
   );
 
   async function join(requestId) {
@@ -553,6 +573,8 @@ export function Opportunities() {
       )}
 
       {message && <div className="notice">{message}</div>}
+      {/* لا تُعرض القائمة قبل حسم الموقع: «لا توجد فرص» خبرٌ لم يُسأل عنه بعد */}
+      {settled && (
       <Listing state={state} empty="لا توجد فرص مفتوحة الآن.">
         <div>
           {state.rows.map((row) => (
@@ -578,6 +600,7 @@ export function Opportunities() {
           ))}
         </div>
       </Listing>
+      )}
     </>
   );
 }
@@ -642,7 +665,9 @@ function ReportWork({ request, onDone }) {
  */
 export function MyTasks() {
   const isVolunteer = api.currentRole() === 'volunteer';
-  const profile = useList(async () => [await api.getMyProfile()]);
+  // ولا يُجلب ملفُّ المتطوّع: لا يُقرأ منه إلا حال اعتماد الشركة، وهو `null`
+  // له دائماً. قِيس في متصفّح: نداءٌ ضائع في كل زيارةٍ لأكثر المستخدمين عدداً.
+  const profile = useList(async () => (isVolunteer ? [] : [await api.getMyProfile()]));
   // ثلاث حالات لا اثنتان: «بانتظار المراجعة» تُقال لمن لم يُراجَع بعد، ولا
   // تُقال لمن رُوجع فسُحب اعتماده — انتظارُه لا يأتي، وقرارُه قد صدر.
   const contractorStatus = profile.rows[0] && profile.rows[0].contractorStatus;

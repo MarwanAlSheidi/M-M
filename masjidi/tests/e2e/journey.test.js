@@ -737,6 +737,44 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
         `الشارة أنفقت ${inbox.length} طلبات في خمس ضغطات — والباقة 25 ألفاً شهرياً`);
     });
 
+    /**
+     * ولا تُجلب قائمةٌ تُرمى.
+     *
+     * قِيس بعدّ **أيّ** نداءٍ يقع لا كم — فبان أن «الفرص» تجلب القائمة مرّتين:
+     * مرّةً قبل أن يُحسم الموقع (وهي الأثقل، إذ لا يحدّها موقع) ثم تُرمى.
+     * والمستخدم يرى «جارٍ تحديد موقعك…» وتحتها قائمةٌ تُبدَّل تحت عينه.
+     */
+    await onScreen(counter, 'ولا تُجلب قائمةٌ تُرمى قبل حسم الموقع', async () => {
+      const lists = [];
+      const watch = (event) => {
+        if (event.url().includes('/classes/ServiceRequests')) lists.push(event.url());
+      };
+      counter.on('request', watch);
+      await counter.getByRole('button', { name: 'الفرص' }).click();
+      await counter.waitForSelector('.card, .empty');
+      await counter.waitForTimeout(1200);
+      counter.off('request', watch);
+
+      assert.equal(lists.length, 0,
+        'جُلبت فرصُ السلطنة كلَّها ثم رُميت لمّا وصل الموقع — نداءٌ ضائع في كل زيارة');
+    });
+
+    /** والمتطوّع لا يُجلب ملفُّه: لا يُقرأ منه إلا حالُ اعتماد الشركة. */
+    await onScreen(counter, 'ولا يُجلب ملفٌّ لا يُقرأ', async () => {
+      const profiles = [];
+      const watch = (event) => {
+        if (event.url().includes('/functions/getMyProfile')) profiles.push(event.url());
+      };
+      counter.on('request', watch);
+      await counter.getByRole('button', { name: 'مهامّي' }).click();
+      await counter.waitForSelector('.empty, .card');
+      await counter.waitForTimeout(800);
+      counter.off('request', watch);
+
+      assert.equal(profiles.length, 0,
+        'جُلب ملفُّ المتطوّع ولا يُقرأ منه شيء — وهم أكثر المستخدمين عدداً');
+    });
+
     await onScreen(counter, 'وتبويب التنبيهات لا يجلب الشيء مرّتين', async () => {
       inbox.length = 0;
       await counter.getByRole('button', { name: 'التنبيهات' }).click();
