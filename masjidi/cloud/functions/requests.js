@@ -606,8 +606,26 @@ Parse.Cloud.define('releaseAssignment', async (request) => {
   if (noShow) serviceRequest.addUnique('noShowBy', pointer.id);
   await serviceRequest.save(null, { useMasterKey: true });
 
-  const worker = await fetchPointer(pointer, '_User');
-  if (noShow) await recordAbsences(worker);
+  /*
+   * **والمكلَّف هو المقروء أعلاه — لا يُجلب مرّتين، ولا يُشترط وجودُه.**
+   *
+   * كان هنا `fetchPointer(pointer, '_User')`، وهي ترمي `101 Object not found`
+   * على حسابٍ زال. وموضعُها **بعد `serviceRequest.save`**، فكان الأثر قد وقع
+   * والنداء يُبلَّغ ساقطاً. وقِيس على خادمٍ حقيقي بحذف حساب المكلَّف وهو مكلَّف:
+   *
+   *     [قبل السحب]  الحالة=assigned            · متطوّع=5TT2jSXGRi
+   *     releaseAssignment: **سقط** (101) Object not found.
+   *     [بعد السحب]  الحالة=open_for_volunteers · متطوّع=لا شيء
+   *
+   * **عمليةٌ تمّت وأُبلغ عنها بالسقوط.** والإمام يرى رسالةً إنجليزية، فيضغط
+   * ثانيةً فيُقال له «لا يُسحب التكليف إلا قبل بدء التنفيذ» (لأن الحالة
+   * تغيّرت) — فيظنّ طلبه عالقاً **فيُلغيه**. وهو ما فعلتُه في القياس نفسه.
+   *
+   * والقاعدة مكتوبة في هذا المستودع: الآثار الجانبية لا تُسقط العملية. وهذا
+   * أشدُّ منه: أثرٌ جانبيّ **يقلب نتيجةَ عمليةٍ ثبتت**.
+   */
+  const worker = assignee;
+  if (noShow && worker) await recordAbsences(worker);
 
   // اهتمام هذا المنفّذ بالذات يُوسم `released` فلا يعود يسجّله على الطلب نفسه.
   // اهتمامات الآخرين تبقى `closed` كما أقفلها التكليف: الطلب عاد مفتوحاً
@@ -888,7 +906,20 @@ async function recordWorkerRating(serviceRequest) {
   const scores = rated.map((row) => row.get('imamRating'))
     .filter((value) => typeof value === 'number');
 
-  const worker = await fetchPointer(pointer, '_User');
+  /*
+   * **وحسابٌ زال لا سمعة له تُكتب.**
+   *
+   * هذه تُنادى من `completeService` **بعد** حفظ الطلب منجَزاً، وكانت
+   * `fetchPointer` ترمي `101` على حسابٍ محذوف — فيُعتمد العملُ في القاعدة
+   * ويُقال للإمام إن اعتماده سقط. وهي علّةُ `releaseAssignment` نفسها في موضعٍ
+   * آخر: **بحثٌ عن حسابٍ بعد أن ثبت الأثر، يقلب نتيجةَ ما تمّ.**
+   *
+   * والصمت هنا هو الصواب لا الستر: `completedJobs` و`avgRating` بيّنةٌ يقرؤها
+   * إمامٌ يختار منفّذاً، ولا أحد يختار من لا حساب له.
+   */
+  const worker = await fetchPointer(pointer, '_User').catch(() => null);
+  if (!worker) return;
+
   worker.set('completedJobs', done);
   if (scores.length) {
     worker.set('avgRating', scores.reduce((sum, value) => sum + value, 0) / scores.length);
