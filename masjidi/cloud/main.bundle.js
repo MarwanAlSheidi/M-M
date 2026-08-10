@@ -649,8 +649,49 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
     } else if (user.dirty('isVerifiedContractor')) {
       throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN, 'اعتماد الشركات يتم من الإدارة.');
     }
+
+    /**
+     * حقولٌ تملكها المنصّة — والسمعة أوّلها.
+     *
+     * قِيس على خادمٍ حقيقي: المتطوّع يحفظ على حسابه `completedJobs: 999`
+     * و`avgRating: 5` و`abandonedJobs: 0` **فتُقبل كلُّها**. وهذه الثلاثة
+     * بعينها هي ما تُعرضه `getRequestInterests` للإمام وهو يختار المنفّذ —
+     * بُنيت لتكون بيّنته، **فإذا هي إقرارٌ من صاحب الشأن على نفسه.**
+     *
+     * وأخصُّها `abandonedJobs`: يُعرض للإمام تحذيراً («تغيّب عن ٣ تكليفات»)،
+     * وكان مَن تغيّب يمحوه بسطرٍ واحد. **فالتحذير يختفي ممّن قامت به الحاجة.**
+     *
+     * ومعها `isActive` (إيقاف الحساب بيد الإدارة)، و`contractorReviewedAt`
+     * (تُميّز المسحوب اعتمادُه ممّن لم يُراجَع)، وحقول آخر موقعٍ معروف — تكتبها
+     * `updateMyLocation` بالمفتاح الرئيسي، فلا معنى لأن يكتبها العميل بيده.
+     *
+     * ⚠️ ثلاثةٌ منها لها `defaultValue` في المخطط، و`dirty()` وحده لا يصلح
+     * حارساً عليها (انظر التعليق أعلاه): الجديد **يُفرَض** على قيمة المنصّة،
+     * والقديم يُردّ إن مُسّ.
+     */
+    const PLATFORM_FIELDS = {
+      completedJobs: 0,
+      abandonedJobs: 0,
+      avgRating: undefined,   // «لا تقييم بعد» — لا صفر يُقرأ تقييماً سيّئاً
+      isActive: true,
+      contractorReviewedAt: undefined,
+      lastKnownLocation: undefined,
+      lastLat: undefined,
+      lastLng: undefined,
+    };
+
+    for (const [field, initial] of Object.entries(PLATFORM_FIELDS)) {
+      if (user.isNew()) {
+        if (initial === undefined) user.unset(field);
+        else user.set(field, initial);
+      } else if (user.dirty(field)) {
+        throw new Parse.Error(Parse.Error.OPERATION_FORBIDDEN,
+          'هذا الحقل تكتبه المنصّة لا صاحب الحساب.');
+      }
+    }
   }
 
+  // بالمفتاح الرئيسي كذلك: الحساب الجديد نشِطٌ دائماً
   if (user.isNew()) user.set('isActive', true);
 
   // القصّ هنا لا في الدوال: التسجيل يكتب على `_User` مباشرةً بلا دالة سحابة،
