@@ -34,9 +34,22 @@ test('البحث على بيانات حقيقية', options, async (t) => {
     Parse.Cloud.run('searchMosques', { term, ...extra },
       { sessionToken: user.getSessionToken() });
 
-  // مسجدٌ اسمه أكثر من كلمة، تُؤخذ منه كلمة من غير أوّله
+  /*
+   * مسجدٌ اسمه أكثر من كلمة، تُؤخذ منه كلمة من غير أوّله.
+   *
+   * **والترتيب صريحٌ لا مُهمَل.** كان الاستعلام بلا ترتيبٍ ومقطوعاً بسقف،
+   * فيختار «أوّل» ما ردّته القاعدة — وهو ما تشاؤه لا ما نقصده. فكانت العيّنة
+   * تختلف بين تشغيلٍ وآخر، والكلمةُ المبحوث عنها معها، **فسقط الاختبار مرّةً
+   * وقام ثلاثاً بلا تغيير شيفرة**.
+   *
+   * وهذا الدرس بعينه مكتوبٌ في `getNearbyOpportunities`: «بلا ترتيبٍ يكون
+   * المقطوع بالسقف عشوائياً» — طُبّق على شيفرة الإنتاج ولم يُطبَّق على
+   * مِرقاة الاختبار. **وحارسٌ يتذبذب أسوأ من لا حارس**: يُعلَّم يوماً بأنه
+   * غير مستقرّ فيُهمَل سقوطُه الحقيقي.
+   */
   const sample = await new Parse.Query('Mosques')
-    .exists('nameTokens').limit(300).find({ useMasterKey: true });
+    .exists('nameTokens').ascending('externalId').limit(300)
+    .find({ useMasterKey: true });
   const multi = sample.find((m) => (m.get('nameTokens') || []).length >= 2);
   const tokens = multi.get('nameTokens');
   const lastWord = tokens[tokens.length - 1];
