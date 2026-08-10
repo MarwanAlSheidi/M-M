@@ -195,7 +195,8 @@ export function Auth({ onDone }) {
           <>
             <Field label="الاسم الكامل" value={form.fullName} onChange={set('fullName')} />
             <Field label="رقم الهاتف" value={form.phone} onChange={set('phone')} inputMode="tel" />
-            <Field label="الصفة" value={form.role} onChange={set('role')} options={api.ROLES} />
+            {/* لا `ROLES`: تلك تُترجم دوراً مخزَّناً فتشمل `admin`، وهذه تُختار */}
+            <Field label="الصفة" value={form.role} onChange={set('role')} options={api.SIGNUP_ROLES} />
 
             <Field label="المحافظة" value={form.governorate} onChange={set('governorate')}
               options={{ '': '— اختر —', ...Object.fromEntries(api.GOVERNORATES.map((g) => [g, g])) }} />

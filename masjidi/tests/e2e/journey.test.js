@@ -611,12 +611,24 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       await panel.getByRole('button', { name: 'الإدارة' }).click();
       await panel.waitForSelector('[data-testid="transfer-claim"]');
 
+      // أوّلُ إنسانٍ على المنصّة مشرف — فأوّلُ ما يقرأه لا يكون اسماً برمجياً.
+      // قِيس هنا قبل الإصلاح: الترويسة «المشرف ·» وحسابي «الصفة: admin».
+      const who = await panel.locator('header .who').innerText();
+      assert.match(who, /المشرف · الإدارة/,
+        `الترويسة تُظهر صفةً بلا اسم: «${who}»`);
+
       const text = await panel.locator('main').innerText();
       assert.match(text, /طلب نقل، لا تسجيلٌ أوّل/,
         'يُعرض النقل كتسجيلٍ أوّل، فيُنزع مسجدٌ من إمامه بضغطةٍ لا يُعلم أثرها');
       assert.match(text, /الشيخ سعيد/, 'لا يُقال للمشرف ممّن يُنزع');
       // زرّ الاعتماد قائمٌ إلى جانب التحذير: القرار للمشرف، والبيّنة أمامه
       await panel.waitForSelector('button:has-text("اعتماد الملكية")');
+
+      // وآخِرُ ما يقرأه: «الصفة: admin» كانت تُعرض هنا حرفياً
+      await panel.getByRole('button', { name: 'حسابي' }).click();
+      await panel.waitForSelector('.card');
+      const me = await panel.locator('.card').innerText();
+      assert.match(me, /الصفة: الإدارة/, `صفةٌ بالإنجليزية في حساب المشرف: «${me}»`);
     });
   });
 
