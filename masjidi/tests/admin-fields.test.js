@@ -56,11 +56,14 @@ const ALLOWED_UNREAD = {
    */
   getMosqueAuditTrail: ['targetClass', 'targetId', 'fromStatus', 'toStatus'],
   /*
-   * `type` **يُقرأ فعلاً** — داخل `api.mosqueTitle(mosque)` التي تأخذ الكائن
-   * كلَّه. والأداة ترى وصولاً إلى خاصّية لا تمريراً لكائن، فهذا حدُّها لا عطبٌ
-   * في الشاشة. **ونتيجةٌ حمراء ليست بيّنةً حتى يُعرف لماذا احمرّت.**
+   * `type` و`name` **يُقرآن فعلاً** — داخل `api.mosqueTitle(mosque)` التي تأخذ
+   * الكائن كلَّه. والأداة ترى وصولاً إلى خاصّية لا تمريراً لكائن، فهذا حدُّها لا
+   * عطبٌ في الشاشة. **ونتيجةٌ حمراء ليست بيّنةً حتى يُعرف لماذا احمرّت.**
+   *
+   * و`name` انضمّ إليه حين زال آخرُ موضعٍ يقرؤه خاماً — وذلك **إصلاحٌ لا
+   * انحراف**: البوّابةُ تسأل «أيصل الحقل عيناً؟» لا «أيُذكر اسمُه؟».
    */
-  getMyMosques: ['type'],
+  getMyMosques: ['type', 'name'],
   // `id` و`favoriteMosqueId` معرّفان — والاسم هو ما يُقرأ. و`isVerifiedContractor`
   // يقوله `contractorStatus` المعروض، وهو أدقّ منه: يفرّق المرفوض من المنتظِر.
   getMyProfile: ['id', 'favoriteMosqueId', 'isVerifiedContractor'],

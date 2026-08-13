@@ -543,7 +543,7 @@ export function AroundMe() {
     return (
       <>
         <button className="link" onClick={() => setTrail(null)}>→ رجوع</button>
-        <MosqueTrail mosqueId={trail.objectId} mosqueName={trail.name} />
+        <MosqueTrail mosqueId={trail.objectId} mosqueName={api.mosqueTitle(trail)} />
       </>
     );
   }
@@ -979,7 +979,7 @@ export function ImamHome() {
     return (
       <>
         <button className="link" onClick={() => setTrail(null)}>→ رجوع</button>
-        <MosqueTrail mosqueId={trail.objectId} mosqueName={trail.name} />
+        <MosqueTrail mosqueId={trail.objectId} mosqueName={api.mosqueTitle(trail)} />
       </>
     );
   }
@@ -1003,12 +1003,17 @@ export function ImamHome() {
                 governorate={mosque.governorate} mosqueNumber={mosque.mosqueNumber} />
               <LocateMosque mosque={mosque} onDone={mosques.refresh} />
               <div className="row">
-                <button onClick={() => setOpenMosque({ mosqueId: mosque.id, mosqueName: mosque.name })}>
+                <button onClick={() => setOpenMosque({ mosqueId: mosque.id, mosqueName: api.mosqueTitle(mosque) })}>
                   طلبات الصيانة
                 </button>
                 {/* الإمام يرى سجلّ مسجده كما يراه المصلّي — لا امتياز في الشفافية */}
                 <button className="ghost"
-                  onClick={() => setTrail({ objectId: mosque.id, name: mosque.name })}>
+                  /*
+                   * الاسمُ مركَّبٌ هنا لا خاماً. وكائنٌ يُبنى بحقلين يُسقط
+                   * `type`، فتُنادى `mosqueTitle` وهي جائعة فتردّ العلَم عارياً
+                   * — نظيرُ ما وقع في `select` بالدورة الماضية حرفاً بحرف.
+                   */
+                  onClick={() => setTrail({ objectId: mosque.id, name: api.mosqueTitle(mosque) })}>
                   سجلّ المسجد
                 </button>
               </div>

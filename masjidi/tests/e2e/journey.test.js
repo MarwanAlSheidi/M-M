@@ -140,9 +140,17 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       { wilayat: 'بركاء', village: 'السلاحة', lat: 23.9, lng: 58.5 },
     ].map((where, i) => {
       const twin = new Mosque();
+      /*
+       * **كما تُصدره الوزارة**: الاسم علَمٌ مجرَّد والنوع في حقلٍ آخر.
+       *
+       * كانت المِرقاة تكتب `name: 'مصلى العيدين'` بلا `type` — فتُعيد
+       * `mosqueTitle` الاسمَ كما هو، ويستوي عندها المركَّبُ والخام. فمرّ
+       * الحارسُ أخضرَ على عطبٍ قائم: **مِرقاةٌ لا تُشبه الإنتاج تُخضّر ما لا
+       * يعمل.** والبيانات الحقيقية: 929 سجلاً نوعُها «مصلى العيدين».
+       */
       twin.set({
-        externalId: `twin_${stamp}_${i}`, name: 'مصلى العيدين',
-        nameNormalized: 'مصلي العيدين',
+        externalId: `twin_${stamp}_${i}`, name: 'العيدين', type: 'مصلى العيدين',
+        nameNormalized: 'العيدين',
         nameTokens: ['مصلي', 'العيدين', where.village],
         governorate: 'شمال الشرقية', hasLocation: true, ...where,
       });
