@@ -1438,6 +1438,9 @@ Parse.Cloud.define('getMyMosques', async (request) => {
   return mosques.map((mosque) => ({
     id: mosque.id,
     name: mosque.get('name'),
+    // النوع مع الاسم: المخزَّن علَمٌ مجرَّد («العلوية»)، وبطاقةٌ بلا نوعه لا
+    // تُقرأ مسجداً. وهذه الدالّة كانت الوحيدة من دوالّ العرض التي لا تُرسله
+    type: mosque.get('type'),
     wilayat: mosque.get('wilayat'),
     village: mosque.get('village'),
     mosqueNumber: mosque.get('mosqueNumber'),

@@ -22,7 +22,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { tokenize } = require('./tokenize');
-const { stripTatweel } = require('../../cloud/lib/arabic');
+const { stripTatweel, normalizeArabic } = require('../../cloud/lib/arabic');
 const { assessCoordinates, withdrawUntrusted } = require('./coord-trust');
 const { nearestKm, PLAUSIBLE_KM } = require('./place-match');
 const geo = require('../../cloud/lib/geo');
@@ -137,7 +137,30 @@ function descriptiveFields(row) {
     mosqueNumber: row.mosqueNumber,
     name: stripTatweel(row.name),
     nameNormalized: stripTatweel(row.nameNormalized),
-    nameTokens: tokenize(row.nameNormalized, row.village),
+    /*
+     * **والنوع من كلمات البحث.**
+     *
+     * الاسم المخزَّن علَمٌ مجرَّد: «العلوية»، «المجيب». والنوع في حقلٍ آخر —
+     * و**14,339 مسجداً من 18,214 نوعُها «مسجد»، ولا يحمل اسمَها الكلمةَ إلا
+     * 10٪**. فمن يبحث عن مسجده كما يسمّيه («مسجد العلوية») يكتب كلمةً ليست في
+     * الفهرس، و`containsAll` تشترط الكلَّ — فيُردّ بلا نتيجة واحدة.
+     *
+     * وقِيس على خادمٍ حقيقي بثلاثة آلاف مسجد:
+     *
+     *     بحث «العلوية»        → 2 نتيجة · وجده
+     *     بحث «مسجد العلوية»   → **0 نتيجة**
+     *
+     * وأربعٌ من ستّ أنواعٍ جُرّبت أعطت صفراً تامّاً. وهذا أوّل باب المنصّة:
+     * إمامٌ لا يجد مسجده لا يسجّله، ولا يصل إليه متطوّع.
+     *
+     * **والنوع يُطبَّع قبل أن يُفهرَس**: `normalizeArabic('مصلى')` تُعيد
+     * `'مصلي'`، والاستعلام يُطبَّع كذلك — فلو أُضيف خاماً لَما طابق أبداً،
+     * ولَبقي العطبُ قائماً بإصلاحٍ يبدو أنه وقع.
+     *
+     * ويجيء آخراً: سقف الكلمات اثنتا عشرة، وما يبلغه سجلّان من 18,214 — فلا
+     * يُزاح اسمٌ من أجله، وإن أُزيح فالعلَم أولى بالبقاء.
+     */
+    nameTokens: tokenize(row.nameNormalized, row.village, normalizeArabic(row.type)),
     type: stripTatweel(row.type),
     typeSlug: row.typeSlug,
     governorate: stripTatweel(row.governorate),

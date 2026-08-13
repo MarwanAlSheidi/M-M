@@ -90,6 +90,58 @@ test('البحث على بيانات حقيقية', options, async (t) => {
     assert.deepEqual(await search('مسجد لا وجود له إطلاقا'), []);
   });
 
+  /*
+   * **ومن يبحث عن مسجده كما يسمّيه يجده.**
+   *
+   * بيانات الوزارة تفصل الاسم عن النوع: الاسم علَمٌ مجرَّد («العلوية»)، والنوع
+   * في حقلٍ آخر — و**14,339 مسجداً من 18,214 نوعُها «مسجد»، ولا يحمل اسمَها
+   * الكلمةَ إلا 10٪**. وكانت `nameTokens` تُبنى من الاسم والقرية وحدهما.
+   *
+   * وقِيس على خادمٍ حقيقي بثلاثة آلاف مسجد قبل الإصلاح:
+   *
+   *     بحث «العلوية»        → 2 نتيجة · وجده
+   *     بحث «مسجد العلوية»   → **0 نتيجة**
+   *
+   * أربعٌ من ستّ أنواعٍ جُرّبت أعطت صفراً تامّاً — لأن `containsAll` تشترط
+   * الكلَّ، فكلمةٌ واحدة خارج الفهرس تُلغي البحث كلَّه. وهذا أوّل باب المنصّة:
+   * إمامٌ لا يجد مسجده لا يسجّله، ولا يصل إليه متطوّع.
+   */
+  await t.test('ومن كتب نوع مسجده مع اسمه وجده', async () => {
+    const bare = sample.find((m) => {
+      const type = (m.get('type') || '').split(/\s+/)[0];
+      return type && !(m.get('name') || '').includes(type);
+    });
+    assert.ok(bare, 'لا مسجد في العيّنة اسمُه بلا نوعه — فالقياس لا يشهد لشيء');
+
+    const type = bare.get('type').split(/\s+/)[0];
+    const name = bare.get('name');
+
+    // **الحالة التي يجب أن تبقى خضراء**: العلَم وحده كان يعمل ويبقى
+    const withoutType = await search(name);
+    assert.ok(withoutType.some((row) => row.objectId === bare.id),
+      `العلَم وحده لم يعد يجد صاحبه: «${name}»`);
+
+    const withType = await search(`${type} ${name}`);
+    assert.ok(withType.some((row) => row.objectId === bare.id),
+      `«${type} ${name}» لا يجد مسجداً نوعُه «${type}» واسمُه «${name}»`);
+  });
+
+  await t.test('والنوع يُطبَّع كما يُطبَّع ما يكتبه الباحث', async () => {
+    /*
+     * `normalizeArabic('مصلى')` تُعيد `'مصلي'`، والاستعلام يُطبَّع كذلك. فلو
+     * أُضيف النوع إلى الفهرس **خاماً** لَما طابق أبداً — ولَبدا الإصلاح واقعاً
+     * وهو لم يقع. فتُقرأ الكلمات من القاعدة ويُنظر أهي المطبَّعة.
+     */
+    const alef = sample.find((m) => /ى/.test(m.get('type') || ''));
+    if (!alef) return; // لا نوع فيه ألف مقصورة في هذه العيّنة
+
+    const tokensOf = alef.get('nameTokens') || [];
+    assert.ok(tokensOf.some((word) => /مصلي/.test(word)),
+      `النوع «${alef.get('type')}» دخل الفهرس خاماً: ${tokensOf.join('، ')}`);
+    assert.ok(!tokensOf.some((word) => /مصلى/.test(word)),
+      'كلمةٌ بألفٍ مقصورة في الفهرس — لن يبلغها استعلامٌ مطبَّع');
+  });
+
   await t.test('التصفية بالمحافظة تُقيّد', async () => {
     const governorate = multi.get('governorate');
     const hits = await search(lastWord, { governorate });

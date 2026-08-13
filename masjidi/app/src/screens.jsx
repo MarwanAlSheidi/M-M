@@ -398,12 +398,12 @@ function MosqueMap({ center, mosques, onPick }) {
 
     mosques.filter((mosque) => mosque.lat != null).forEach((mosque) => {
       const position = { lat: mosque.lat, lng: mosque.lng };
-      const marker = new maps.Marker({ map: map.current, position, title: mosque.name });
+      const marker = new maps.Marker({ map: map.current, position, title: api.mosqueTitle(mosque) });
 
       marker.addListener('click', () => {
         info.current.setContent(
           `<div dir="rtl" style="font-family:inherit;min-width:150px">
-             <strong>${mosque.name}</strong><br/>
+             <strong>${api.mosqueTitle(mosque)}</strong><br/>
              ${mosque.wilayat || ''} · ${api.formatDistance(mosque.distanceKm)}
            </div>`,
         );
@@ -536,7 +536,7 @@ export function AroundMe() {
           {selected && (
             <article className="card" data-testid="picked">
               <div className="spread">
-                <h3>{selected.name}</h3>
+                <h3>{api.mosqueTitle(selected)}</h3>
                 <DistanceTag km={selected.distanceKm} />
               </div>
               <p>{selected.wilayat} — {selected.village || selected.governorate}</p>
@@ -564,7 +564,7 @@ export function AroundMe() {
               {state.rows.map((mosque) => (
                 <article className="card" key={mosque.objectId}>
                   <div className="spread">
-                    <h3>{mosque.name}</h3>
+                    <h3>{api.mosqueTitle(mosque)}</h3>
                     <DistanceTag km={mosque.distanceKm} />
                   </div>
                   <p>{mosque.wilayat} — {mosque.village || mosque.governorate}</p>
@@ -955,7 +955,7 @@ export function ImamHome() {
           {mosques.rows.map((mosque) => (
             <article className="card" key={mosque.id}>
               <div className="spread">
-                <h3>{mosque.name}</h3>
+                <h3>{api.mosqueTitle(mosque)}</h3>
                 {mosque.openRequestsCount > 0 && (
                   <span className="tag warn">{mosque.openRequestsCount} طلب مفتوح</span>
                 )}
@@ -1458,7 +1458,7 @@ export function ClaimMosque() {
       {rows && rows.map((mosque) => (
         <article className="card" key={mosque.objectId}>
           <div className="spread">
-            <h3>{mosque.name}</h3>
+            <h3>{api.mosqueTitle(mosque)}</h3>
             {mosque.distanceKm != null
               ? <DistanceTag km={mosque.distanceKm} />
               : mosque.isClaimed && <span className="tag off">مسجّل</span>}
