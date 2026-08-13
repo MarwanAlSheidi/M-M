@@ -163,6 +163,11 @@
         },
         "wilayatNearestKm": {
           "type": "Number"
+        },
+        "contestedCount": {
+          "type": "Number",
+          "defaultValue": 0,
+          "_comment": "كم أُبعد عن هذا المسجد لأن طلب هذا صاحبه كان معلّقاً — قرينةُ المشرف أن الملكية منازَعة"
         }
       },
       "classLevelPermissions": {

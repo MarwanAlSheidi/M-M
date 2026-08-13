@@ -670,6 +670,14 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       await panel.getByRole('button', { name: 'الإدارة' }).click();
       await panel.waitForSelector('[data-testid="transfer-claim"]');
 
+      /*
+       * **ولا منازعةَ حيث لا منازعة** — حدٌّ يبقى أخضر: طلبٌ لم يُردّ عنه أحد
+       * لا يُوسم بأنّ ملكيته منازَعة، وإلا صار التحذير على كل بطاقةٍ فلا
+       * يميّز شيئاً. (والمنازعة نفسها تُقاس في `contested-claim.test.js`.)
+       */
+      assert.equal(await panel.locator('[data-testid="contested-claim"]').count(), 0,
+        'وُسم طلبٌ بالمنازعة ولم ينازعه أحد');
+
       // أوّلُ إنسانٍ على المنصّة مشرف — فأوّلُ ما يقرأه لا يكون اسماً برمجياً.
       // قِيس هنا قبل الإصلاح: الترويسة «المشرف ·» وحسابي «الصفة: admin».
       const who = await panel.locator('header .who').innerText();
