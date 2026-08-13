@@ -653,8 +653,38 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       assert.match(text, /طلب نقل، لا تسجيلٌ أوّل/,
         'يُعرض النقل كتسجيلٍ أوّل، فيُنزع مسجدٌ من إمامه بضغطةٍ لا يُعلم أثرها');
       assert.match(text, /الشيخ سعيد/, 'لا يُقال للمشرف ممّن يُنزع');
-      // زرّ الاعتماد قائمٌ إلى جانب التحذير: القرار للمشرف، والبيّنة أمامه
-      await panel.waitForSelector('button:has-text("اعتماد الملكية")');
+      /*
+       * **والنقل خطوتان لا خطوة.**
+       *
+       * التحذير أعلاه يقول «الضغطة نفسها والأثر ليس واحداً»، وكان الزرّان —
+       * اعتمادُ تسجيلٍ أوّل واعتمادُ نقلٍ ينزع مسجداً من إمامٍ قائم — على شكلٍ
+       * واحد. وقِيس في متصفّح حقيقي: ضغطةٌ واحدة نقلت المسجد **بصفر حوارات
+       * تأكيد**، وأُرسل إلى المنزوع منه إشعارٌ بذلك.
+       *
+       * فالنقل الآن لا يُعتمد بالضغطة الأولى: تلك تفتح تأكيداً يُسمّي من
+       * يُنزع ومن يُمنح، والثانية هي القرار.
+       */
+      /*
+       * والتأكيد **على بطاقة النقل وحدها**: في الطابور تسجيلاتٌ أولى معها،
+       * وهي تُبقي ضغطتها الواحدة بحقّ — فلا ثمن لاعتمادها.
+       */
+      const transferCard = panel.locator('article.card')
+        .filter({ has: panel.locator('[data-testid="transfer-claim"]') });
+      assert.equal(await transferCard.locator('button:has-text("اعتماد الملكية")').count(), 0,
+        'النقل يُعرض بزرّ التسجيل الأوّل نفسه — فيُضغط بالعادة');
+      // وبطاقةُ التسجيل الأوّل تبقى كما كانت — **حالةٌ يجب أن تبقى خضراء**
+      assert.ok(await panel.locator('button:has-text("اعتماد الملكية")').count() >= 1,
+        'التسجيل الأوّل صار خطوتين كذلك — وثمنٌ بلا سبب');
+      await transferCard.getByTestId('transfer-confirm-open').click();
+      await panel.waitForSelector('[data-testid="transfer-confirm"]');
+      const confirmText = await transferCard.locator('[data-testid="transfer-confirm"]').innerText();
+      assert.match(confirmText, /تنزع/, `تأكيدٌ لا يقول ماذا يقع: «${confirmText}»`);
+      assert.match(confirmText, /الشيخ سعيد/, 'التأكيد لا يُسمّي من يُنزع منه');
+      await panel.waitForSelector('button:has-text("نعم، انقل الإمامة")');
+
+      // والتراجع مفتوح: من فتح التأكيد بالخطأ يخرج منه بلا أثر
+      await transferCard.getByRole('button', { name: 'تراجع' }).click();
+      await panel.waitForSelector('[data-testid="transfer-confirm-open"]');
 
       // وآخِرُ ما يقرأه: «الصفة: admin» كانت تُعرض هنا حرفياً
       await panel.getByRole('button', { name: 'حسابي' }).click();

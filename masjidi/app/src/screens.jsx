@@ -1508,6 +1508,8 @@ export function AdminHome() {
   const claims = useList(api.listPendingClaims);
   const contractors = useList(api.listPendingContractors);
   const [error, setError] = useState('');
+  /** طلبُ النقل الذي فُتح تأكيدُه — واحدٌ لا أكثر، فلا يُفتح طابورٌ كلُّه. */
+  const [confirming, setConfirming] = useState(null);
 
   const guard = useAction();
 
@@ -1577,16 +1579,51 @@ export function AdminHome() {
               <p>الطالب: {row.imamName || 'بلا اسم'}{row.imamPhone ? ` · ${row.imamPhone}` : ''}</p>
               <Waited since={row.createdAt} />
               {row.evidenceNote && <p>«{row.evidenceNote}»</p>}
+              {/*
+                **والنقل يُطلب باسمه.**
+
+                التحذير أعلاه كان يقول «الضغطة نفسها والأثر ليس واحداً» —
+                ثم يترك الضغطتين على شكلٍ واحد. وقِيس في متصفّح حقيقي: ضغطةٌ
+                واحدة على «اعتماد الملكية» نزعت مسجداً من إمامٍ قائم ومنحته
+                لغيره، **بصفر حوارات تأكيد**، وأُرسل إلى المنزوع منه «نُقلت
+                إمامة مسجدك إلى غيرك بقرار الإدارة».
+
+                والمشرف يمرّ على طابورٍ فيه تسجيلاتٌ أولى لا ضرر فيها ونقلٌ
+                بينها، فيعتمد بالتتابع. **وقاعدة هذا المستودع أن ما لا رجعة
+                فيه يُطلب باسمه** — كما يُطلب الاستيراد الكامل بـ`--all`.
+
+                فالتسجيل الأوّل يبقى ضغطةً واحدة (لا ثمن له)، والنقل خطوتان:
+                الثانية تُسمّي من يُنزع ومن يُمنح، فلا تُضغط بالعادة.
+              */}
               <div className="row">
-                <button disabled={guard.busy} onClick={() => act(api.reviewMosqueClaim, claims, row.id, true)}>
-                  اعتماد الملكية
-                </button>
+                {row.isTransfer && confirming !== row.id ? (
+                  <button className="ghost" disabled={guard.busy}
+                    data-testid="transfer-confirm-open"
+                    onClick={() => setConfirming(row.id)}>
+                    اعتماد النقل…
+                  </button>
+                ) : (
+                  <button disabled={guard.busy}
+                    onClick={() => act(api.reviewMosqueClaim, claims, row.id, true)}>
+                    {row.isTransfer ? 'نعم، انقل الإمامة' : 'اعتماد الملكية'}
+                  </button>
+                )}
+                {row.isTransfer && confirming === row.id && (
+                  <button className="ghost" disabled={guard.busy}
+                    onClick={() => setConfirming(null)}>تراجع</button>
+                )}
                 <button className="ghost"
                   disabled={guard.busy}
                   onClick={() => act(api.reviewMosqueClaim, claims, row.id, false)}>
                   رفض
                 </button>
               </div>
+              {row.isTransfer && confirming === row.id && (
+                <p className="warn" data-testid="transfer-confirm">
+                  تنزع «{row.mosqueName || 'المسجد'}» من {row.currentImamName || 'إمامه الحالي'}
+                  {' '}وتمنحه {row.imamName || 'مقدّم الطلب'}. ويصل المنزوع منه إشعارٌ بذلك.
+                </p>
+              )}
             </article>
           ))}
         </div>
