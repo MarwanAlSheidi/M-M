@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA **يُثبَّت ويعمل بلا إنترنت** — ويحرسه `verify:pwa`. و**React Native ليس ناقصاً بل غير مطلوب**: الواجهة تُثبَّت على أندرويد وiOS، وعميلٌ ثانٍ يُضاعف السطح بلا أثرٍ للمستخدم في المرحلة الأولى |
-| الاختبارات | ✅ 366 حالة على بديل Parse (`npm test`) + 207 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 31 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 366 حالة على بديل Parse (`npm test`) + 208 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 31 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -4032,6 +4032,59 @@ releaseAssignment: **سقط** (101) Object not found.
 
 ---
 
+### 🟠 «هذا مسجدي» — وعدُ انتماءٍ لا يُوفى
+
+قصدتُ دوراً يختاره الناس عند التسجيل ولا أعرف ماذا يجدون: **المتبرّع**،
+والتبرعات معطّلة بقرار. فقِستُ تجربته في متصفّح حقيقي.
+
+**وفرضيةٌ سقطت أوّلاً:** رأيتُ زرّ «هذا مسجدي» معروضاً على المتبرّع فظننتُه
+زرّ تسجيل الملكية — وهو للأئمة وحدهم فيُردّ. وقرأتُ الشيفرة قبل أن أكتب: الزرّ
+ينادي `setFavoriteMosque` لا `claimMosque`، **فهو يعمل**. ولو كتبتُ قبل أن
+أقرأ لَسجّلتُ عطباً لا وجود له.
+
+ثم قِيست الضغطة وما بعدها:
+
+```
+=== الضغطة ===
+  ما قيل له: مصلى النساء بالبطين صار مسجدك.
+  حُفظ في الحساب: DeMjz6Eqhf ✓ · ويُعرض في «حسابي»: نعم ✓
+=== ثم يُنشر احتياجٌ في «مسجده» ===
+  وارد المتبرّع: 0 إشعاراً   ·   «لا تنبيهات بعد.»
+```
+
+**فالضغطة تعمل، والحفظ يعمل، والعرض يعمل — ولا يترتّب عليها شيء أبداً.**
+
+#### والعلّة أن الانتماء ليس معياراً في أيّ إشعار
+
+`pushToNearbyVolunteers` تُصفّي بشرطين: `role === 'volunteer'`، **وموقع الجهاز
+الآن** (`lastLat`/`lastLng`) أو المحافظة بديلاً. فمن أعلن انتماءه لمسجدٍ وهو في
+بيته على بُعد ثلاثين كيلومتراً لا يعلم أن مسجده يحتاج شيئاً، **والمتبرّع لا
+يُشعَر بحال** لأن دوره ليس «متطوّع».
+
+و`favoriteMosqueId` — التعبير الوحيد عن الانتماء في المنصّة كلِّها — يُقرأ في
+موضعٍ واحد: `getMyProfile`، أي ليُعرض على صاحبه. **حقلٌ يُكتب ويُعرض ولا يفعل
+شيئاً.**
+
+وهذا هو أوّل ما وعد به المنتجُ نفسه: «هذا مسجدك · هذه احتياجاته · وهذا أثرك».
+الخطوة الأولى قائمة، والثانية لا تصل أبداً.
+
+#### والحفظ في الوارد هنا لا اختياريّ
+
+الإشعار القريب يمرّ بـ`{ store: false }` قصداً: للمتطوّع شاشة «الفرص» يفتحها
+متى شاء، فالإشعار تحسينٌ فوق قناةٍ قائمة. **ومن أعلن انتماءه لا شاشة له** —
+المتبرّع لا يرى «الفرص» أصلاً — فالوارد قناتُه الوحيدة، وبلا حفظٍ لا يبلغه شيء.
+
+#### والحارس يؤكّد الرسالة والحدود معاً
+
+نموُّ الوارد وحده لا يكفي: قد يجيء من خبرٍ آخر. فيُطالَب النصّ بأن يقول
+«احتياجٌ جديد» وأن يحمل اسم المسجد. ومعه حدّان **يجب أن يبقيا خضراوين**: من
+أعلن انتماءه لمسجدٍ آخر لا يُزعَج، والإمام لا يُخبَر بخبرٍ نشره بنفسه.
+
+وعلى `HEAD`: أربعٌ تمرّ وواحدة تسقط بالنصّ: «أعلن أن هذا مسجده فلم يُخبَر
+باحتياجه — ووعدُ الانتماء لا يُوفى».
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB — وهذا أكبر قيدٍ باقٍ.**
@@ -5333,7 +5386,50 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
   return pushToUsers(volunteers, payload, { store: false });
 }
 
-module.exports = { pushToUsers, pushToNearbyVolunteers };
+/**
+ * من قال «هذا مسجدي» — يُبلَّغ بما يقع فيه.
+ *
+ * **العطب الذي تسدّه:** `favoriteMosqueId` هو التعبير الوحيد عن الانتماء في
+ * هذه المنصّة — يضغط المستخدم «هذا مسجدي» فيُقال له «صار مسجدك»، ويُحفظ،
+ * ويُعرض في «حسابي». **ثم لا يترتّب عليه شيء أبداً.**
+ *
+ * وقِيس في متصفّح حقيقي: متبرّعٌ اختار مسجداً، ثم نشر إمامُ ذلك المسجد
+ * احتياجاً فيه:
+ *
+ *     وارد المتبرّع: 0 إشعاراً · «لا تنبيهات بعد.»
+ *
+ * لأن `pushToNearbyVolunteers` تُصفّي بـ`role === 'volunteer'` **وبموقع الجهاز
+ * الآن** (`lastLat`/`lastLng`) — لا بالانتماء المُعلَن. فمن أعلن انتماءه
+ * لمسجدٍ وهو في بيته على بُعد ثلاثين كيلومتراً لا يعلم أن مسجده يحتاج شيئاً،
+ * والمتبرّع لا يُشعَر بحال لأن دوره ليس «متطوّع».
+ *
+ * **ويُحفظ في الوارد هنا خلافاً للقريبة**: تلك لها قناتها — شاشة «الفرص»
+ * يفتحها المتطوّع متى شاء. ومن أعلن انتماءه لا شاشة له، فالوارد قناتُه
+ * الوحيدة، وبلا حفظٍ لا يبلغه شيء.
+ */
+const FOLLOWER_CAP = 500;
+
+async function pushToMosqueFollowers(mosque, payload, options = {}) {
+  const exclude = new Set(options.exclude || []);
+
+  const query = new Parse.Query(Parse.User);
+  query.equalTo('favoriteMosqueId', mosque);
+  // الموقوف لا يُلاحَق بالأخبار — ولا يفتح التطبيق أصلاً
+  query.equalTo('isActive', true);
+  query.limit(FOLLOWER_CAP);
+
+  const followers = await query.find({ useMasterKey: true }).catch((error) => {
+    // أثرٌ جانبيّ لا يُسقط ما يُبلّغ عنه — والطلب قد حُفظ قبل هذا السطر
+    console.error('[push] تعذّر جلب أهل المسجد:', error && error.message);
+    return [];
+  });
+
+  const list = followers.filter((user) => !exclude.has(user.id));
+  if (list.length === 0) return { stored: 0, pushed: 0 };
+  return pushToUsers(list, payload);
+}
+
+module.exports = { pushToUsers, pushToNearbyVolunteers, pushToMosqueFollowers };
 ```
 
 #### `cloud/lib/payments.js`
@@ -6413,7 +6509,7 @@ Parse.Cloud.define('confirmMosqueLocation', async (request) => {
 const E = require('../lib/errors');
 // سطرٌ واحد قصداً — انظر `scripts/build_single_file.py`
 const { requireUser, requireRole, mosqueForImam, fetchPointer } = require('../lib/auth');
-const { pushToUsers, pushToNearbyVolunteers } = require('../lib/push');
+const { pushToUsers, pushToNearbyVolunteers, pushToMosqueFollowers } = require('../lib/push');
 const audit = require('../lib/audit');
 
 /**
@@ -6500,6 +6596,19 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
       requestId: serviceRequest.id,
     });
   }
+
+  /*
+   * ومن أعلن أن هذا مسجده يُبلَّغ — أيّاً كان دوره وأين كان الآن.
+   *
+   * القريبة تُصفّي بالدور وبموقع الجهاز، فتُخطئ من قال «هذا مسجدي» وهو في
+   * بيته، وتُخطئ المتبرّع دائماً. وهذا هو الوعد الوحيد الذي يقطعه ذلك الزرّ.
+   *
+   * ويُستثنى الإمام: هو من نشره.
+   */
+  await pushToMosqueFollowers(mosque, {
+    alert: `احتياجٌ جديد في ${mosque.get('name')}: ${serviceRequest.get('title')}`,
+    requestId: serviceRequest.id,
+  }, { exclude: [imam.id] });
 
   return serviceRequest.toJSON();
 });
@@ -8541,6 +8650,49 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
   return pushToUsers(volunteers, payload, { store: false });
 }
 
+/**
+ * من قال «هذا مسجدي» — يُبلَّغ بما يقع فيه.
+ *
+ * **العطب الذي تسدّه:** `favoriteMosqueId` هو التعبير الوحيد عن الانتماء في
+ * هذه المنصّة — يضغط المستخدم «هذا مسجدي» فيُقال له «صار مسجدك»، ويُحفظ،
+ * ويُعرض في «حسابي». **ثم لا يترتّب عليه شيء أبداً.**
+ *
+ * وقِيس في متصفّح حقيقي: متبرّعٌ اختار مسجداً، ثم نشر إمامُ ذلك المسجد
+ * احتياجاً فيه:
+ *
+ *     وارد المتبرّع: 0 إشعاراً · «لا تنبيهات بعد.»
+ *
+ * لأن `pushToNearbyVolunteers` تُصفّي بـ`role === 'volunteer'` **وبموقع الجهاز
+ * الآن** (`lastLat`/`lastLng`) — لا بالانتماء المُعلَن. فمن أعلن انتماءه
+ * لمسجدٍ وهو في بيته على بُعد ثلاثين كيلومتراً لا يعلم أن مسجده يحتاج شيئاً،
+ * والمتبرّع لا يُشعَر بحال لأن دوره ليس «متطوّع».
+ *
+ * **ويُحفظ في الوارد هنا خلافاً للقريبة**: تلك لها قناتها — شاشة «الفرص»
+ * يفتحها المتطوّع متى شاء. ومن أعلن انتماءه لا شاشة له، فالوارد قناتُه
+ * الوحيدة، وبلا حفظٍ لا يبلغه شيء.
+ */
+const FOLLOWER_CAP = 500;
+
+async function pushToMosqueFollowers(mosque, payload, options = {}) {
+  const exclude = new Set(options.exclude || []);
+
+  const query = new Parse.Query(Parse.User);
+  query.equalTo('favoriteMosqueId', mosque);
+  // الموقوف لا يُلاحَق بالأخبار — ولا يفتح التطبيق أصلاً
+  query.equalTo('isActive', true);
+  query.limit(FOLLOWER_CAP);
+
+  const followers = await query.find({ useMasterKey: true }).catch((error) => {
+    // أثرٌ جانبيّ لا يُسقط ما يُبلّغ عنه — والطلب قد حُفظ قبل هذا السطر
+    console.error('[push] تعذّر جلب أهل المسجد:', error && error.message);
+    return [];
+  });
+
+  const list = followers.filter((user) => !exclude.has(user.id));
+  if (list.length === 0) return { stored: 0, pushed: 0 };
+  return pushToUsers(list, payload);
+}
+
 
 // ======================================================================
 // بوابة الدفع   [lib/payments.js]
@@ -10102,6 +10254,19 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
       requestId: serviceRequest.id,
     });
   }
+
+  /*
+   * ومن أعلن أن هذا مسجده يُبلَّغ — أيّاً كان دوره وأين كان الآن.
+   *
+   * القريبة تُصفّي بالدور وبموقع الجهاز، فتُخطئ من قال «هذا مسجدي» وهو في
+   * بيته، وتُخطئ المتبرّع دائماً. وهذا هو الوعد الوحيد الذي يقطعه ذلك الزرّ.
+   *
+   * ويُستثنى الإمام: هو من نشره.
+   */
+  await pushToMosqueFollowers(mosque, {
+    alert: `احتياجٌ جديد في ${mosque.get('name')}: ${serviceRequest.get('title')}`,
+    requestId: serviceRequest.id,
+  }, { exclude: [imam.id] });
 
   return serviceRequest.toJSON();
 });

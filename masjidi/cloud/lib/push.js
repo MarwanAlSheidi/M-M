@@ -120,4 +120,47 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
   return pushToUsers(volunteers, payload, { store: false });
 }
 
-module.exports = { pushToUsers, pushToNearbyVolunteers };
+/**
+ * من قال «هذا مسجدي» — يُبلَّغ بما يقع فيه.
+ *
+ * **العطب الذي تسدّه:** `favoriteMosqueId` هو التعبير الوحيد عن الانتماء في
+ * هذه المنصّة — يضغط المستخدم «هذا مسجدي» فيُقال له «صار مسجدك»، ويُحفظ،
+ * ويُعرض في «حسابي». **ثم لا يترتّب عليه شيء أبداً.**
+ *
+ * وقِيس في متصفّح حقيقي: متبرّعٌ اختار مسجداً، ثم نشر إمامُ ذلك المسجد
+ * احتياجاً فيه:
+ *
+ *     وارد المتبرّع: 0 إشعاراً · «لا تنبيهات بعد.»
+ *
+ * لأن `pushToNearbyVolunteers` تُصفّي بـ`role === 'volunteer'` **وبموقع الجهاز
+ * الآن** (`lastLat`/`lastLng`) — لا بالانتماء المُعلَن. فمن أعلن انتماءه
+ * لمسجدٍ وهو في بيته على بُعد ثلاثين كيلومتراً لا يعلم أن مسجده يحتاج شيئاً،
+ * والمتبرّع لا يُشعَر بحال لأن دوره ليس «متطوّع».
+ *
+ * **ويُحفظ في الوارد هنا خلافاً للقريبة**: تلك لها قناتها — شاشة «الفرص»
+ * يفتحها المتطوّع متى شاء. ومن أعلن انتماءه لا شاشة له، فالوارد قناتُه
+ * الوحيدة، وبلا حفظٍ لا يبلغه شيء.
+ */
+const FOLLOWER_CAP = 500;
+
+async function pushToMosqueFollowers(mosque, payload, options = {}) {
+  const exclude = new Set(options.exclude || []);
+
+  const query = new Parse.Query(Parse.User);
+  query.equalTo('favoriteMosqueId', mosque);
+  // الموقوف لا يُلاحَق بالأخبار — ولا يفتح التطبيق أصلاً
+  query.equalTo('isActive', true);
+  query.limit(FOLLOWER_CAP);
+
+  const followers = await query.find({ useMasterKey: true }).catch((error) => {
+    // أثرٌ جانبيّ لا يُسقط ما يُبلّغ عنه — والطلب قد حُفظ قبل هذا السطر
+    console.error('[push] تعذّر جلب أهل المسجد:', error && error.message);
+    return [];
+  });
+
+  const list = followers.filter((user) => !exclude.has(user.id));
+  if (list.length === 0) return { stored: 0, pushed: 0 };
+  return pushToUsers(list, payload);
+}
+
+module.exports = { pushToUsers, pushToNearbyVolunteers, pushToMosqueFollowers };

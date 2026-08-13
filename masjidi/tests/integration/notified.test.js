@@ -149,6 +149,49 @@ test('لا انتقالَ صامتاً على صاحبه', options, async (t) =>
     assert.match(after[0], /اعتذر متطوّع/);
   });
 
+  /*
+   * **ومن قال «هذا مسجدي» يُبلَّغ بما يقع فيه.**
+   *
+   * `favoriteMosqueId` هو التعبير الوحيد عن الانتماء في المنصّة: يضغط
+   * المستخدم «هذا مسجدي» فيُقال له «صار مسجدك»، ويُحفظ، ويُعرض في «حسابي».
+   * وقِيس في متصفّح حقيقي أنه **لا يترتّب عليه شيء**: متبرّعٌ اختار مسجداً،
+   * ثم نشر إمامُه احتياجاً فيه، فكان واردُه صفراً.
+   *
+   * لأن الإشعار القريب يُصفّي بالدور (`volunteer`) وبموقع الجهاز الآن — فيُخطئ
+   * من أعلن انتماءه وهو في بيته، ويُخطئ المتبرّع دائماً.
+   */
+  await t.test('ومن أعلن أن هذا مسجده يُبلَّغ باحتياجه — ولو لم يكن متطوّعاً', async () => {
+    const donor = await signUp('donor', 'أبو محمد');
+    await as(donor, 'setFavoriteMosque', { mosqueId: mosque.id });
+
+    // ومن أعلن انتماءه لمسجدٍ آخر لا يُزعَج — **حالةٌ يجب أن تبقى خضراء**
+    const other = new (Parse.Object.extend('Mosques'))();
+    other.set({
+      externalId: `other_${Date.now()}`, name: 'مسجد الفتح',
+      governorate: 'مسقط', wilayat: 'السيب', lat: 23.7, lng: 58.2,
+    });
+    await other.save(null, { useMasterKey: true });
+    const stranger = await signUp('donor', 'أبو سالم');
+    await as(stranger, 'setFavoriteMosque', { mosqueId: other.id });
+
+    const before = (await inbox(donor)).length;
+    await newRequest('صيانة مكيّفات المصلّى');
+
+    const after = await inbox(donor);
+    assert.ok(after.length > before,
+      'أعلن أن هذا مسجده فلم يُخبَر باحتياجه — ووعدُ الانتماء لا يُوفى');
+    // **الرسالة لا الحال**: نموٌّ في الوارد قد يجيء من خبرٍ آخر
+    assert.match(after[0], /احتياجٌ جديد/, `أُخبر بغير ما وقع: «${after[0]}»`);
+    assert.match(after[0], /جامع البلاغ/, 'خبرٌ بلا اسم المسجد الذي انتمى إليه');
+
+    assert.deepEqual(await inbox(stranger), [],
+      'وصل خبرُ مسجدٍ إلى من أعلن انتماءه لغيره');
+
+    // والإمام لا يُخبَر بما نشره هو
+    assert.equal((await inbox(imam)).some((body) => /احتياجٌ جديد في جامع البلاغ/.test(body)),
+      false, 'أُخبر الإمام بخبر نشره بنفسه');
+  });
+
   await t.test('ولا يصل خبرُ أحدٍ إلى غيره', async () => {
     // الوارد صفٌّ لكل مستهدَف، فخطأٌ في `userId` يُسرّب حركة مسجدٍ إلى غريب
     const seen = await inbox(khalid);

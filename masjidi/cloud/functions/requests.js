@@ -1,7 +1,7 @@
 const E = require('../lib/errors');
 // سطرٌ واحد قصداً — انظر `scripts/build_single_file.py`
 const { requireUser, requireRole, mosqueForImam, fetchPointer } = require('../lib/auth');
-const { pushToUsers, pushToNearbyVolunteers } = require('../lib/push');
+const { pushToUsers, pushToNearbyVolunteers, pushToMosqueFollowers } = require('../lib/push');
 const audit = require('../lib/audit');
 
 /**
@@ -88,6 +88,19 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
       requestId: serviceRequest.id,
     });
   }
+
+  /*
+   * ومن أعلن أن هذا مسجده يُبلَّغ — أيّاً كان دوره وأين كان الآن.
+   *
+   * القريبة تُصفّي بالدور وبموقع الجهاز، فتُخطئ من قال «هذا مسجدي» وهو في
+   * بيته، وتُخطئ المتبرّع دائماً. وهذا هو الوعد الوحيد الذي يقطعه ذلك الزرّ.
+   *
+   * ويُستثنى الإمام: هو من نشره.
+   */
+  await pushToMosqueFollowers(mosque, {
+    alert: `احتياجٌ جديد في ${mosque.get('name')}: ${serviceRequest.get('title')}`,
+    requestId: serviceRequest.id,
+  }, { exclude: [imam.id] });
 
   return serviceRequest.toJSON();
 });
