@@ -266,6 +266,12 @@ async function listRequests(build) {
       // يقرّر بينهما سحبَ تكليفٍ يُقيَّد غياباً على المنفّذ.
       assignedAt: row.get('assignedAt') || null,
       startedAt: row.get('startedAt') || null,
+      // ومتى أبلغ المنفّذ بالإنجاز. `pending_imam_approval` طابورٌ ينتظر فيه
+      // إنسانٌ قرارَ إنسان — وهو آخر طابورٍ بقيت ساعتُه مطفأة: الحقل يُكتب في
+      // `markWorkDone` منذ أول يوم ولا يُرسَل، فالمتطوّع يرى «بانتظار معاينة
+      // الإمام» في يومه الأول وفي شهره الثالث سواءً، والإمام يُطلب منه اعتمادُ
+      // عملٍ بلا أن يعرف كم انتظر صاحبُه.
+      workDoneAt: row.get('workDoneAt') || null,
       mosqueId: mosque ? mosque.id : null,
       mosqueName: mosque ? mosque.get('name') : null,
       wilayat: mosque ? mosque.get('wilayat') : null,

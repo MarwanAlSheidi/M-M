@@ -82,9 +82,21 @@ test('المدّة موصولةٌ بالشاشة لا محسوبةً في الف
   const fs = require('node:fs');
   const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 
-  await t.test('`listRequests` تُعيد الحقلين — وإلا لم يصلا الشاشة أصلاً', () => {
+  await t.test('`listRequests` تُعيد الطوابع — وإلا لم تصل الشاشة أصلاً', () => {
     const api = read('app/src/api.js');
-    for (const field of ['assignedAt', 'startedAt']) {
+    /*
+     * و`workDoneAt` ثالثُها — أُضيف بعد مسحٍ على المخطط كلِّه سأل عن اتجاه كل
+     * حقل: أيُكتب ويُقرأ، أم يُكتب ولا يُقرأ؟ فكان مكتوباً في `markWorkDone`
+     * منذ أول يوم ولا يعبر السلك.
+     *
+     * و`pending_imam_approval` **آخر طابورٍ بقيت ساعتُه مطفأة**: قاعدة هذا
+     * المستودع أن كلَّ طابورٍ ينتظر فيه إنسانٌ قرارَ إنسان يُعرض فيه «كم
+     * انتظر» — طُبّقت على طلبات الملكية وعلى اعتماد الشركات وعلى الاهتمامات،
+     * **وبقي هذا الباب**. فالمتطوّع يرى «بانتظار معاينة الإمام» في يومه الأول
+     * وفي شهره الثالث سواءً، والإمام يُطلب منه اعتمادُ عملٍ بلا أن يعرف كم
+     * انتظر صاحبُه.
+     */
+    for (const field of ['assignedAt', 'startedAt', 'workDoneAt']) {
       assert.match(api, new RegExp(`${field}:\\s*row\\.get\\('${field}'\\)`),
         `${field} يُكتب على الخادم ولا يُرسَل إلى العميل — فيبقى غير مقروء`);
     }
@@ -95,5 +107,27 @@ test('المدّة موصولةٌ بالشاشة لا محسوبةً في الف
     assert.match(screens, /assignedLabel/,
       'زرّ «سحب التكليف — لم يحضر» بلا مدّةٍ يقوم عليها الحكم');
     assert.match(screens, /STALE_ASSIGNED_DAYS/);
+  });
+
+  await t.test('وانتظارُ الاعتماد يُرى من طرفيه — المنتظِر ومن يقرّر', () => {
+    const screens = read('app/src/screens.jsx');
+    const shown = screens.match(/<Waited\s+since=\{(?:row|request)\.workDoneAt\}/g) || [];
+    assert.equal(shown.length, 2,
+      `المدّة تُعرض في ${shown.length} طرفٍ لا اثنين — والمنتظِر أولى بها من الناظر`);
+  });
+
+  await t.test('ولا وسمَ تأخّرٍ حيث لا وعدَ قُطع', () => {
+    /*
+     * لم يُوعَد المتطوّع بمدّةٍ للاعتماد — لا في رسالة `markWorkDone` ولا في
+     * غيرها. وحدٌّ مخترَع يصير عُرفاً ويُخوّف بلا وجه حقّ، والقاعدة أن الحدّ
+     * يُؤخذ من وعدٍ قُطع في الخادم لا يُبتدع في الواجهة.
+     */
+    const screens = read('app/src/screens.jsx');
+    const blocks = screens.match(/<Waited\s+since=\{(?:row|request)\.workDoneAt\}[\s\S]{0,140}?\/>/g) || [];
+    assert.equal(blocks.length, 2, 'لم تُقرأ كتلتا الانتظار — تغيّرت الصياغة');
+    for (const block of blocks) {
+      assert.match(block, /overdueAfter=\{null\}/,
+        `وسمُ تأخّرٍ على وعدٍ لم يُقطع: ${block.replace(/\s+/g, ' ')}`);
+    }
   });
 });

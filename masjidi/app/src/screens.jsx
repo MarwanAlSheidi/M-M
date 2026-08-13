@@ -882,7 +882,15 @@ export function MyTasks() {
               {row.status === 'in_progress' && (
                 <ReportWork request={row} onDone={() => { tasks.refresh(); interests.refresh(); }} />
               )}
-              {row.status === 'pending_imam_approval' && <p>بانتظار معاينة الإمام واعتماده.</p>}
+              {row.status === 'pending_imam_approval' && (
+                <>
+                  <p>بانتظار معاينة الإمام واعتماده.</p>
+                  {/* بلا وسم تأخّر: لم يُوعَد المتطوّع بمدّةٍ للاعتماد، وحدٌّ
+                      مخترَع يصير عُرفاً ويُخوّف بلا وجه حقّ */}
+                  <Waited since={row.workDoneAt} label="أبلغتَ بالإنجاز"
+                    overdueAfter={null} />
+                </>
+              )}
             </article>
           ))}
         </div>
@@ -1329,6 +1337,9 @@ function RequestDetail({ request, onBack }) {
       {status === 'pending_imam_approval' && (
         <>
           <h2>معاينة واعتماد</h2>
+          {/* ومن يقرّر يرى المدّة: العمل أُنجز وصاحبُه ينتظر اعتمادك */}
+          <Waited since={request.workDoneAt} label="أبلغ المنفّذ بالإنجاز"
+            overdueAfter={null} />
           {/* والتقييم يُكتب في `avgRating` — فلا يُعتمد عملُ من لا يُعرف */}
           <Counterpart contact={contact} />
           {request.workerNotes && <p className="notice">«{request.workerNotes}»</p>}
