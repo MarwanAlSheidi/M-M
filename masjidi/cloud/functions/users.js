@@ -1,6 +1,7 @@
 const E = require('../lib/errors');
 const { requireUser, requireRole, TEXT_LIMITS } = require('../lib/auth');
 const { pushToUsers } = require('../lib/push');
+const { mosqueTitle } = require('../lib/mosque-name');
 const { warnImamsOfWorkerLoss } = require('../lib/worker');
 const audit = require('../lib/audit');
 const geo = require('../lib/geo');
@@ -66,7 +67,7 @@ const warnImamsOfSuspension = (contractor, admin) => warnImamsOfWorkerLoss(contr
   actor: admin,
   alert: (name, serviceRequest, mosque) =>
     `سُحب اعتماد ${name} المكلَّفة بـ "${serviceRequest.get('title')}" `
-    + `في ${mosque.get('name')}. عاين العمل، ولك سحب التكليف إن لم يبدأ.`,
+    + `في ${mosqueTitle(mosque)}. عاين العمل، ولك سحب التكليف إن لم يبدأ.`,
 });
 
 /** اعتماد شركة أو سحب اعتمادها — مشرف فقط. */
@@ -132,7 +133,7 @@ Parse.Cloud.define('setFavoriteMosque', async (request) => {
   user.set('favoriteMosqueId', mosque);
   await user.save(null, { useMasterKey: true });
 
-  return { favoriteMosqueId: mosque.id, mosqueName: mosque.get('name') };
+  return { favoriteMosqueId: mosque.id, mosqueName: mosqueTitle(mosque) };
 });
 
 /**

@@ -289,7 +289,9 @@ async function listRequests(build) {
       // عملٍ بلا أن يعرف كم انتظر صاحبُه.
       workDoneAt: row.get('workDoneAt') || null,
       mosqueId: mosque ? mosque.id : null,
-      mosqueName: mosque ? mosque.get('name') : null,
+      // الاسمُ كما يُنادى: «جامع المجيب» لا «المجيب». والمؤشّر مُضمَّنٌ بحقوله
+      // كلِّها، فالنوعُ في اليد — وكانت البطاقة تعرض العلَم عارياً.
+      mosqueName: mosque ? mosqueTitle({ name: mosque.get('name'), type: mosque.get('type') }) : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
       // القرية والإحداثيات: أسماء المساجد تتكرّر بالمئات على مستوى السلطنة،
       // والمنفّذ يحتاج أن يصل إلى المسجد لا أن يعرف اسمه

@@ -47,7 +47,7 @@ test('الاستعجال يُكتب ويُقرأ ولا يُقبل على علّ
 
   const mosque = new (Parse.Object.extend('Mosques'))();
   mosque.set({
-    externalId: `urg_${Date.now()}`, name: 'جامع البلاغ', governorate: 'مسقط',
+    externalId: `urg_${Date.now()}`, name: 'البلاغ', type: 'جامع', governorate: 'مسقط',
     wilayat: 'بوشر', isClaimed: true, imamId: imam, lat: 23.6, lng: 58.5,
   });
   await mosque.save(null, { useMasterKey: true });
@@ -74,6 +74,15 @@ test('الاستعجال يُكتب ويُقرأ ولا يُقبل على علّ
     const hit = nearby.find((row) => row.title === 'إصلاح مكيّفات المصلّى');
     assert.ok(hit, `الفرصة لم تصل المتطوّع أصلاً: ${JSON.stringify(nearby.map((r) => r.title))}`);
     assert.equal(hit.urgency, 'high', 'الفرصة تصل بلا درجة استعجالها');
+
+    /*
+     * **ومعها اسمُ المسجد كما يُنادى.** الاستعلام كان يقصر `select` على
+     * `name` دون `type`، فتردّ `mosqueTitle` العلَم عارياً وهي تظنّ أنها
+     * ركّبته — إصلاحٌ يبدو مطبَّقاً ولا يقع. ولم تكشفه بوّابةٌ ولا اختبار
+     * وحدة: كشفته **لقطةُ شاشةٍ للبطاقة نفسها**.
+     */
+    assert.equal(hit.mosqueName, 'جامع البلاغ',
+      `الفرصة تحمل اسم المسجد عارياً: «${hit.mosqueName}»`);
   });
 
   await t.test('ونصٌّ حرٌّ لا يمرّ إلى شاشة المتطوّعين', async () => {

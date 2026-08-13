@@ -1,5 +1,6 @@
 const { ROLES, clampUserText } = require('./lib/auth');
 const { warnImamsOfWorkerLoss } = require('./lib/worker');
+const { mosqueTitle } = require('./lib/mosque-name');
 const audit = require('./lib/audit');
 
 /** لا يُسمح للعميل بتعيين دوره بنفسه إلى admin، ولا بتعديل الحقول الحسّاسة. */
@@ -131,7 +132,7 @@ Parse.Cloud.afterSave(Parse.User, async (request) => {
       actor: null, // الإيقاف بالمفتاح الرئيس — لا فاعلَ في الجلسة يُنسب إليه
       alert: (name, serviceRequest, mosque) =>
         `أُوقف حساب ${name} المكلَّف بـ "${serviceRequest.get('title')}" `
-        + `في ${mosque.get('name')}، فلا يستطيع الحضور. عاين العمل، ولك سحب `
+        + `في ${mosqueTitle(mosque)}، فلا يستطيع الحضور. عاين العمل، ولك سحب `
         + `التكليف — ولن يُقيَّد عليه غياب.`,
     });
   }

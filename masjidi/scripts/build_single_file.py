@@ -13,6 +13,7 @@ ORDER = [
     ("lib/audit.js", "سجل التدقيق"),
     ("lib/geo.js", "القرب الجغرافي"),
     ("lib/arabic.js", "تطبيع النصّ العربي"),
+    ("lib/mosque-name.js", "اسم المسجد كما يُنادى"),
     ("lib/worker.js", "خروج المنفّذ من الميدان"),
     ("triggers.js", "المُشغّلات (beforeSave / afterSave)"),
     ("functions/mosques.js", "دوال المساجد"),
@@ -31,6 +32,7 @@ REPLACEMENTS = {
     "lib/geo.js": [(r"module\.exports = \{[^}]*\};",
                     "const geo = { distanceKm, boundingBox, withinBox, sortByDistance, validCoordinates };")],
     "lib/worker.js": [(r"module\.exports = \{[^}]*\};", "")],
+    "lib/mosque-name.js": [(r"module\.exports = \{[^}]*\};", "")],
 }
 
 # يُحذف الاستيراد النسبي وحده (`./` و`../`): الملفات صارت واحداً فلا معنى له.

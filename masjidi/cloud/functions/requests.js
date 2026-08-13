@@ -2,6 +2,7 @@ const E = require('../lib/errors');
 // سطرٌ واحد قصداً — انظر `scripts/build_single_file.py`
 const { requireUser, requireRole, mosqueForImam, fetchPointer } = require('../lib/auth');
 const { pushToUsers, pushToNearbyVolunteers, pushToMosqueFollowers } = require('../lib/push');
+const { mosqueTitle } = require('../lib/mosque-name');
 const audit = require('../lib/audit');
 
 /**
@@ -97,7 +98,7 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
 
   if (cost === 0) {
     await pushToNearbyVolunteers(mosque, {
-      alert: `فرصة تطوّع: ${serviceRequest.get('title')} — مسجد ${mosque.get('name')}`,
+      alert: `فرصة تطوّع: ${serviceRequest.get('title')} — ${mosqueTitle(mosque)}`,
       requestId: serviceRequest.id,
     });
   }
@@ -111,7 +112,7 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
    * ويُستثنى الإمام: هو من نشره.
    */
   await pushToMosqueFollowers(mosque, {
-    alert: `احتياجٌ جديد في ${mosque.get('name')}: ${serviceRequest.get('title')}`,
+    alert: `احتياجٌ جديد في ${mosqueTitle(mosque)}: ${serviceRequest.get('title')}`,
     requestId: serviceRequest.id,
   }, { exclude: [imam.id] });
 
@@ -445,7 +446,7 @@ Parse.Cloud.define('assignWorker', async (request) => {
   await closeInterests(serviceRequest);
 
   await pushToUsers(worker, {
-    alert: `تم تكليفك بـ "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
+    alert: `تم تكليفك بـ "${serviceRequest.get('title')}" في ${mosqueTitle(mosque)}.`,
     requestId: serviceRequest.id,
   });
 
@@ -677,7 +678,7 @@ Parse.Cloud.define('releaseAssignment', async (request) => {
   // يُبلَّغ الطرف الآخر وحده: من طلب السحب يعلمه
   if (byImam) {
     await pushToUsers(worker, {
-      alert: `سُحب تكليفك بـ "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
+      alert: `سُحب تكليفك بـ "${serviceRequest.get('title')}" في ${mosqueTitle(mosque)}.`,
       requestId: serviceRequest.id,
     });
   } else if (mosque.get('imamId')) {
@@ -727,7 +728,7 @@ Parse.Cloud.define('startWork', async (request) => {
   const imam = mosque.get('imamId');
   if (imam) {
     await pushToUsers(imam, {
-      alert: `بدأ العمل في "${serviceRequest.get('title')}" بمسجد ${mosque.get('name')}.`,
+      alert: `بدأ العمل في "${serviceRequest.get('title')}" بـ${mosqueTitle(mosque)}.`,
       requestId: serviceRequest.id,
     });
   }
@@ -852,7 +853,7 @@ Parse.Cloud.define('completeService', async (request) => {
   const followerExclude = [imam.id];
   if (worker && worker.id) followerExclude.push(worker.id);
   await pushToMosqueFollowers(mosque, {
-    alert: `أُنجز في ${mosque.get('name')}: ${serviceRequest.get('title')} — جزى الله من قام به.`,
+    alert: `أُنجز في ${mosqueTitle(mosque)}: ${serviceRequest.get('title')} — جزى الله من قام به.`,
     requestId: serviceRequest.id,
   }, { exclude: followerExclude });
 
@@ -901,7 +902,7 @@ Parse.Cloud.define('cancelServiceRequest', async (request) => {
     || serviceRequest.get('assignedContractorId');
   if (worker) {
     await pushToUsers(worker, {
-      alert: `أُلغي طلب "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
+      alert: `أُلغي طلب "${serviceRequest.get('title')}" في ${mosqueTitle(mosque)}.`,
       requestId: serviceRequest.id,
     });
   }
@@ -911,7 +912,7 @@ Parse.Cloud.define('cancelServiceRequest', async (request) => {
   const cancelExclude = [imam.id];
   if (worker && worker.id) cancelExclude.push(worker.id);
   await pushToMosqueFollowers(mosque, {
-    alert: `لم يعد "${serviceRequest.get('title')}" مطلوباً في ${mosque.get('name')}.`,
+    alert: `لم يعد "${serviceRequest.get('title')}" مطلوباً في ${mosqueTitle(mosque)}.`,
     requestId: serviceRequest.id,
   }, { exclude: cancelExclude });
 

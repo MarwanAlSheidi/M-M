@@ -1,6 +1,7 @@
 const E = require('../lib/errors');
 const { requireUser, requireRole, fetchPointer } = require('../lib/auth');
 const { pushToUsers } = require('../lib/push');
+const { mosqueTitle } = require('../lib/mosque-name');
 const payments = require('../lib/payments');
 const { STATUS } = require('./requests');
 const audit = require('../lib/audit');
@@ -88,7 +89,7 @@ Parse.Cloud.define('initiateDonation', async (request) => {
   const session = await payments.createCheckoutSession({
     amountOmr: value,
     clientReferenceId: transaction.id, // مفتاح المطابقة والمنع المزدوج
-    description: `تبرع: ${serviceRequest.get('title')} — ${mosque.get('name')}`,
+    description: `تبرع: ${serviceRequest.get('title')} — ${mosqueTitle(mosque)}`,
     successUrl: successUrl || process.env.PAYMENT_SUCCESS_URL,
     cancelUrl: cancelUrl || process.env.PAYMENT_CANCEL_URL,
   });

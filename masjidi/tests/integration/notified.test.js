@@ -70,6 +70,20 @@ test('لا انتقالَ صامتاً على صاحبه', options, async (t) =>
   });
   await mosque.save(null, { useMasterKey: true });
 
+  /*
+   * ومصلّى العيدين — وهو ما تُخطئه البادئةُ المكتوبة بيد.
+   *
+   * 3,875 من 18,214 ليست «مسجداً»: 1,952 جامعاً، و929 مصلّى عيدين، و752
+   * مصلّى، و210 مصلّى نساء. وكان الإشعار يقول «مسجد العيدين» و«مسجد النساء».
+   */
+  const eidMusalla = new (Parse.Object.extend('Mosques'))();
+  eidMusalla.set({
+    externalId: `eid_${Date.now()}`, name: 'العيدين', type: 'مصلى العيدين',
+    governorate: 'مسقط', wilayat: 'بوشر', isClaimed: true, imamId: imam,
+    lat: 23.61, lng: 58.51,
+  });
+  await eidMusalla.save(null, { useMasterKey: true });
+
   const newRequest = async (title) => {
     const created = await as(imam, 'createServiceRequest', {
       mosqueId: mosque.id, title, category: 'electrical',
@@ -257,6 +271,26 @@ test('لا انتقالَ صامتاً على صاحبه', options, async (t) =>
       `أُلغي الطلب وبقي في وارده احتياجٌ لم يعد قائماً: ${JSON.stringify(after)}`);
     assert.match(after[0], /لم يعد/, `أُخبر بغير ما وقع: «${after[0]}»`);
     assert.match(after[0], /إصلاح باب المصلّى/, 'إلغاءٌ بلا ذكر ما أُلغي');
+  });
+
+  await t.test('ويُنادى المسجد بما هو — لا «مسجد» على كل شيء', async () => {
+    const created = await as(imam, 'createServiceRequest', {
+      mosqueId: eidMusalla.id, title: 'فرش ساحة المصلّى', category: 'carpet',
+      description: 'ساحة المصلّى بحاجةٍ إلى فرشٍ قبل صلاة العيد بأيام.',
+    });
+    await as(salim, 'expressInterest', { requestId: created.objectId });
+    await as(imam, 'assignWorker', { requestId: created.objectId, workerId: salim.id });
+
+    const seen = (await inbox(salim)).join(' | ');
+    assert.match(seen, /مصلى العيدين/,
+      `نُودي مصلّى العيدين بغير اسمه: «${seen}»`);
+    assert.equal(/مسجد العيدين/.test(seen), false,
+      `قيل «مسجد العيدين» لمصلّى عيدين: «${seen}»`);
+
+    // **ولا يُثنّى النوع** — «جامع البلاغ» يحمل نوعه في اسمه، فلا «مسجد جامع»
+    const imamSeen = (await inbox(imam)).join(' | ');
+    assert.equal(/مسجد جامع/.test(imamSeen), false,
+      `نودي الجامع «مسجد جامع البلاغ»: «${imamSeen}»`);
   });
 
   await t.test('ولا يصل خبرُ أحدٍ إلى غيره', async () => {

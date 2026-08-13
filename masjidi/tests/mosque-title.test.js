@@ -84,3 +84,58 @@ test('شاشات الاكتشاف تعرض النوع', () => {
   assert.deepEqual(raw, [],
     `بطاقةٌ تعرض الاسم بلا نوعه: ${raw.join('، ')}`);
 });
+
+/**
+ * والنسختان — السحابة والواجهة — تتطابقان.
+ *
+ * الإشعارات كانت تكتب البادئة بيدها: `` `مسجد ${mosque.get('name')}` `` في
+ * خمسة مواضع، وستّةٌ أخرى تكتب الاسم عارياً. وقِيس على البيانات كاملةً:
+ * **5,297 من 18,214 (29.1٪)** يُخطئ فيها نصُّ «مسجد ‹الاسم›» — ومنها ما ليس
+ * خطأً في الدقّة وحدها: «مصلى العيدين» يُنادى «مسجد العيدين»، و«مصلى نساء»
+ * يُنادى «مسجد النساء».
+ *
+ * فمنطقٌ واحدٌ في نسختين بلا حارسٍ يفترق بلا أن يُلحَظ، فيُنادى المسجد في
+ * الإشعار بغير ما يُنادى به في الشاشة — كما يحرس `text-clean` المطبِّعَين.
+ */
+test('نسختا اسم المسجد — السحابة والواجهة — تتطابقان', async (t) => {
+  const cloud = require('../cloud/lib/mosque-name');
+  const client = extractTitle();
+
+  await t.test('على بيانات الوزارة كاملةً', () => {
+    const rows = require('../data/mosques.json');
+    assert.ok(rows.length > 18000, `قُرئ ${rows.length} سجلاً — الأداة تقرأ ناقصاً`);
+
+    const differ = rows.filter((row) => cloud.mosqueTitle(row) !== client(row));
+    assert.deepEqual(differ.slice(0, 3).map((r) => ({
+      name: r.name, type: r.type,
+      cloud: cloud.mosqueTitle(r), client: client(r),
+    })), [], `النسختان تفترقان في ${differ.length} سجلاً`);
+  });
+
+  await t.test('وتقبل كائن Parse كما تقبل السجلّ', () => {
+    const asParse = { get: (key) => ({ name: 'المجيب', type: 'جامع' }[key]) };
+    assert.equal(cloud.mosqueTitle(asParse), 'جامع المجيب');
+    // والحدود نفسها — فالنسخة السحابية ليست تخفيفاً
+    assert.equal(cloud.mosqueTitle({ name: 'جامع نبر', type: 'جامع' }), 'جامع نبر');
+    assert.equal(cloud.mosqueTitle(null), '');
+  });
+
+  await t.test('ولا تبقى بادئةٌ مكتوبةٌ بيدٍ في نصّ إشعار', () => {
+    const files = ['cloud/functions/requests.js', 'cloud/functions/users.js',
+      'cloud/functions/donations.js', 'cloud/triggers.js'];
+    const offenders = [];
+    for (const rel of files) {
+      const source = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+      // ضابط: الملفّ قُرئ فعلاً
+      assert.ok(source.length > 1000, `${rel}: قُرئ ناقصاً — الأداة عمياء`);
+      for (const hit of source.match(/(مسجد|بمسجد) \$\{mosque/g) || []) {
+        offenders.push(`${rel}: ${hit}`);
+      }
+      for (const hit of source.match(/\$\{mosque\.get\('name'\)\}/g) || []) {
+        offenders.push(`${rel}: ${hit}`);
+      }
+    }
+    assert.deepEqual(offenders, [],
+      `اسمُ المسجد يُركَّب بيدٍ لا بـ\`mosqueTitle\`: ${offenders.join(' · ')}`);
+  });
+});

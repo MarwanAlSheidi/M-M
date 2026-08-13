@@ -1,4 +1,5 @@
 const E = require('../lib/errors');
+const { mosqueTitle } = require('../lib/mosque-name');
 const { requireUser, requireRole, mosqueForImam } = require('../lib/auth');
 const audit = require('../lib/audit');
 const { pushToUsers } = require('../lib/push');
@@ -77,7 +78,7 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
   const mosqueQuery = new Parse.Query('Mosques');
   geo.withinBox(mosqueQuery, geo.boundingBox(lat, lng, radiusKm));
   mosqueQuery.greaterThan('openRequestsCount', 0); // لا معنى لمسجد بلا طلبات
-  mosqueQuery.select('name', 'wilayat', 'village', 'governorate', 'lat', 'lng');
+  mosqueQuery.select('name', 'type', 'wilayat', 'village', 'governorate', 'lat', 'lng');
   mosqueQuery.limit(BOX_CANDIDATE_CAP);
 
   const near = geo.sortByDistance(
@@ -102,7 +103,7 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
   const unlocatedQuery = new Parse.Query('Mosques')
     .equalTo('hasLocation', false)
     .greaterThan('openRequestsCount', 0)
-    .select('name', 'wilayat', 'village', 'governorate')
+    .select('name', 'type', 'wilayat', 'village', 'governorate')
     // ترتيبٌ صريح: بلا ترتيبٍ يكون المقطوع بالسقف عشوائياً، فمسجدٌ بعينه قد
     // لا يظهر أبداً بلا أن يُعرف السبب
     .descending('openRequestsCount')
@@ -143,7 +144,7 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
       urgency: row.get('urgency'),
       status: row.get('status'),
       mosqueId: hit.mosque.id,
-      mosqueName: hit.mosque.get('name'),
+      mosqueName: mosqueTitle(hit.mosque),
       wilayat: hit.mosque.get('wilayat'),
       village: hit.mosque.get('village'),
       distanceKm: hit.km == null ? null : Math.round(hit.km * 100) / 100,
@@ -507,7 +508,7 @@ Parse.Cloud.define('getMyClaims', async (request) => {
       createdAt: claim.get('createdAt'),
       reviewedAt: claim.get('reviewedAt'),
       mosqueId: mosque ? mosque.id : null,
-      mosqueName: mosque ? mosque.get('name') : null,
+      mosqueName: mosque ? mosqueTitle(mosque) : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
       village: mosque ? mosque.get('village') : null,
       mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,
@@ -545,7 +546,7 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
       id: claim.id,
       evidenceNote: claim.get('evidenceNote'),
       createdAt: claim.get('createdAt'),
-      mosqueName: mosque ? mosque.get('name') : null,
+      mosqueName: mosque ? mosqueTitle(mosque) : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
       village: mosque ? mosque.get('village') : null,
       mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,

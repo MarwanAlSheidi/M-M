@@ -660,6 +660,52 @@ function normalizeArabic(text) {
 
 
 // ======================================================================
+// اسم المسجد كما يُنادى   [lib/mosque-name.js]
+// ======================================================================
+
+/**
+ * اسمُ المسجد كما يُنادى — نوعُه ثم علَمُه.
+ *
+ * بيانات الوزارة تفصل الاثنين: الاسم «المجيب» والنوع «جامع». وكانت الإشعارات
+ * تكتب البادئة بيدها — `` `مسجد ${mosque.get('name')}` `` في خمسة مواضع —
+ * فتقول لمن يقصد جامعاً إنه مسجد، **ولمن يقصد مصلّى العيدين إنه مسجد**.
+ *
+ * وقِيس على البيانات كاملةً: **5,297 من 18,214 (29.1٪) يُخطئ فيها هذا النصّ**.
+ * ومنها ما ليس خطأً في الدقّة وحدها:
+ *
+ *     النوع «جامع»               → «مسجد المجيب»   والصواب «جامع المجيب»
+ *     النوع «مصلى العيدين»       → «مسجد العيدين»  والصواب «مصلى العيدين»
+ *     النوع «مصلى نساء ( خاص )»  → «مسجد النساء»   والصواب «مصلى النساء»
+ *
+ * وستّةُ مواضع أخرى تكتب الاسم عارياً — «احتياجٌ جديد في المجيب» — فيُقرأ اسمَ
+ * موضعٍ لا مسجداً.
+ *
+ * **وهي نظيرةُ `mosqueTitle` في `app/src/api.js` حرفاً بحرف**، ويحرس تطابقَهما
+ * `tests/mosque-title.test.js` — كما يحرس `text-clean` تطابقَ المطبِّعَين.
+ * فمنطقٌ واحدٌ في نسختين يفترق بلا أن يُلحَظ، فيُنادى المسجد في الإشعار بغير ما
+ * يُنادى به في الشاشة.
+ *
+ * ولا يُضاف النوع إن كان في الاسم أصلاً — وإلا صار «جامع جامع نبر». وتُؤخذ
+ * أوّل كلمةٍ من النوع وحدها: «مصلى نساء ( خاص )» + «النساء» تُقرأ «مصلى
+ * النساء»، لا النوعَ كاملاً ملصقاً بالعلَم.
+ */
+
+/** يقبل كائن Parse أو سجلّاً عادياً — الإشعارات تمرّر الأوّل والاختبارات الثاني. */
+function field(mosque, key) {
+  if (!mosque) return '';
+  if (typeof mosque.get === 'function') return mosque.get(key) || '';
+  return mosque[key] || '';
+}
+
+function mosqueTitle(mosque) {
+  const name = String(field(mosque, 'name')).trim();
+  const head = String(field(mosque, 'type')).trim().split(/\s+/)[0];
+  if (!head || !name || name.includes(head)) return name;
+  return `${head} ${name}`;
+}
+
+
+// ======================================================================
 // خروج المنفّذ من الميدان   [lib/worker.js]
 // ======================================================================
 
@@ -887,7 +933,7 @@ Parse.Cloud.afterSave(Parse.User, async (request) => {
       actor: null, // الإيقاف بالمفتاح الرئيس — لا فاعلَ في الجلسة يُنسب إليه
       alert: (name, serviceRequest, mosque) =>
         `أُوقف حساب ${name} المكلَّف بـ "${serviceRequest.get('title')}" `
-        + `في ${mosque.get('name')}، فلا يستطيع الحضور. عاين العمل، ولك سحب `
+        + `في ${mosqueTitle(mosque)}، فلا يستطيع الحضور. عاين العمل، ولك سحب `
         + `التكليف — ولن يُقيَّد عليه غياب.`,
     });
   }
@@ -1095,7 +1141,7 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
   const mosqueQuery = new Parse.Query('Mosques');
   geo.withinBox(mosqueQuery, geo.boundingBox(lat, lng, radiusKm));
   mosqueQuery.greaterThan('openRequestsCount', 0); // لا معنى لمسجد بلا طلبات
-  mosqueQuery.select('name', 'wilayat', 'village', 'governorate', 'lat', 'lng');
+  mosqueQuery.select('name', 'type', 'wilayat', 'village', 'governorate', 'lat', 'lng');
   mosqueQuery.limit(BOX_CANDIDATE_CAP);
 
   const near = geo.sortByDistance(
@@ -1120,7 +1166,7 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
   const unlocatedQuery = new Parse.Query('Mosques')
     .equalTo('hasLocation', false)
     .greaterThan('openRequestsCount', 0)
-    .select('name', 'wilayat', 'village', 'governorate')
+    .select('name', 'type', 'wilayat', 'village', 'governorate')
     // ترتيبٌ صريح: بلا ترتيبٍ يكون المقطوع بالسقف عشوائياً، فمسجدٌ بعينه قد
     // لا يظهر أبداً بلا أن يُعرف السبب
     .descending('openRequestsCount')
@@ -1161,7 +1207,7 @@ Parse.Cloud.define('getNearbyOpportunities', async (request) => {
       urgency: row.get('urgency'),
       status: row.get('status'),
       mosqueId: hit.mosque.id,
-      mosqueName: hit.mosque.get('name'),
+      mosqueName: mosqueTitle(hit.mosque),
       wilayat: hit.mosque.get('wilayat'),
       village: hit.mosque.get('village'),
       distanceKm: hit.km == null ? null : Math.round(hit.km * 100) / 100,
@@ -1525,7 +1571,7 @@ Parse.Cloud.define('getMyClaims', async (request) => {
       createdAt: claim.get('createdAt'),
       reviewedAt: claim.get('reviewedAt'),
       mosqueId: mosque ? mosque.id : null,
-      mosqueName: mosque ? mosque.get('name') : null,
+      mosqueName: mosque ? mosqueTitle(mosque) : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
       village: mosque ? mosque.get('village') : null,
       mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,
@@ -1563,7 +1609,7 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
       id: claim.id,
       evidenceNote: claim.get('evidenceNote'),
       createdAt: claim.get('createdAt'),
-      mosqueName: mosque ? mosque.get('name') : null,
+      mosqueName: mosque ? mosqueTitle(mosque) : null,
       wilayat: mosque ? mosque.get('wilayat') : null,
       village: mosque ? mosque.get('village') : null,
       mosqueNumber: mosque ? mosque.get('mosqueNumber') : null,
@@ -1913,7 +1959,7 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
 
   if (cost === 0) {
     await pushToNearbyVolunteers(mosque, {
-      alert: `فرصة تطوّع: ${serviceRequest.get('title')} — مسجد ${mosque.get('name')}`,
+      alert: `فرصة تطوّع: ${serviceRequest.get('title')} — ${mosqueTitle(mosque)}`,
       requestId: serviceRequest.id,
     });
   }
@@ -1927,7 +1973,7 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
    * ويُستثنى الإمام: هو من نشره.
    */
   await pushToMosqueFollowers(mosque, {
-    alert: `احتياجٌ جديد في ${mosque.get('name')}: ${serviceRequest.get('title')}`,
+    alert: `احتياجٌ جديد في ${mosqueTitle(mosque)}: ${serviceRequest.get('title')}`,
     requestId: serviceRequest.id,
   }, { exclude: [imam.id] });
 
@@ -2261,7 +2307,7 @@ Parse.Cloud.define('assignWorker', async (request) => {
   await closeInterests(serviceRequest);
 
   await pushToUsers(worker, {
-    alert: `تم تكليفك بـ "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
+    alert: `تم تكليفك بـ "${serviceRequest.get('title')}" في ${mosqueTitle(mosque)}.`,
     requestId: serviceRequest.id,
   });
 
@@ -2493,7 +2539,7 @@ Parse.Cloud.define('releaseAssignment', async (request) => {
   // يُبلَّغ الطرف الآخر وحده: من طلب السحب يعلمه
   if (byImam) {
     await pushToUsers(worker, {
-      alert: `سُحب تكليفك بـ "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
+      alert: `سُحب تكليفك بـ "${serviceRequest.get('title')}" في ${mosqueTitle(mosque)}.`,
       requestId: serviceRequest.id,
     });
   } else if (mosque.get('imamId')) {
@@ -2543,7 +2589,7 @@ Parse.Cloud.define('startWork', async (request) => {
   const imam = mosque.get('imamId');
   if (imam) {
     await pushToUsers(imam, {
-      alert: `بدأ العمل في "${serviceRequest.get('title')}" بمسجد ${mosque.get('name')}.`,
+      alert: `بدأ العمل في "${serviceRequest.get('title')}" بـ${mosqueTitle(mosque)}.`,
       requestId: serviceRequest.id,
     });
   }
@@ -2668,7 +2714,7 @@ Parse.Cloud.define('completeService', async (request) => {
   const followerExclude = [imam.id];
   if (worker && worker.id) followerExclude.push(worker.id);
   await pushToMosqueFollowers(mosque, {
-    alert: `أُنجز في ${mosque.get('name')}: ${serviceRequest.get('title')} — جزى الله من قام به.`,
+    alert: `أُنجز في ${mosqueTitle(mosque)}: ${serviceRequest.get('title')} — جزى الله من قام به.`,
     requestId: serviceRequest.id,
   }, { exclude: followerExclude });
 
@@ -2717,7 +2763,7 @@ Parse.Cloud.define('cancelServiceRequest', async (request) => {
     || serviceRequest.get('assignedContractorId');
   if (worker) {
     await pushToUsers(worker, {
-      alert: `أُلغي طلب "${serviceRequest.get('title')}" في مسجد ${mosque.get('name')}.`,
+      alert: `أُلغي طلب "${serviceRequest.get('title')}" في ${mosqueTitle(mosque)}.`,
       requestId: serviceRequest.id,
     });
   }
@@ -2727,7 +2773,7 @@ Parse.Cloud.define('cancelServiceRequest', async (request) => {
   const cancelExclude = [imam.id];
   if (worker && worker.id) cancelExclude.push(worker.id);
   await pushToMosqueFollowers(mosque, {
-    alert: `لم يعد "${serviceRequest.get('title')}" مطلوباً في ${mosque.get('name')}.`,
+    alert: `لم يعد "${serviceRequest.get('title')}" مطلوباً في ${mosqueTitle(mosque)}.`,
     requestId: serviceRequest.id,
   }, { exclude: cancelExclude });
 
@@ -2928,7 +2974,7 @@ Parse.Cloud.define('initiateDonation', async (request) => {
   const session = await payments.createCheckoutSession({
     amountOmr: value,
     clientReferenceId: transaction.id, // مفتاح المطابقة والمنع المزدوج
-    description: `تبرع: ${serviceRequest.get('title')} — ${mosque.get('name')}`,
+    description: `تبرع: ${serviceRequest.get('title')} — ${mosqueTitle(mosque)}`,
     successUrl: successUrl || process.env.PAYMENT_SUCCESS_URL,
     cancelUrl: cancelUrl || process.env.PAYMENT_CANCEL_URL,
   });
@@ -3497,7 +3543,7 @@ const warnImamsOfSuspension = (contractor, admin) => warnImamsOfWorkerLoss(contr
   actor: admin,
   alert: (name, serviceRequest, mosque) =>
     `سُحب اعتماد ${name} المكلَّفة بـ "${serviceRequest.get('title')}" `
-    + `في ${mosque.get('name')}. عاين العمل، ولك سحب التكليف إن لم يبدأ.`,
+    + `في ${mosqueTitle(mosque)}. عاين العمل، ولك سحب التكليف إن لم يبدأ.`,
 });
 
 /** اعتماد شركة أو سحب اعتمادها — مشرف فقط. */
@@ -3563,7 +3609,7 @@ Parse.Cloud.define('setFavoriteMosque', async (request) => {
   user.set('favoriteMosqueId', mosque);
   await user.save(null, { useMasterKey: true });
 
-  return { favoriteMosqueId: mosque.id, mosqueName: mosque.get('name') };
+  return { favoriteMosqueId: mosque.id, mosqueName: mosqueTitle(mosque) };
 });
 
 /**
