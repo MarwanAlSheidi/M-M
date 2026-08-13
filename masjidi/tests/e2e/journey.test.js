@@ -193,8 +193,18 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     await imam.getByRole('button', { name: 'طلب جديد' }).click();
     await imam.getByLabel('العنوان').fill('تصليح إنارة الصحن');
     await imam.getByLabel('الوصف').fill('إنارة صحن المسجد معطّلة منذ أسبوع.');
+    /*
+     * ودرجةُ الاستعجال. كانت مُعطَّلةً من طرفيها: الخادم يقبلها ويكتبها على كل
+     * طلب، والدالّتان تُرسلانها مع كل صفّ، **ولا نموذجَ يرسلها ولا شاشةَ
+     * تذكرها** — فكلُّ احتياجٍ في الإنتاج «عادي» أبداً.
+     */
+    await imam.getByLabel('درجة الاستعجال').selectOption('high');
     await imam.getByRole('button', { name: 'نشر الطلب' }).click();
     await imam.waitForSelector('text=تصليح إنارة الصحن');
+
+    // ويراها الإمام كما وسمها — وإلا وسم ولم يعلم أوقعت أم لا
+    assert.match(await imam.locator('.card').first().innerText(), /عاجل/,
+      'وسم الإمام طلبَه عاجلاً ولم يظهر له');
     });
   });
 
@@ -202,6 +212,9 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     await onScreen(salim, 'المتطوّع يرى الفرصة ويسجّل اهتمامه', async () => {
     await salim.getByRole('button', { name: 'الفرص' }).click();
     await salim.waitForSelector('text=تصليح إنارة الصحن');
+    // والاستعجال يبلغ من يقرّر: مكيّفات الظهر في آب ليست كدهانٍ مؤجَّل
+    assert.match(await salim.locator('.card').first().innerText(), /عاجل/,
+      'وُسم الاحتياج عاجلاً ولم يبلغ المتطوّع الذي يختار بينه وبين غيره');
     await salim.getByRole('button', { name: 'يهمّني' }).first().click();
     await salim.waitForSelector('.notice');
     assert.match(await salim.locator('.notice').innerText(), /سُجّل اهتمامك/);

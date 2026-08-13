@@ -140,6 +140,21 @@ export const StatusTag = ({ status }) => {
   return <span className={`tag ${tone}`}>{api.STATUS_LABEL[status] || status}</span>;
 };
 
+/**
+ * درجةُ الاستعجال — ولا وسمَ لـ«عادي».
+ *
+ * الوسمُ الذي يُعلَّق على كل بطاقةٍ لا يميّز شيئاً، ومعظمُ الاحتياجات عادية.
+ * فيُقال «عاجل» و«يمكن تأجيله» ويُسكت عمّا بينهما.
+ */
+export const UrgencyTag = ({ urgency }) => {
+  if (!urgency || urgency === 'normal') return null;
+  return (
+    <span className={`tag ${urgency === 'high' ? 'warn' : 'off'}`}>
+      {api.URGENCIES[urgency] || urgency}
+    </span>
+  );
+};
+
 /** يستدعي `load` ويعرض الحالات الثلاث: تحميل، فراغ، بيانات. */
 export function useList(load, deps = []) {
   const [state, setState] = useState({ loading: true, rows: [], error: '' });
@@ -477,6 +492,15 @@ export function MosqueTrail({ mosqueId, mosqueName }) {
                 والسجلّ أداةُ مراجعةٍ لا سطرٌ يُثبت أن شيئاً وقع.
               */}
               {entry.note && <p style={{ margin: '4px 0 0' }}>{entry.note}</p>}
+              {/*
+                والمبلغ حيث يوجد. «قُيّد تبرّع» و«صُرفت مستحقات» بلا مبلغٍ
+                تقولان أنّ مالاً تحرّك ولا تقولان كم — وهذه شاشةُ الشفافية
+                نفسها. والمسار المالي معطَّلٌ في المرحلة الأولى، فلا سطر له
+                اليوم؛ ويوم يُفعَّل لا يُطلَق ناقصاً.
+              */}
+              {entry.amount != null && (
+                <p style={{ margin: '4px 0 0' }}>{entry.amount} ر.ع</p>
+              )}
               <p className="when">
                 {new Date(entry.createdAt).toLocaleString('ar')}
                 {entry.actorRole ? ` · ${api.ACTOR_LABEL[entry.actorRole] || entry.actorRole}` : ''}
@@ -684,6 +708,7 @@ export function Opportunities() {
               <p>{row.description}</p>
               <div className="row">
                 <span className="tag">{api.CATEGORIES[row.category] || 'أخرى'}</span>
+                <UrgencyTag urgency={row.urgency} />
                 <button onClick={() => join(row.id)} disabled={action.busy}>يهمّني</button>
               </div>
             </article>
@@ -1153,7 +1178,11 @@ function MosqueRequests({ mosque, onBack }) {
                 <h3>{row.title}</h3>
                 <StatusTag status={row.status} />
               </div>
-              <p>{api.CATEGORIES[row.category] || 'أخرى'}</p>
+              <div className="row">
+                <span className="tag">{api.CATEGORIES[row.category] || 'أخرى'}</span>
+                {/* الإمام يراها كما وسمها — وإلا وسم ولم يعلم أوقعت أم لا */}
+                <UrgencyTag urgency={row.urgency} />
+              </div>
               <button className="ghost" onClick={() => setOpenRequest(row)}>التفاصيل</button>
             </article>
           ))}
@@ -1164,7 +1193,9 @@ function MosqueRequests({ mosque, onBack }) {
 }
 
 function NewRequest({ mosque, onBack }) {
-  const [form, setForm] = useState({ title: '', description: '', category: 'other' });
+  const [form, setForm] = useState({
+    title: '', description: '', category: 'other', urgency: 'normal',
+  });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (key) => (event) => setForm({ ...form, [key]: event.target.value });
@@ -1196,6 +1227,13 @@ function NewRequest({ mosque, onBack }) {
           onChange={set('description')} required />
         <Field label="النوع" value={form.category} onChange={set('category')}
           options={api.CATEGORIES} />
+        {/*
+          الاستعجال كان يُقبل على الخادم ويُكتب على كل طلب ولا يُرسله نموذج —
+          فكلُّ احتياجٍ «عادي» أبداً. والإمام وحده يعرف أنّ مكيّفات الظهر في
+          آب ليست كدهانٍ مؤجَّل.
+        */}
+        <Field label="درجة الاستعجال" value={form.urgency} onChange={set('urgency')}
+          options={api.URGENCIES} />
 
         {error && <div className="error">{error}</div>}
         <button type="submit" disabled={busy} style={{ marginTop: 14 }}>
@@ -1838,6 +1876,7 @@ function NotifiedRequest({ requestId, onBack }) {
               <p>{row.description}</p>
               <div className="row">
                 <span className="tag">{api.CATEGORIES[row.category] || 'أخرى'}</span>
+                <UrgencyTag urgency={row.urgency} />
               </div>
             </article>
           ))}

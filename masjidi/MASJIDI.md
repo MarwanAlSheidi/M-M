@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA **يُثبَّت ويعمل بلا إنترنت** — ويحرسه `verify:pwa`. و**React Native ليس ناقصاً بل غير مطلوب**: الواجهة تُثبَّت على أندرويد وiOS، وعميلٌ ثانٍ يُضاعف السطح بلا أثرٍ للمستخدم في المرحلة الأولى |
-| الاختبارات | ✅ 367 حالة على بديل Parse (`npm test`) + 215 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 36 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 373 حالة على بديل Parse (`npm test`) + 221 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 36 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -384,6 +384,7 @@ tests/
     suspended-worker.test.js  إيقافُ مكلَّفٍ بعمل: يُخبَر الإمام، ولا يُقيَّد غيابٌ على ممنوع
     claim-reviewed.test.js  مقدّم طلب الملكية يُخبَر بقراره — قبولاً أو رفضاً
     trail-subject.test.js  سجلّ المسجد يقول عن أيّ احتياجٍ يتكلّم كلُّ سطر
+    urgency.test.js    درجة الاستعجال تُكتب وتُقرأ، والتعدادات تُقيَّد بقوائمها
     export.test.js     السجلّ يُصدَّر، ولا تُصدَّر معه هواتف الناس
     concurrency.test.js  ضغطتان في لحظةٍ واحدة: السمعة والتكليف
   e2e/                 متصفّح حقيقي فوق خادم حقيقي — `npm run test:e2e`
@@ -4242,8 +4243,73 @@ kind، requestId».
 
 ---
 
+### 🔴 أولويةٌ في المخطط لا وجود لها في المنصّة
+
+البوّابة الحقلية كانت عمياء عن الوارد، فأُدخل الوارد فيها. والسؤال الذي يلي
+مباشرةً: **من بقي خارجها؟** فمُسحت دوالُّ السحابة التي يستدعيها العميل، فإذا
+البوّابة تنظر إلى ستّة أزواج **وأربعٌ منها تُعيد صفوفاً ذات حقول ولا تُفحص —
+ستّةٌ وأربعون حقلاً لم تُفحص قطّ**: `getMosqueAuditTrail` و`getMyMosques`
+و`getMyProfile` و`getNearbyOpportunities`.
+
+وفيها وُجدت `urgency`.
+
+#### مُعطَّلةٌ من طرفيها
+
+- الخادم يقبلها في `createServiceRequest` ويكتبها على **كل** طلب.
+- `getNearbyOpportunities` وقائمةُ العميل تُرسلانها مع **كل** صفّ.
+- ولا نموذجَ يرسلها ولا شاشةَ تذكرها — قِيس فلم تُذكر كلمة `urgency` في
+  `screens.jsx` كلِّها ولا مرّة، ولا اسمَ عربيّ لها في `api.js`.
+
+فكلُّ طلبٍ في الإنتاج `normal` إلى الأبد. **وقارئُ `schema.json` يرى
+`low | normal | high` فيظنّ أنّ في المنصّة أولوية** — وهو أوّل ما يقرؤه مشترٍ.
+
+فصار الإمام يسمّي الدرجة عند النشر، ويراها وسماً على بطاقته، ويراها المتطوّع في
+«الفرص». **و«عادي» بلا وسم**: الوسمُ الذي يُعلَّق على كل بطاقةٍ لا يميّز شيئاً.
+
+#### وثغرةٌ فُتحت باللحظة نفسها
+
+`urgency || 'normal'` و`category || 'other'` تكتبان ما يصل كما يصل. وما دامت
+الدرجة لا تُعرض فالضرر محدود؛ **ولمّا صارت وسماً يقرأ `URGENCIES[x] || x` صار
+نصٌّ حرٌّ من إمامٍ يظهر كما كُتب على شاشة كل متطوّع**. فقُيّد التعدادان بقائمتين
+على الخادم، وهما القائمتان اللتان يحرس ترجمتَهما `labels.test.js` الآن.
+
+#### والبوّابة نفسها كانت تكذب على ImamHome
+
+أعلنت أنّ `hasLocation` و`locationSource` و`type` لا تُقرأ. والحقيقة أن
+الأوّلين يقرؤهما مكوّنٌ **ابن** (`LocateMosque`) تُمرَّر إليه الصفوف، وأنّ `type`
+يُقرأ داخل `api.mosqueTitle(mosque)` التي تأخذ الكائن كلَّه — والأداة ترى وصولاً
+إلى خاصّية لا تمريرَ كائن. فوُسّعت لتقرأ أبناء الشاشة المذكورين، وسُجّل الباقي
+عذراً مكتوباً. **ونتيجةٌ حمراء ليست بيّنةً حتى يُعرف لماذا احمرّت** — ولو صُدّقت
+هنا لأُصلح ما ليس معطوباً.
+
+#### وقراران آخران أخذتهما البوّابة من يدي
+
+- **`amount` في سجلّ المسجد**: «قُيّد تبرّع» و«صُرفت مستحقات» بلا مبلغٍ تقولان
+  إنّ مالاً تحرّك ولا تقولان كم — في شاشة الشفافية نفسها. فصار يُعرض. والمسار
+  المالي معطَّلٌ في المرحلة الأولى فلا سطر له اليوم، **ويوم يُفعَّل لا يُطلَق
+  ناقصاً**.
+- **`_User.wilayat`**: ميّتٌ في الجهات الثلاث — لا نموذجَ يكتبه (شاشة التعديل
+  تعرض المحافظة وحدها)، ولا شاشةَ تعرضه، ولا قارئَ له على الخادم (كلُّ
+  `get('wilayat')` في المستودع على `Mosques`). فرُفع من السلك ومن مُدخلات
+  `updateMyProfile`، والعمود محجوز. **والمحافظة تبقى**: تُقرأ فعلاً في خطة
+  الإشعار البديلة.
+
+#### الحدود التي تبقى خضراء
+
+على `HEAD` (٤٩٨٩٤ بايتاً لـ`requests.js`، و٨٤٩٠٠ لـ`screens.jsx`): ثلاثٌ من
+حالات التكامل تمرّ — الخادم كان يقبل `high` ويُرسله، فالعطب كان في العميل وحده —
+وتسقط حالتا التقييد. وفي المتصفّح تمرّ **ثماني عشرة** حالةً قبل موضع السقوط، ثم
+تسقط الرحلة عند «درجة الاستعجال» لأن الحقل غير موجود. **ومن لم يسمِّ درجةً
+فطلبُه عاديّ** — حدٌّ يبقى أخضر، فلا يصير السكوتُ استعجالاً.
+
+---
+
 ### ما لم يُعالَج بعد
 
+- **اسمُ المسجد في «الفرص» بلا نوعه.** قِيس في متصفّح: البطاقة تقول «البلاغ»
+  والصحيح «جامع البلاغ». `api.mosqueTitle` مطبَّقةٌ في شاشات الاكتشاف الستّ،
+  و`getNearbyOpportunities` تُرسل `mosqueName` بلا `type` فلا تملك الشاشة
+  تركيبَه. **الإصلاح على الخادم لا في الشاشة**، ولم يُعمل هذه الدورة.
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB — وهذا أكبر قيدٍ باقٍ.**
   حاولتُ إغلاقه فتبيّن أن كل طرقه مقفلة في بيئة التطوير هذه: مضيفات MongoDB
   نفسها و`repo.mongodb.org` تردّان 403، وإصدارات GitHub كذلك، ولا خفيّ Docker،
@@ -6690,6 +6756,19 @@ const STATUS = {
 
 const MAX_ESTIMATE_OMR = 5000;
 
+/*
+ * التعدادات التي تصل من العميل — **تُقيَّد بقائمة**.
+ *
+ * كانت تُكتب كما جاءت: `category || 'other'` و`urgency || 'normal'`، فأيُّ نصٍّ
+ * يُرسَل يُحفظ على الطلب. و`urgency` صارت تُعرض وسماً على بطاقة الفرصة، فنصٌّ
+ * حرٌّ من إمامٍ يظهر على شاشة كل متطوّع — والوسمُ يقرأ `URGENCIES[x] || x`،
+ * فما لا اسمَ له يخرج كما كُتب.
+ *
+ * وهي القائمة نفسها التي يحرس ترجمتَها `tests/labels.test.js`.
+ */
+const CATEGORIES = ['electrical', 'plumbing', 'ac', 'paint', 'cleaning', 'carpet', 'other'];
+const URGENCIES = ['low', 'normal', 'high'];
+
 /**
  * حدود تمنع إغراق المنصّة.
  *
@@ -6733,8 +6812,8 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
   serviceRequest.set('createdBy', imam);
   serviceRequest.set('title', String(title).trim().slice(0, 120));
   serviceRequest.set('description', String(description).trim().slice(0, 2000));
-  serviceRequest.set('category', category || 'other'); // electrical | plumbing | ac | paint | cleaning | carpet | other
-  serviceRequest.set('urgency', urgency || 'normal'); // low | normal | high
+  serviceRequest.set('category', CATEGORIES.includes(category) ? category : 'other');
+  serviceRequest.set('urgency', URGENCIES.includes(urgency) ? urgency : 'normal');
   serviceRequest.set('estimatedCost', cost);
   serviceRequest.set('fundedAmount', 0);
   serviceRequest.set('status', cost > 0 ? STATUS.PENDING_FUNDING : STATUS.OPEN_FOR_VOLUNTEERS);
@@ -8462,13 +8541,13 @@ const GOVERNORATES = [
  */
 Parse.Cloud.define('updateMyProfile', async (request) => {
   const user = requireUser(request);
-  const { fullName, phone, skills, governorate, wilayat } = request.params;
+  const { fullName, phone, skills, governorate } = request.params;
 
   // الأطوال من `TEXT_LIMITS` لا مكتوبةً هنا: `beforeSave` يقصّ بها كذلك،
   // ورقمان في موضعين يفترقان بلا أن يُلحَظ
   if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, TEXT_LIMITS.fullName));
   if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, TEXT_LIMITS.phone));
-  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, TEXT_LIMITS.wilayat));
+  // ولا `wilayat`: لا يُرسله نموذج ولا يقرؤه أحد. `_User.wilayat` عمودٌ محجوز.
 
   if (skills !== undefined) {
     if (!Array.isArray(skills)) E.invalid('المهارات تُرسل كقائمة.');
@@ -8506,7 +8585,13 @@ Parse.Cloud.define('getMyProfile', async (request) => {
     phone: user.get('phone'),
     skills: user.get('skills') || [],
     governorate: user.get('governorate'),
-    wilayat: user.get('wilayat'),
+    /*
+     * و`wilayat` كان يُرسَل هنا وهو ميّتٌ في الجهات الثلاث: **لا نموذجَ يكتبه**
+     * (شاشة التعديل تعرض المحافظة وحدها)، ولا شاشةَ تعرضه، ولا قارئَ له على
+     * الخادم — كلُّ `get('wilayat')` في المستودع على `Mosques` لا على الحساب.
+     * فرُفع من السلك ومن مُدخلات `updateMyProfile`، والعمود محجوزٌ في المخطط.
+     * والمحافظة تبقى: تُقرأ فعلاً في خطة الإشعار البديلة.
+     */
     companyName: user.get('companyName'),
     crNumber: user.get('crNumber'),
     isVerifiedContractor: Boolean(user.get('isVerifiedContractor')),
@@ -10442,6 +10527,19 @@ const STATUS = {
 
 const MAX_ESTIMATE_OMR = 5000;
 
+/*
+ * التعدادات التي تصل من العميل — **تُقيَّد بقائمة**.
+ *
+ * كانت تُكتب كما جاءت: `category || 'other'` و`urgency || 'normal'`، فأيُّ نصٍّ
+ * يُرسَل يُحفظ على الطلب. و`urgency` صارت تُعرض وسماً على بطاقة الفرصة، فنصٌّ
+ * حرٌّ من إمامٍ يظهر على شاشة كل متطوّع — والوسمُ يقرأ `URGENCIES[x] || x`،
+ * فما لا اسمَ له يخرج كما كُتب.
+ *
+ * وهي القائمة نفسها التي يحرس ترجمتَها `tests/labels.test.js`.
+ */
+const CATEGORIES = ['electrical', 'plumbing', 'ac', 'paint', 'cleaning', 'carpet', 'other'];
+const URGENCIES = ['low', 'normal', 'high'];
+
 /**
  * حدود تمنع إغراق المنصّة.
  *
@@ -10485,8 +10583,8 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
   serviceRequest.set('createdBy', imam);
   serviceRequest.set('title', String(title).trim().slice(0, 120));
   serviceRequest.set('description', String(description).trim().slice(0, 2000));
-  serviceRequest.set('category', category || 'other'); // electrical | plumbing | ac | paint | cleaning | carpet | other
-  serviceRequest.set('urgency', urgency || 'normal'); // low | normal | high
+  serviceRequest.set('category', CATEGORIES.includes(category) ? category : 'other');
+  serviceRequest.set('urgency', URGENCIES.includes(urgency) ? urgency : 'normal');
   serviceRequest.set('estimatedCost', cost);
   serviceRequest.set('fundedAmount', 0);
   serviceRequest.set('status', cost > 0 ? STATUS.PENDING_FUNDING : STATUS.OPEN_FOR_VOLUNTEERS);
@@ -12201,13 +12299,13 @@ const GOVERNORATES = [
  */
 Parse.Cloud.define('updateMyProfile', async (request) => {
   const user = requireUser(request);
-  const { fullName, phone, skills, governorate, wilayat } = request.params;
+  const { fullName, phone, skills, governorate } = request.params;
 
   // الأطوال من `TEXT_LIMITS` لا مكتوبةً هنا: `beforeSave` يقصّ بها كذلك،
   // ورقمان في موضعين يفترقان بلا أن يُلحَظ
   if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, TEXT_LIMITS.fullName));
   if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, TEXT_LIMITS.phone));
-  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, TEXT_LIMITS.wilayat));
+  // ولا `wilayat`: لا يُرسله نموذج ولا يقرؤه أحد. `_User.wilayat` عمودٌ محجوز.
 
   if (skills !== undefined) {
     if (!Array.isArray(skills)) E.invalid('المهارات تُرسل كقائمة.');
@@ -12245,7 +12343,13 @@ Parse.Cloud.define('getMyProfile', async (request) => {
     phone: user.get('phone'),
     skills: user.get('skills') || [],
     governorate: user.get('governorate'),
-    wilayat: user.get('wilayat'),
+    /*
+     * و`wilayat` كان يُرسَل هنا وهو ميّتٌ في الجهات الثلاث: **لا نموذجَ يكتبه**
+     * (شاشة التعديل تعرض المحافظة وحدها)، ولا شاشةَ تعرضه، ولا قارئَ له على
+     * الخادم — كلُّ `get('wilayat')` في المستودع على `Mosques` لا على الحساب.
+     * فرُفع من السلك ومن مُدخلات `updateMyProfile`، والعمود محجوزٌ في المخطط.
+     * والمحافظة تبقى: تُقرأ فعلاً في خطة الإشعار البديلة.
+     */
     companyName: user.get('companyName'),
     crNumber: user.get('crNumber'),
     isVerifiedContractor: Boolean(user.get('isVerifiedContractor')),

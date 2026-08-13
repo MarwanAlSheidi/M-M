@@ -87,6 +87,27 @@ test('لا يقرأ المستخدمُ اسماً برمجياً', async (t) => 
     assert.deepEqual(missing, [], `حالاتٌ تُعرض بأسمائها البرمجية: ${missing.join('، ')}`);
   });
 
+  /*
+   * والاستعجالُ والنوع: كانا يُكتبان كما يصلان من العميل بلا قيدٍ بقائمة،
+   * و`urgency` صارت وسماً على بطاقة الفرصة يقرأ `URGENCIES[x] || x` — فنصٌّ
+   * حرٌّ يخرج كما كُتب على شاشة كل متطوّع.
+   */
+  await t.test('ولكلّ درجة استعجالٍ اسمٌ عربيّ', () => {
+    const values = serverEnum('cloud/functions/requests.js', /const URGENCIES = \[([^\]]*)\]/, 3);
+    const labels = exportedMap('URGENCIES');
+
+    const missing = values.filter((value) => !labels[value]);
+    assert.deepEqual(missing, [], `درجاتٌ تُعرض بأسمائها البرمجية: ${missing.join('، ')}`);
+  });
+
+  await t.test('ولكلّ نوعِ عملٍ اسمٌ عربيّ', () => {
+    const values = serverEnum('cloud/functions/requests.js', /const CATEGORIES = \[([^\]]*)\]/, 7);
+    const labels = exportedMap('CATEGORIES');
+
+    const missing = values.filter((value) => !labels[value]);
+    assert.deepEqual(missing, [], `أنواعٌ تُعرض بأسمائها البرمجية: ${missing.join('، ')}`);
+  });
+
   await t.test('وكلُّ فعلٍ في سجلّ التدقيق له اسمٌ عربيّ', () => {
     // السجلّ هو أداةُ الشفافية التي قامت عليها المنصّة، ويقرؤه المصلّي
     const actions = serverEnum('cloud/lib/audit.js', /const ACTIONS = \{([\s\S]*?)\n\};/, 19);

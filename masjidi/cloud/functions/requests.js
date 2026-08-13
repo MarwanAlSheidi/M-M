@@ -23,6 +23,19 @@ const STATUS = {
 
 const MAX_ESTIMATE_OMR = 5000;
 
+/*
+ * التعدادات التي تصل من العميل — **تُقيَّد بقائمة**.
+ *
+ * كانت تُكتب كما جاءت: `category || 'other'` و`urgency || 'normal'`، فأيُّ نصٍّ
+ * يُرسَل يُحفظ على الطلب. و`urgency` صارت تُعرض وسماً على بطاقة الفرصة، فنصٌّ
+ * حرٌّ من إمامٍ يظهر على شاشة كل متطوّع — والوسمُ يقرأ `URGENCIES[x] || x`،
+ * فما لا اسمَ له يخرج كما كُتب.
+ *
+ * وهي القائمة نفسها التي يحرس ترجمتَها `tests/labels.test.js`.
+ */
+const CATEGORIES = ['electrical', 'plumbing', 'ac', 'paint', 'cleaning', 'carpet', 'other'];
+const URGENCIES = ['low', 'normal', 'high'];
+
 /**
  * حدود تمنع إغراق المنصّة.
  *
@@ -66,8 +79,8 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
   serviceRequest.set('createdBy', imam);
   serviceRequest.set('title', String(title).trim().slice(0, 120));
   serviceRequest.set('description', String(description).trim().slice(0, 2000));
-  serviceRequest.set('category', category || 'other'); // electrical | plumbing | ac | paint | cleaning | carpet | other
-  serviceRequest.set('urgency', urgency || 'normal'); // low | normal | high
+  serviceRequest.set('category', CATEGORIES.includes(category) ? category : 'other');
+  serviceRequest.set('urgency', URGENCIES.includes(urgency) ? urgency : 'normal');
   serviceRequest.set('estimatedCost', cost);
   serviceRequest.set('fundedAmount', 0);
   serviceRequest.set('status', cost > 0 ? STATUS.PENDING_FUNDING : STATUS.OPEN_FOR_VOLUNTEERS);

@@ -180,13 +180,13 @@ const GOVERNORATES = [
  */
 Parse.Cloud.define('updateMyProfile', async (request) => {
   const user = requireUser(request);
-  const { fullName, phone, skills, governorate, wilayat } = request.params;
+  const { fullName, phone, skills, governorate } = request.params;
 
   // الأطوال من `TEXT_LIMITS` لا مكتوبةً هنا: `beforeSave` يقصّ بها كذلك،
   // ورقمان في موضعين يفترقان بلا أن يُلحَظ
   if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, TEXT_LIMITS.fullName));
   if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, TEXT_LIMITS.phone));
-  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, TEXT_LIMITS.wilayat));
+  // ولا `wilayat`: لا يُرسله نموذج ولا يقرؤه أحد. `_User.wilayat` عمودٌ محجوز.
 
   if (skills !== undefined) {
     if (!Array.isArray(skills)) E.invalid('المهارات تُرسل كقائمة.');
@@ -224,7 +224,13 @@ Parse.Cloud.define('getMyProfile', async (request) => {
     phone: user.get('phone'),
     skills: user.get('skills') || [],
     governorate: user.get('governorate'),
-    wilayat: user.get('wilayat'),
+    /*
+     * و`wilayat` كان يُرسَل هنا وهو ميّتٌ في الجهات الثلاث: **لا نموذجَ يكتبه**
+     * (شاشة التعديل تعرض المحافظة وحدها)، ولا شاشةَ تعرضه، ولا قارئَ له على
+     * الخادم — كلُّ `get('wilayat')` في المستودع على `Mosques` لا على الحساب.
+     * فرُفع من السلك ومن مُدخلات `updateMyProfile`، والعمود محجوزٌ في المخطط.
+     * والمحافظة تبقى: تُقرأ فعلاً في خطة الإشعار البديلة.
+     */
     companyName: user.get('companyName'),
     crNumber: user.get('crNumber'),
     isVerifiedContractor: Boolean(user.get('isVerifiedContractor')),

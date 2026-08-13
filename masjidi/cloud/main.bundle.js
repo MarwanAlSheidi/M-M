@@ -1839,6 +1839,19 @@ const STATUS = {
 
 const MAX_ESTIMATE_OMR = 5000;
 
+/*
+ * التعدادات التي تصل من العميل — **تُقيَّد بقائمة**.
+ *
+ * كانت تُكتب كما جاءت: `category || 'other'` و`urgency || 'normal'`، فأيُّ نصٍّ
+ * يُرسَل يُحفظ على الطلب. و`urgency` صارت تُعرض وسماً على بطاقة الفرصة، فنصٌّ
+ * حرٌّ من إمامٍ يظهر على شاشة كل متطوّع — والوسمُ يقرأ `URGENCIES[x] || x`،
+ * فما لا اسمَ له يخرج كما كُتب.
+ *
+ * وهي القائمة نفسها التي يحرس ترجمتَها `tests/labels.test.js`.
+ */
+const CATEGORIES = ['electrical', 'plumbing', 'ac', 'paint', 'cleaning', 'carpet', 'other'];
+const URGENCIES = ['low', 'normal', 'high'];
+
 /**
  * حدود تمنع إغراق المنصّة.
  *
@@ -1882,8 +1895,8 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
   serviceRequest.set('createdBy', imam);
   serviceRequest.set('title', String(title).trim().slice(0, 120));
   serviceRequest.set('description', String(description).trim().slice(0, 2000));
-  serviceRequest.set('category', category || 'other'); // electrical | plumbing | ac | paint | cleaning | carpet | other
-  serviceRequest.set('urgency', urgency || 'normal'); // low | normal | high
+  serviceRequest.set('category', CATEGORIES.includes(category) ? category : 'other');
+  serviceRequest.set('urgency', URGENCIES.includes(urgency) ? urgency : 'normal');
   serviceRequest.set('estimatedCost', cost);
   serviceRequest.set('fundedAmount', 0);
   serviceRequest.set('status', cost > 0 ? STATUS.PENDING_FUNDING : STATUS.OPEN_FOR_VOLUNTEERS);
@@ -3598,13 +3611,13 @@ const GOVERNORATES = [
  */
 Parse.Cloud.define('updateMyProfile', async (request) => {
   const user = requireUser(request);
-  const { fullName, phone, skills, governorate, wilayat } = request.params;
+  const { fullName, phone, skills, governorate } = request.params;
 
   // الأطوال من `TEXT_LIMITS` لا مكتوبةً هنا: `beforeSave` يقصّ بها كذلك،
   // ورقمان في موضعين يفترقان بلا أن يُلحَظ
   if (fullName !== undefined) user.set('fullName', String(fullName).trim().slice(0, TEXT_LIMITS.fullName));
   if (phone !== undefined) user.set('phone', String(phone).trim().slice(0, TEXT_LIMITS.phone));
-  if (wilayat !== undefined) user.set('wilayat', String(wilayat).trim().slice(0, TEXT_LIMITS.wilayat));
+  // ولا `wilayat`: لا يُرسله نموذج ولا يقرؤه أحد. `_User.wilayat` عمودٌ محجوز.
 
   if (skills !== undefined) {
     if (!Array.isArray(skills)) E.invalid('المهارات تُرسل كقائمة.');
@@ -3642,7 +3655,13 @@ Parse.Cloud.define('getMyProfile', async (request) => {
     phone: user.get('phone'),
     skills: user.get('skills') || [],
     governorate: user.get('governorate'),
-    wilayat: user.get('wilayat'),
+    /*
+     * و`wilayat` كان يُرسَل هنا وهو ميّتٌ في الجهات الثلاث: **لا نموذجَ يكتبه**
+     * (شاشة التعديل تعرض المحافظة وحدها)، ولا شاشةَ تعرضه، ولا قارئَ له على
+     * الخادم — كلُّ `get('wilayat')` في المستودع على `Mosques` لا على الحساب.
+     * فرُفع من السلك ومن مُدخلات `updateMyProfile`، والعمود محجوزٌ في المخطط.
+     * والمحافظة تبقى: تُقرأ فعلاً في خطة الإشعار البديلة.
+     */
     companyName: user.get('companyName'),
     crNumber: user.get('crNumber'),
     isVerifiedContractor: Boolean(user.get('isVerifiedContractor')),

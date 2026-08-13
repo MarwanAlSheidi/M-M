@@ -49,6 +49,23 @@ const ALLOWED_UNREAD = {
    * «احتياجٌ جديد في مسجدك» ولا يملك أن يرى ما هو.
    */
   getMyNotifications: ['items', 'unread'],
+  /*
+   * `targetClass` و`targetId` معرّفان يُترجَمان على الخادم إلى `subject`، ولا
+   * يملك قارئٌ أن يفتح أيّهما. و`fromStatus`/`toStatus` يقولهما اسمُ الفعل
+   * نفسه: «كُلّف منفّذ بالعمل» هي الانتقال، وذكرُ طرفيه تكرارٌ بلغةٍ برمجية.
+   */
+  getMosqueAuditTrail: ['targetClass', 'targetId', 'fromStatus', 'toStatus'],
+  /*
+   * `type` **يُقرأ فعلاً** — داخل `api.mosqueTitle(mosque)` التي تأخذ الكائن
+   * كلَّه. والأداة ترى وصولاً إلى خاصّية لا تمريراً لكائن، فهذا حدُّها لا عطبٌ
+   * في الشاشة. **ونتيجةٌ حمراء ليست بيّنةً حتى يُعرف لماذا احمرّت.**
+   */
+  getMyMosques: ['type'],
+  // `id` و`favoriteMosqueId` معرّفان — والاسم هو ما يُقرأ. و`isVerifiedContractor`
+  // يقوله `contractorStatus` المعروض، وهو أدقّ منه: يفرّق المرفوض من المنتظِر.
+  getMyProfile: ['id', 'favoriteMosqueId', 'isVerifiedContractor'],
+  // `mosqueId` معرّف — والاسم والولاية والقرية معروضة، وهي ما يقود المتطوّع
+  getNearbyOpportunities: ['mosqueId'],
 };
 
 /** الكائن الذي تُعيده الدالّة، حقلاً حقلاً. */
@@ -63,12 +80,21 @@ function returnedFields(source, fn) {
   return fields;
 }
 
-/** جسم مكوّن React كما هو في المصدر. */
-function component(name) {
+/**
+ * جسم مكوّن React كما هو في المصدر — ومعه أبناؤه المذكورون.
+ *
+ * الشاشة تُمرّر صفَّها إلى مكوّنٍ ابن فيقرأ حقولاً منه: `ImamHome` تُمرّر المسجد
+ * إلى `LocateMosque` وهي التي تقرأ `hasLocation` و`locationSource`. وأداةٌ
+ * تقرأ جسم الشاشة وحده تُعلن أنها لا تقرؤهما — **وهو كذبٌ صريح**، وقد وقع في
+ * القياس الذي أنشأ هذه التوسعة.
+ */
+function component(name, also = []) {
   const screens = read('app/src/screens.jsx');
-  const hit = screens.match(new RegExp(`function ${name}\\([^)]*\\)[\\s\\S]*?\\n\\}\\n`));
-  assert.ok(hit, `تعذّر استخراج \`${name}\` من screens.jsx — الأداة عمياء`);
-  return hit[0];
+  return [name, ...also].map((each) => {
+    const hit = screens.match(new RegExp(`function ${each}\\([^)]*\\)[\\s\\S]*?\\n\\}\\n`));
+    assert.ok(hit, `تعذّر استخراج \`${each}\` من screens.jsx — الأداة عمياء`);
+    return hit[0];
+  }).join('\n');
 }
 
 /**
@@ -85,6 +111,23 @@ const SCREENS = [
   { screen: 'RequestDetail', fn: 'getRequestInterests', from: 'cloud/functions/requests.js', bind: 'row' },
   // صندوق الوارد — وكان خارج هذه القائمة، وهو القناة الوحيدة لمن لا شاشة له
   { screen: 'Notifications', fn: 'getMyNotifications', from: 'cloud/functions/notifications.js', bind: 'row' },
+  /*
+   * والأربعةُ الباقية — ستّةٌ وأربعون حقلاً لم تكن تُفحص قطّ.
+   *
+   * البوّابة قائمةٌ منتقاة، فالسؤال الذي يليها: **من بقي خارجها؟** فمُسحت دوالُّ
+   * السحابة التي يستدعيها العميل، فإذا أربعٌ منها تُعيد صفوفاً ذات حقول ولا
+   * تنظر إليها البوّابة. وفيها وُجدت `urgency`: مُعطَّلةٌ من طرفيها.
+   */
+  { screen: 'MosqueTrail', fn: 'getMosqueAuditTrail', from: 'cloud/functions/donations.js', bind: 'entry' },
+  {
+    screen: 'ImamHome',
+    fn: 'getMyMosques',
+    from: 'cloud/functions/mosques.js',
+    bind: 'mosque',
+    also: ['LocateMosque', 'MosqueRequests'],
+  },
+  { screen: 'Profile', fn: 'getMyProfile', from: 'cloud/functions/users.js', bind: 'profile', also: ['EditProfile'] },
+  { screen: 'Opportunities', fn: 'getNearbyOpportunities', from: 'cloud/functions/mosques.js', bind: 'row' },
 ];
 
 test('ما يُرسَل إلى الشاشة يُقرأ فيها', async (t) => {
@@ -94,7 +137,7 @@ test('ما يُرسَل إلى الشاشة يُقرأ فيها', async (t) => {
     await t.test(`${queue.screen} ← ${queue.fn}`, () => {
       const fields = returnedFields(read(queue.from), queue.fn);
       const allowed = ALLOWED_UNREAD[queue.fn] || [];
-      const body = component(queue.screen);
+      const body = component(queue.screen, queue.also);
 
       const unread = fields
         .filter((name) => !new RegExp(`${queue.bind}\\.${name}\\b`).test(body))
