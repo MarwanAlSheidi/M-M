@@ -154,7 +154,7 @@ test('من ينتظر قراراً يُبلَّغ به', options, async (t) => {
 
     const ownerAfter = await inbox(owner);
     assert.ok(ownerAfter.length > ownerBefore, 'نُزع مسجده ولم يُخبَر');
-    assert.match(ownerAfter[0], /نُقلت إمامة/);
+    assert.match(ownerAfter[0], /نُقل الإشراف/);
 
     assert.match((await inbox(heir))[0], /اعتُمدت إمامتك/,
       'الخَلَف ينتظر قراراً كما ينتظره غيره');

@@ -28,11 +28,11 @@
 
 | الدور | ما يستطيع |
 |---|---|
-| `imam` | تسجيل ملكية مسجد، إنشاء طلبات، تعيين منفّذ، اعتماد العمل |
+| `imam` | التسجيل على مسجد (إماماً أو وكيلاً أو مساعداً)، إنشاء طلبات، تعيين منفّذ، اعتماد العمل |
 | `volunteer` | تصفّح الفرص القريبة، **تسجيل الاهتمام بمهمة**، تنفيذ العمل العيني، رفع صور الإنجاز |
 | `donor` | تمويل الطلبات، متابعة السجل المالي للمسجد |
 | `contractor` | تنفيذ الأعمال المموّلة (بعد الاعتماد فقط) |
-| `admin` | مراجعة طلبات الملكية، اعتماد الشركات، صرف المستحقات |
+| `admin` | مراجعة طلبات الإشراف، اعتماد الشركات، صرف المستحقات |
 
 ## 4. مخطط قاعدة البيانات
 
@@ -42,7 +42,7 @@
 - `Mosques` تحمل الآن حقول البيانات الحكومية (`externalId`، `mosqueNumber`،
   `wilayat`، `village`، `typeSlug`) لأن القاعدة مُهيّأة مسبقاً بـ 18,214 مسجداً،
   ولا يُنشئها الأئمة من الصفر.
-- إضافة `MosqueClaims` — الإمام يطلب ملكية مسجد موجود ولا يُنشئ مسجداً جديداً.
+- إضافة `MosqueClaims` — الإمام يطلب إشراف مسجد موجود ولا يُنشئ مسجداً جديداً.
 - إضافة `fundedAmount` لدعم التمويل الجزئي.
 - إضافة `status` و`paymentSessionId` على `Transactions` لفصل نيّة الدفع عن
   الدفع المؤكَّد.
@@ -81,11 +81,11 @@
 | `getNearbyOpportunities` | الجميع | فرص التطوّع القريبة مرتّبةً بالمسافة |
 | `updateMyLocation` | الجميع | حفظ آخر موقع — عليه يقوم إشعار الفرص القريبة |
 | `searchMosques` | الجميع | بحث نصّي مع تطبيع عربي |
-| `claimMosque` | imam | طلب ملكية مسجد |
+| `claimMosque` | imam | طلب إشراف مسجد |
 | `getMyMosques` | imam | مساجده — من `Mosques.imamId`، مصدر الحقيقة نفسه |
-| `getMyClaims` | imam | حالة طلبات الملكية الخاصة به |
+| `getMyClaims` | imam | حالة طلبات الإشراف الخاصة به |
 | `confirmMosqueLocation` | imam | تثبيت موقع مسجدٍ مجهول الموقع، من عنده |
-| `listPendingClaims` | admin | طلبات الملكية المنتظرة مع بيانات الإمام |
+| `listPendingClaims` | admin | طلبات الإشراف المنتظرة مع بيانات الإمام |
 | `reviewMosqueClaim` | admin | اعتماد/رفض الطلب |
 | `createServiceRequest` | imam | إنشاء طلب صيانة |
 | `expressInterest` | volunteer | تسجيل الاهتمام بطلب مفتوح |
@@ -135,7 +135,7 @@
 | `ServiceRequests` | مصادَق | Master Key فقط (عبر دوال السحابة) |
 | `Transactions` | مصادَق، مع إخفاء بيانات المتبرع | Master Key فقط |
 | `MosqueClaims` | Master Key فقط | Master Key فقط |
-| `TaskInterests` | Master Key فقط — يُقرأ عبر `getRequestInterests` بعد التحقق من ملكية المسجد | Master Key فقط |
+| `TaskInterests` | Master Key فقط — يُقرأ عبر `getRequestInterests` بعد التحقق من الإشراف على المسجد | Master Key فقط |
 | `AuditLog` | Master Key فقط — يُقرأ عبر `getMosqueAuditTrail` | Master Key فقط |
 
 **تنبيه:** Master Key في متغيرات بيئة الخادم فقط. لا يظهر إطلاقاً في كود التطبيق.

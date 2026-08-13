@@ -117,7 +117,7 @@ test('انتقال المسجد بين الأئمّة', options, async (t) => {
 
     await assert.rejects(
       as(own, 'claimMosque', { mosqueId: other.id, lat: 23.61, lng: 58.51 }),
-      /مسجّل باسمك/);
+      /مسجَّلٌ على هذا المسجد/);
   });
 
   await t.test('والمشرف يرى أنه نقلٌ ومع من هو الآن — وإلا اعتمده كتسجيلٍ أوّل', async () => {
@@ -171,7 +171,7 @@ test('انتقال المسجد بين الأئمّة', options, async (t) => {
     await assert.rejects(
       as(departed, 'createServiceRequest',
         { mosqueId: mosque.id, title: 'طلبٌ بعد النقل', description: 'وصفٌ كافٍ لهذا الطلب' }),
-      /غير مسجّل باسمك/);
+      /لستَ مسجَّلاً/);
   });
 
   await t.test('والرفض لا ينقل شيئاً', async () => {

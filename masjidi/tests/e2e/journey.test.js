@@ -624,7 +624,7 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
   /**
    * شاشة المشرف في متصفّح — ولم يكن لها اختبارٌ قطّ.
    *
-   * وأخطر ما فيها زرٌّ واحد: «اعتماد الملكية». يعتمد تسجيلاً أوّل لمسجدٍ بلا
+   * وأخطر ما فيها زرٌّ واحد: «اعتماد التسجيل». يعتمد تسجيلاً أوّل لمسجدٍ بلا
    * إمام، **ويَنزع مسجداً من إمامٍ قائم** — والضغطة واحدة. فإن لم تقل الشاشة
    * أيَّهما هو، ضُغط الثاني ظنّاً أنه الأوّل.
    */
@@ -709,17 +709,17 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
        */
       const transferCard = panel.locator('article.card')
         .filter({ has: panel.locator('[data-testid="transfer-claim"]') });
-      assert.equal(await transferCard.locator('button:has-text("اعتماد الملكية")').count(), 0,
+      assert.equal(await transferCard.locator('button:has-text("اعتماد التسجيل")').count(), 0,
         'النقل يُعرض بزرّ التسجيل الأوّل نفسه — فيُضغط بالعادة');
       // وبطاقةُ التسجيل الأوّل تبقى كما كانت — **حالةٌ يجب أن تبقى خضراء**
-      assert.ok(await panel.locator('button:has-text("اعتماد الملكية")').count() >= 1,
+      assert.ok(await panel.locator('button:has-text("اعتماد التسجيل")').count() >= 1,
         'التسجيل الأوّل صار خطوتين كذلك — وثمنٌ بلا سبب');
       await transferCard.getByTestId('transfer-confirm-open').click();
       await panel.waitForSelector('[data-testid="transfer-confirm"]');
       const confirmText = await transferCard.locator('[data-testid="transfer-confirm"]').innerText();
       assert.match(confirmText, /تنزع/, `تأكيدٌ لا يقول ماذا يقع: «${confirmText}»`);
       assert.match(confirmText, /الشيخ سعيد/, 'التأكيد لا يُسمّي من يُنزع منه');
-      await panel.waitForSelector('button:has-text("نعم، انقل الإمامة")');
+      await panel.waitForSelector('button:has-text("نعم، انقل الإشراف")');
 
       // والتراجع مفتوح: من فتح التأكيد بالخطأ يخرج منه بلا أثر
       await transferCard.getByRole('button', { name: 'تراجع' }).click();

@@ -116,12 +116,12 @@ async function mosqueForImam(imam, mosqueId) {
   if (mosqueId) {
     query.equalTo('objectId', mosqueId);
     const mosque = await query.first({ useMasterKey: true });
-    if (!mosque) E.forbidden('هذا المسجد غير مسجّل باسمك.');
+    if (!mosque) E.forbidden('لستَ مسجَّلاً على هذا المسجد.');
     return mosque;
   }
 
   const mosques = await query.limit(2).find({ useMasterKey: true });
-  if (mosques.length === 0) E.notFound('لا يوجد مسجد مسجّل باسمك بعد.');
+  if (mosques.length === 0) E.notFound('لم تُسجَّل على أيّ مسجدٍ بعد.');
   if (mosques.length > 1) E.invalid('تدير أكثر من مسجد — أرسل mosqueId مع الطلب.');
   return mosques[0];
 }
@@ -1310,18 +1310,24 @@ Parse.Cloud.define('searchMosques', async (request) => {
 });
 
 /**
- * طلب ملكية مسجد (الإمام يربط نفسه بمسجد من قاعدة بيانات الوزارة).
+ * طلب الإشراف على مسجد (الإمام يربط نفسه بمسجد من قاعدة بيانات الوزارة).
  * لا يُعتمد تلقائياً — يبقى معلقاً حتى موافقة المشرف، لأن ربط شخص بمسجد
  * يمنحه لاحقاً صلاحية استقبال تبرعات.
  */
 /**
- * صفة مقدّم الطلب: إمام المسجد أو وكيله.
+ * صفة مقدّم الطلب: إمام المسجد أو وكيله أو مساعده.
  *
- * الوكيل يتولّى شؤون المسجد كالإمام في عُرف كثير من المساجد، فحرمانه من
- * التسجيل يُعطّل مساجد، وإجبارُه أن يسمّي نفسه إماماً كذبٌ يُدخل على المشرف.
- * الصلاحيات واحدة، والصفة تُقال ليتحقّق المشرف بما يناسبها.
+ * **ولا أحد يملك مسجداً.** مساجد السلطنة تتبع وزارة الأوقاف والشؤون الدينية،
+ * وما يُسجَّل هنا **إشرافٌ على شؤون الصيانة** لا ملكية — والتسمية ليست تجميلاً:
+ * من قرأ «طلب إشراف المسجد» فهم أمراً لا وجود له، وقد يُفهم اقتحاماً لاختصاص
+ * الوزارة.
+ *
+ * والوكيل يتولّى شؤون المسجد كالإمام في عُرف كثير من المساجد، ومساعدُ الإمام
+ * كذلك — فحرمانهما من التسجيل يُعطّل مساجد، وإجبارُهما أن يسمّيا نفسيهما إماماً
+ * كذبٌ يُدخل على المشرف. الصلاحيات واحدة، والصفة تُقال ليتحقّق المشرف بما
+ * يناسبها.
  */
-const CAPACITIES = { imam: 'إمام المسجد', agent: 'وكيل المسجد' };
+const CAPACITIES = { imam: 'إمام المسجد', agent: 'وكيل المسجد', assistant: 'مساعد الإمام' };
 
 /** ما يُعدّ «عند المسجد» — نصف كيلومتر يحتمل ضعف الإشارة داخل البناء. */
 const AT_MOSQUE_KM = 0.5;
@@ -1349,7 +1355,7 @@ const WILAYAT_PLAUSIBLE_KM = 80;
 /**
  * أقرب مسجدٍ معلوم الموقع في الولاية نفسها، أو `null` إن لم يكن في المدى.
  *
- * **لماذا يلزم:** 430 مسجداً بلا موقعٍ يُوثق به، وطلبُ ملكية أحدها يحمل موقعاً
+ * **لماذا يلزم:** 430 مسجداً بلا موقعٍ يُوثق به، وطلبُ الإشراف على أحدها يحمل موقعاً
  * لا يُقاس إلى شيء — فيراه المشرف بلا مسافةٍ ولا حكم، ثم يُتبنّى موقعاً دائماً
  * للمسجد يقود إليه كل متطوّع. وهذه أشدّ حالةٍ يحتاج فيها إلى قرينة، وهي
  * الحالة الوحيدة التي كان يُترك فيها بلا واحدة.
@@ -1398,7 +1404,7 @@ async function nearestKnownInWilayat(mosque, point, radiusKm = WILAYAT_PLAUSIBLE
 }
 
 /**
- * طلب ملكية مسجد، ومعه تأكيد موقع مقدّمه.
+ * طلب الإشراف على مسجد، ومعه تأكيد موقع مقدّمه.
  *
  * السؤال المفتوح منذ أوّل يوم: كيف يُثبت الإمام أنه إمام هذا المسجد؟ لا جواب
  * تامّ دون تكامل مع الوزارة، لكن **من يدّعي مسجداً يُتوقّع أن يكون فيه**.
@@ -1419,7 +1425,7 @@ Parse.Cloud.define('claimMosque', async (request) => {
   const claimant = requireRole(request, 'imam');
   const { mosqueId, evidenceNote, capacity = 'imam', lat, lng } = request.params;
   if (!mosqueId) E.invalid('معرّف المسجد مطلوب.');
-  if (!CAPACITIES[capacity]) E.invalid('الصفة إمّا إمام المسجد أو وكيله.');
+  if (!CAPACITIES[capacity]) E.invalid('الصفة: إمام المسجد أو وكيله أو مساعده.');
 
   const mosque = await new Parse.Query('Mosques').get(mosqueId, { useMasterKey: true })
     .catch(() => E.notFound('المسجد غير موجود.'));
@@ -1433,7 +1439,7 @@ Parse.Cloud.define('claimMosque', async (request) => {
   const currentImam = mosque.get('imamId');
   const isTransfer = Boolean(mosque.get('isClaimed') && currentImam);
   if (currentImam && currentImam.id === claimant.id) {
-    E.duplicate('هذا المسجد مسجّل باسمك بالفعل.');
+    E.duplicate('أنت مسجَّلٌ على هذا المسجد بالفعل.');
   }
 
   /*
@@ -1442,12 +1448,12 @@ Parse.Cloud.define('claimMosque', async (request) => {
    * **وثلاثةُ أعطابٍ في هذا السطر**، قِيست على خادمٍ حقيقي:
    *
    * ١) لا يُفرَّق بين طلبي أنا وطلبِ غيري: من أعاد الإرسال قيل له «يوجد طلب
-   *    ملكية معلّق لهذا المسجد» فيظنّ أنّ غيرَه سبقه إلى مسجده.
+   *    إشرافٍ معلّق لهذا المسجد» فيظنّ أنّ غيرَه سبقه إلى مسجده.
    * ٢) ولا بابَ بعده: إمامُ المسجد الحقيقيّ يُردّ ولا يُقال له ماذا يفعل ولا
    *    كم ينتظر — وقاعدةُ المستودع أنّ خبراً بلا فعلٍ تالٍ نصفُ خبر.
    * ٣) **والمشرف لا يعلم**. وأصعبُ سؤالٍ في هذه المنصّة: كيف يُثبت الإمام أنه
    *    إمام؟ وأن يتقدّم اثنان على مسجدٍ واحد **قرينةٌ من الطراز الأول** على
-   *    أنّ الملكية منازَعة وأنّ الطلب المعلّق يحتاج تحقّقاً أشدّ — وكانت
+   *    أنّ الإشراف منازَع وأنّ الطلب المعلّق يحتاج تحقّقاً أشدّ — وكانت
    *    تُلقى في السلّة.
    */
   const existing = await new Parse.Query('MosqueClaims')
@@ -1580,7 +1586,7 @@ Parse.Cloud.define('getMyMosques', async (request) => {
 });
 
 /**
- * طلبات الملكية الخاصة بالإمام المستدعي.
+ * طلبات الإشراف الخاصة بالإمام المستدعي.
  * `MosqueClaims` مقفلة على Master Key، فبلا هذه الدالة لا يعرف الإمام أبداً
  * إن كان طلبه قد اعتُمد أو رُفض.
  */
@@ -1618,7 +1624,7 @@ Parse.Cloud.define('getMyClaims', async (request) => {
 });
 
 /**
- * طلبات الملكية المنتظرة — مشرف فقط.
+ * طلبات الإشراف المنتظرة — مشرف فقط.
  *
  * `MosqueClaims` مقفلة على Master Key، فلم يكن أمام المشرف إلا `reviewMosqueClaim`
  * ومعه معرّف لا سبيل له إليه من التطبيق. انضمام كل إمام يتوقّف على هذه المراجعة.
@@ -1651,7 +1657,7 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
       /*
        * وكم أُبعد عن هذا المسجد بسبب هذا الطلب.
        *
-       * أن يتقدّم اثنان على مسجدٍ واحد قرينةٌ على أنّ الملكية منازَعة — وهي
+       * أن يتقدّم اثنان على مسجدٍ واحد قرينةٌ على أنّ الإشراف منازَع — وهي
        * من أقوى ما يملكه المشرف في أصعب سؤالٍ عنده: كيف يُثبت الإمام أنه
        * إمام؟ وكانت المحاولةُ الثانية تُردّ ولا يُقيَّد منها شيء.
        */
@@ -1677,7 +1683,7 @@ Parse.Cloud.define('listPendingClaims', async (request) => {
   });
 });
 
-/** اعتماد أو رفض طلب الملكية (مشرف فقط). */
+/** اعتماد أو رفض طلب الإشراف (مشرف فقط). */
 Parse.Cloud.define('reviewMosqueClaim', async (request) => {
   const admin = requireRole(request, 'admin');
   const { claimId, approve } = request.params;
@@ -1770,7 +1776,7 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
     // من يُنزع منه مسجده أولى الناس بأن يعلم. وقد يكون حسابه موقوفاً فلا
     // يفتح التطبيق — والقيد في وارده يبقى له إن عادت إتاحته.
     await pushToUsers(previousImam, {
-      alert: `نُقلت إمامة ${claim.get('mosqueId').get('name')} إلى غيرك بقرار الإدارة. `
+      alert: `نُقل الإشراف على ${mosqueTitle(claim.get('mosqueId'))} إلى غيرك بقرار الإدارة. `
         + 'راجع الإدارة إن كان ذلك خطأً.',
     });
   }
@@ -1828,7 +1834,7 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
  *
  * لماذا لزمت هذه الدالة: أربعمئة مسجدٍ وأربعة عشر سُحبت ثقتنا من إحداثياتها
  * (انظر `scripts/lib/coord-trust.js`)، وطريق التعلّم الوحيد كان اعتماد طلب
- * الملكية. ومسجدٌ سُجّل قبل ذلك يبقى مجهول الموقع أبداً: لا طلبَ ينتظر اعتماداً
+ * التسجيل. ومسجدٌ سُجّل قبل ذلك يبقى مجهول الموقع أبداً: لا طلبَ ينتظر اعتماداً
  * يحمل إحداثياً. فسحبُ الموقع بلا طريقٍ لردّه نصفُ إصلاح.
  *
  * والشرط نفسه شرط التسجيل: أن يكون الإمام **عند مسجده**. لا مقياس هنا يُقاس
@@ -1852,7 +1858,7 @@ Parse.Cloud.define('confirmMosqueLocation', async (request) => {
     : null;
 
   /**
-   * الموضع الجديد يُقاس إلى مساجد الولاية كما يُقاس موضعُ طلب الملكية.
+   * الموضع الجديد يُقاس إلى مساجد الولاية كما يُقاس موضعُ طلب الإشراف.
    *
    * الفحص هنا **ليس شكّاً في الإمام** بل في الجهاز: إشارةٌ ضعيفة داخل البناء
    * تعطي إحداثياً بعيداً بكيلومترات، ولا يظهر ذلك لصاحبه. وتصويبٌ يضع المسجد
@@ -2275,7 +2281,7 @@ Parse.Cloud.define('assignWorker', async (request) => {
     .get(requestId, { useMasterKey: true })
     .catch(() => E.notFound('الطلب غير موجود.'));
 
-  // التحقق من الملكية يدوياً — query.get يتجاهل قيود equalTo
+  // التحقق من الإشراف يدوياً — query.get يتجاهل قيود equalTo
   const mosque = await mosqueForImam(imam, serviceRequest.get('mosqueId').id);
 
   const allowed = [STATUS.FUNDED, STATUS.OPEN_FOR_VOLUNTEERS];
@@ -4040,7 +4046,7 @@ async function queryForms() {
       }),
 
     check('الترتيب والتحميل المرافق (descending + include)',
-      'عليهما يقوم صندوق الوارد وسجلّ المسجد وقائمة طلبات الملكية',
+      'عليهما يقوم صندوق الوارد وسجلّ المسجد وقائمة طلبات الإشراف',
       async () => {
         const rows = await new Parse.Query('AuditLog')
           .descending('createdAt').include('mosqueId').limit(1).find({ useMasterKey: true });
@@ -4048,7 +4054,7 @@ async function queryForms() {
       }),
 
     check('التحميل المرافق بمسارٍ منقوط (include مؤشّرٍ داخل مؤشّر)',
-      'عليه تقوم قائمة طلبات الملكية: به يعرف المشرف ممّن يُنزع المسجد',
+      'عليه تقوم قائمة طلبات الإشراف: به يعرف المشرف ممّن يُنقل الإشراف',
       async () => {
         const rows = await new Parse.Query('MosqueClaims')
           .include('mosqueId').include('mosqueId.imamId').limit(1)
@@ -4246,7 +4252,7 @@ Parse.Cloud.define('preflight', async (request) => {
   counts.مساجد_بلا_موقع = await new Parse.Query('Mosques')
     .equalTo('hasLocation', false).count({ useMasterKey: true }).catch(() => null);
   counts.مشرفون = admins;
-  counts.طلبات_ملكية_منتظرة = await new Parse.Query('MosqueClaims')
+  counts.طلبات_إشراف_منتظرة = await new Parse.Query('MosqueClaims')
     .equalTo('status', 'pending').count({ useMasterKey: true }).catch(() => null);
 
   /**
@@ -4255,7 +4261,7 @@ Parse.Cloud.define('preflight', async (request) => {
    */
   const blockers = await Promise.all([
     check('يوجد مشرفٌ واحد على الأقل',
-      'بلا مشرف تتراكم طلبات الملكية بلا اعتماد — `npm run admin -- --username <اسمه>`',
+      'بلا مشرف تتراكم طلبات الإشراف بلا اعتماد — `npm run admin -- --username <اسمه>`',
       async () => {
         if (admins === 0) throw new Error('لا مشرف على هذا الخادم');
         return `${admins} مشرفاً`;

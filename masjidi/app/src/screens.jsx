@@ -1024,7 +1024,7 @@ export function ImamHome() {
 
       {waiting.length > 0 && (
         <>
-          <h2>طلبات ملكية قيد المراجعة</h2>
+          <h2>طلبات تسجيل قيد المراجعة</h2>
           {waiting.map((claim) => (
             <article className="card" key={claim.id}>
               <div className="spread">
@@ -1577,9 +1577,9 @@ export function AdminHome() {
 
   return (
     <>
-      <h2>طلبات ملكية المساجد</h2>
+      <h2>طلبات الإشراف على المساجد</h2>
       {error && <div className="error">{error}</div>}
-      <Listing state={claims} empty="لا طلبات ملكية منتظرة.">
+      <Listing state={claims} empty="لا طلبات إشراف منتظرة.">
         <div>
           {claims.rows.map((row) => (
             <article className="card" key={row.id}>
@@ -1597,14 +1597,14 @@ export function AdminHome() {
               <p>الصفة: {api.CAPACITIES[row.capacity] || row.capacity}</p>
               {/*
                 ونازعه غيرُه. أن يتقدّم اثنان على مسجدٍ واحد قرينةٌ على أنّ
-                الملكية منازَعة — وهي من أقوى ما يملكه المشرف في أصعب سؤالٍ
+                الإشراف منازَع — وهي من أقوى ما يملكه المشرف في أصعب سؤالٍ
                 عنده: كيف يُثبت الإمام أنه إمام؟ وكانت المحاولةُ الثانية تُردّ
                 عند الباب ولا يُقيَّد منها شيء، فيعتمد المشرفُ الأوّلَ لأنه
                 الأوّل لا لأنه الأحقّ.
               */}
               {row.contestedCount > 0 && (
                 <div className="error" data-testid="contested-claim">
-                  <strong>ملكية هذا المسجد منازَعة.</strong> تقدّم
+                  <strong>الإشراف على هذا المسجد منازَع.</strong> تقدّم
                   {row.contestedCount === 1 ? ' شخصٌ آخر ' : ` ${row.contestedCount} آخرون `}
                   بطلبٍ عليه فرُدّ لوجود هذا الطلب. تحقّق قبل الاعتماد — الأوّلُ
                   ليس بالضرورة الأحقّ.
@@ -1620,13 +1620,13 @@ export function AdminHome() {
                   <strong>هذا طلب نقل، لا تسجيلٌ أوّل.</strong> المسجد مسجَّل الآن
                   باسم {row.currentImamName || 'إمامٍ آخر'}
                   {row.currentImamPhone ? ` · ${row.currentImamPhone}` : ''}.
-                  اعتمادك يَنزعه منه ويمنحه لمقدّم الطلب — اتصل بهما قبل القرار.
+                  اعتمادك ينقل الإشراف منه إلى مقدّم الطلب — اتصل بهما قبل القرار.
                 </div>
               )}
               {/*
                 مسجدٌ مجهول الموقع: اعتمادُ الطلب يمنحه موقعه الدائم على
                 الخريطة، فيقود إليه كل متطوّع بعدها. وهذا أثرٌ لا يظهر في زرّ
-                «اعتماد الملكية»، فيُقال صراحةً ومعه ما يُقاس إليه.
+                «اعتماد التسجيل»، فيُقال صراحةً ومعه ما يُقاس إليه.
               */}
               {row.willSetLocation && (
                 <div className="notice">
@@ -1637,7 +1637,7 @@ export function AdminHome() {
                     : ' ولا نعرف موقع أيّ مسجدٍ في هذه الولاية، فلا مقياس هنا.'}
                 </div>
               )}
-              {/* المشرف يعتمد ملكية مسجدٍ بعينه، وثلاثمئة غيره تحمل الاسم نفسه */}
+              {/* المشرف يعتمد الإشراف على مسجدٍ بعينه، وثلاثمئة غيره تحمل الاسم نفسه */}
               <Where wilayat={row.wilayat} village={row.village}
                 governorate={row.governorate} mosqueNumber={row.mosqueNumber} />
               <p>الطالب: {row.imamName || 'بلا اسم'}{row.imamPhone ? ` · ${row.imamPhone}` : ''}</p>
@@ -1648,7 +1648,7 @@ export function AdminHome() {
 
                 التحذير أعلاه كان يقول «الضغطة نفسها والأثر ليس واحداً» —
                 ثم يترك الضغطتين على شكلٍ واحد. وقِيس في متصفّح حقيقي: ضغطةٌ
-                واحدة على «اعتماد الملكية» نزعت مسجداً من إمامٍ قائم ومنحته
+                واحدة على «اعتماد التسجيل» نزعت مسجداً من إمامٍ قائم ومنحته
                 لغيره، **بصفر حوارات تأكيد**، وأُرسل إلى المنزوع منه «نُقلت
                 إمامة مسجدك إلى غيرك بقرار الإدارة».
 
@@ -1669,7 +1669,7 @@ export function AdminHome() {
                 ) : (
                   <button disabled={guard.busy}
                     onClick={() => act(api.reviewMosqueClaim, claims, row.id, true)}>
-                    {row.isTransfer ? 'نعم، انقل الإمامة' : 'اعتماد الملكية'}
+                    {row.isTransfer ? 'نعم، انقل الإشراف' : 'اعتماد التسجيل'}
                   </button>
                 )}
                 {row.isTransfer && confirming === row.id && (
@@ -1703,7 +1703,7 @@ export function AdminHome() {
               {/*
                 الهاتف يعبر السلك ولا يُعرض. والسجلّ التجاري وحده ورقة: من
                 يعتمد شركةً تدخل مساجد الناس يحتاج ما يتّصل به قبل أن يعتمد —
-                ونظيرُه معروضٌ في بطاقة طلب الملكية أعلاه.
+                ونظيرُه معروضٌ في بطاقة طلب الإشراف أعلاه.
               */}
               <p>التواصل: {row.phone || '— غير مُدخَل'}</p>
               <Waited since={row.createdAt} label="سجّلت" />

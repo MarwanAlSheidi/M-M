@@ -373,7 +373,7 @@ Parse.Cloud.define('assignWorker', async (request) => {
     .get(requestId, { useMasterKey: true })
     .catch(() => E.notFound('الطلب غير موجود.'));
 
-  // التحقق من الملكية يدوياً — query.get يتجاهل قيود equalTo
+  // التحقق من الإشراف يدوياً — query.get يتجاهل قيود equalTo
   const mosque = await mosqueForImam(imam, serviceRequest.get('mosqueId').id);
 
   const allowed = [STATUS.FUNDED, STATUS.OPEN_FOR_VOLUNTEERS];

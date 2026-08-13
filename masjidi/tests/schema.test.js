@@ -49,7 +49,7 @@ test('المخطط', async (t) => {
     }
   });
 
-  await t.test('TaskInterests مقفلة — القائمة تمرّ بدالة تتحقق من ملكية المسجد', () => {
+  await t.test('TaskInterests مقفلة — القائمة تمرّ بدالة تتحقق من الإشراف على المسجد', () => {
     const clp = classOf('TaskInterests').classLevelPermissions;
     for (const action of ['find', 'get', 'create', 'update', 'delete']) {
       assert.deepEqual(clp[action], {}, `TaskInterests.${action} مفتوح`);

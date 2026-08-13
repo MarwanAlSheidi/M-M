@@ -1,7 +1,7 @@
 /**
  * مسجدٌ يتنازعه اثنان.
  *
- * قِيس على خادمٍ حقيقي: الثاني يُردّ بـ«يوجد طلب ملكية معلّق لهذا المسجد» —
+ * قِيس على خادمٍ حقيقي: الثاني يُردّ بـ«يوجد طلب إشرافٍ معلّق لهذا المسجد» —
  * **وثلاثةُ أعطابٍ في هذا السطر الواحد**:
  *
  * ١) لا يُفرَّق بين طلبي أنا وطلبِ غيري، فمن أعاد الإرسال ظنّ أنّ غيرَه سبقه
@@ -10,7 +10,7 @@
  *    المستودع أنّ خبراً بلا فعلٍ تالٍ نصفُ خبر.
  * ٣) **والمشرف لا يعلم.** وأصعبُ سؤالٍ في هذه المنصّة: كيف يُثبت الإمام أنه
  *    إمام؟ وأن يتقدّم اثنان على مسجدٍ واحد قرينةٌ من الطراز الأول على أنّ
- *    الملكية منازَعة — فيعتمد المشرفُ الأوّلَ **لأنه الأوّل لا لأنه الأحقّ**.
+ *    الإشراف منازَع — فيعتمد المشرفُ الأوّلَ **لأنه الأوّل لا لأنه الأحقّ**.
  */
 
 const test = require('node:test');
@@ -119,6 +119,42 @@ test('مسجدٌ يتنازعه اثنان', options, async (t) => {
     const queue = await as(admin, 'listPendingClaims', {});
     assert.equal(queue[0].contestedCount, 2,
       'عُدَّ صاحبُ الطلب منازعاً لنفسه');
+  });
+
+  /*
+   * ولا أحد يملك مسجداً.
+   *
+   * مساجد السلطنة تتبع وزارة الأوقاف والشؤون الدينية، وما يُسجَّل هنا **إشرافٌ
+   * على شؤون الصيانة** لا ملكية. ومن يتولّاه إمامٌ أو **وكيلُ المسجد** أو
+   * **مساعدُ الإمام** — والصفتان الأخيرتان تُعطَّل بحرمانهما مساجد، وتُجبران
+   * صاحبَهما أن يسمّي نفسه إماماً فيكذب على المشرف.
+   */
+  await t.test('ويُسجَّل مساعدُ الإمام بصفته لا منتحلاً إمامةً', async () => {
+    const helper = await signUp('imam', 'الشيخ عليّ');
+    const helped = new (Parse.Object.extend('Mosques'))();
+    helped.set({
+      externalId: `asst_${Date.now()}`, name: 'النور', type: 'مسجد',
+      governorate: 'مسقط', wilayat: 'العامرات', lat: 23.55, lng: 58.45, hasLocation: true,
+    });
+    await helped.save(null, { useMasterKey: true });
+
+    await as(helper, 'claimMosque', {
+      mosqueId: helped.id, capacity: 'assistant', evidenceNote: 'أساعد إمام المسجد',
+      lat: 23.55, lng: 58.45,
+    });
+
+    const queue = await as(admin, 'listPendingClaims', {});
+    const row = queue.find((each) => /النور/.test(each.mosqueName));
+    assert.ok(row, `لم يدخل الطابور: ${JSON.stringify(queue.map((r) => r.mosqueName))}`);
+    assert.equal(row.capacity, 'assistant',
+      `سُجّلت صفتُه «${row.capacity}» — ومن أُجبر أن يسمّي نفسه إماماً كذب على المشرف`);
+  });
+
+  await t.test('ولا تُقال للمستخدم لفظةُ ملكية', async () => {
+    const said = await refusal(claim(second, 'محاولةٌ أخرى'));
+    assert.ok(said, 'القياس لم يقع — قُبل الطلب');
+    assert.equal(/ملكية|تملك|يملك/.test(said), false,
+      `قيل للمستخدم إنّ المسجد يُملَك: «${said}»`);
   });
 
   await t.test('ومسجدٌ لا طلب عليه يُسجَّل بلا منازعة', async () => {

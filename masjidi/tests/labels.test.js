@@ -100,6 +100,33 @@ test('لا يقرأ المستخدمُ اسماً برمجياً', async (t) => 
     assert.deepEqual(missing, [], `درجاتٌ تُعرض بأسمائها البرمجية: ${missing.join('، ')}`);
   });
 
+  /*
+   * والصفة التي يُسجَّل بها: إمامٌ أو وكيلٌ أو مساعد.
+   *
+   * **ولا أحد يملك مسجداً** — مساجد السلطنة للأوقاف، وما يُسجَّل إشرافٌ على
+   * شؤون الصيانة. والجدولان — على الخادم وفي الواجهة — يفترقان بلا حارس: صفةٌ
+   * يقبلها الخادم ولا اسم لها في الواجهة تُعرض بحروفها الإنجليزية على بطاقة
+   * المشرف، وهي التي يقرّر عليها.
+   */
+  await t.test('ولكلّ صفةِ تسجيلٍ اسمٌ عربيّ', () => {
+    /*
+     * **والمفاتيح هي التعداد هنا لا القيم** — خلافاً لـ`STATUS`. و`serverEnum`
+     * تقرأ القيم المقتبسة، فأعطت صفراً وقالت ذلك صراحةً بدل أن تمرّ خضراء:
+     * «قُرئت 0 قيمة والمنتظر 3 فأكثر — الأداة تقرأ ناقصاً».
+     */
+    const source = read('cloud/functions/mosques.js');
+    const block = source.match(/const CAPACITIES = \{([^}]*)\}/);
+    assert.ok(block, 'تعذّر استخراج `CAPACITIES` من الخادم — الأداة عمياء');
+    const values = [...block[1].matchAll(/(\w+)\s*:/g)].map((hit) => hit[1]);
+    assert.ok(values.length >= 3,
+      `قُرئت ${values.length} صفة والمنتظر 3 فأكثر — الأداة تقرأ ناقصاً`);
+
+    const labels = exportedMap('CAPACITIES');
+
+    const missing = values.filter((value) => !labels[value]);
+    assert.deepEqual(missing, [], `صفاتٌ تُعرض بأسمائها البرمجية: ${missing.join('، ')}`);
+  });
+
   await t.test('ولكلّ نوعِ عملٍ اسمٌ عربيّ', () => {
     const values = serverEnum('cloud/functions/requests.js', /const CATEGORIES = \[([^\]]*)\]/, 7);
     const labels = exportedMap('CATEGORIES');

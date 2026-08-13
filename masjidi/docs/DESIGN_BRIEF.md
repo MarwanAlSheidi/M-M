@@ -168,7 +168,7 @@
 | أثري الشخصي | `getMyInterests` · `assignedToMe` | **جاهز** | العدّادات المجمَّعة = حساب |
 | أثر المسجد هذا الشهر | `getMosqueAuditTrail` | **جاهز** | تجميعٌ بالشهر = حساب |
 | التنبيهات | `getMyNotifications` · `markNotificationsRead` | **جاهز** | — |
-| مراجعة طلبات الملكية | `listPendingClaims` · `reviewMosqueClaim` | **جاهز** | — |
+| مراجعة طلبات الإشراف | `listPendingClaims` · `reviewMosqueClaim` | **جاهز** | — |
 | **اعتماد الشركات** | `listPendingContractors` · `reviewContractor` | **جاهز — وغائبٌ عن الموجز** | تصميم |
 
 ## خلاصة الكلفة

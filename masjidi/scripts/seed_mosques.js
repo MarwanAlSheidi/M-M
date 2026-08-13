@@ -295,7 +295,7 @@ async function main() {
         mosque.unset('locationSource');
       }
 
-      // لا نلمس الحقول التشغيلية عند التحديث حتى لا نمسح رصيداً أو ملكية
+      // لا نلمس الحقول التشغيلية عند التحديث حتى لا نمسح رصيداً أو إشرافاً
       if (!prior) {
         mosque.set('isClaimed', false);
         mosque.set('walletBalance', 0);

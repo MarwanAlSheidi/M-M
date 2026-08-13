@@ -146,7 +146,7 @@ test('تثبيت موقع المسجد', options, async (t) => {
 
     await assert.rejects(
       as(stranger, 'confirmMosqueLocation', { mosqueId: mosque.id, lat: 23.61, lng: 58.51 }),
-      /غير مسجّل باسمك/,
+      /لستَ مسجَّلاً/,
     );
     assert.equal((await reread(mosque)).get('hasLocation'), false);
   });

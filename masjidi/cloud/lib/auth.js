@@ -72,12 +72,12 @@ async function mosqueForImam(imam, mosqueId) {
   if (mosqueId) {
     query.equalTo('objectId', mosqueId);
     const mosque = await query.first({ useMasterKey: true });
-    if (!mosque) E.forbidden('هذا المسجد غير مسجّل باسمك.');
+    if (!mosque) E.forbidden('لستَ مسجَّلاً على هذا المسجد.');
     return mosque;
   }
 
   const mosques = await query.limit(2).find({ useMasterKey: true });
-  if (mosques.length === 0) E.notFound('لا يوجد مسجد مسجّل باسمك بعد.');
+  if (mosques.length === 0) E.notFound('لم تُسجَّل على أيّ مسجدٍ بعد.');
   if (mosques.length > 1) E.invalid('تدير أكثر من مسجد — أرسل mosqueId مع الطلب.');
   return mosques[0];
 }

@@ -126,7 +126,7 @@ async function queryForms() {
       }),
 
     check('الترتيب والتحميل المرافق (descending + include)',
-      'عليهما يقوم صندوق الوارد وسجلّ المسجد وقائمة طلبات الملكية',
+      'عليهما يقوم صندوق الوارد وسجلّ المسجد وقائمة طلبات الإشراف',
       async () => {
         const rows = await new Parse.Query('AuditLog')
           .descending('createdAt').include('mosqueId').limit(1).find({ useMasterKey: true });
@@ -134,7 +134,7 @@ async function queryForms() {
       }),
 
     check('التحميل المرافق بمسارٍ منقوط (include مؤشّرٍ داخل مؤشّر)',
-      'عليه تقوم قائمة طلبات الملكية: به يعرف المشرف ممّن يُنزع المسجد',
+      'عليه تقوم قائمة طلبات الإشراف: به يعرف المشرف ممّن يُنقل الإشراف',
       async () => {
         const rows = await new Parse.Query('MosqueClaims')
           .include('mosqueId').include('mosqueId.imamId').limit(1)
@@ -332,7 +332,7 @@ Parse.Cloud.define('preflight', async (request) => {
   counts.مساجد_بلا_موقع = await new Parse.Query('Mosques')
     .equalTo('hasLocation', false).count({ useMasterKey: true }).catch(() => null);
   counts.مشرفون = admins;
-  counts.طلبات_ملكية_منتظرة = await new Parse.Query('MosqueClaims')
+  counts.طلبات_إشراف_منتظرة = await new Parse.Query('MosqueClaims')
     .equalTo('status', 'pending').count({ useMasterKey: true }).catch(() => null);
 
   /**
@@ -341,7 +341,7 @@ Parse.Cloud.define('preflight', async (request) => {
    */
   const blockers = await Promise.all([
     check('يوجد مشرفٌ واحد على الأقل',
-      'بلا مشرف تتراكم طلبات الملكية بلا اعتماد — `npm run admin -- --username <اسمه>`',
+      'بلا مشرف تتراكم طلبات الإشراف بلا اعتماد — `npm run admin -- --username <اسمه>`',
       async () => {
         if (admins === 0) throw new Error('لا مشرف على هذا الخادم');
         return `${admins} مشرفاً`;
