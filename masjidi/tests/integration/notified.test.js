@@ -192,6 +192,73 @@ test('لا انتقالَ صامتاً على صاحبه', options, async (t) =>
       false, 'أُخبر الإمام بخبر نشره بنفسه');
   });
 
+  /*
+   * والقناة تحمل الفرج كما حملت الخبر.
+   *
+   * قِيس على خادمٍ حقيقي: منتمٍ أُبلغ بالاحتياج، ثم مرّت دورة الطلب كاملةً —
+   * تطوّعٌ فتكليفٌ فبدءٌ فإنجازٌ فاعتماد — ووارده بعدها **رسالةٌ واحدة كما
+   * كان**: «احتياجٌ جديد». الإمام يصله ثلاث، والمنفّذ اثنتان، والمنتمي واحدة
+   * أبداً. قناةٌ تُنذر ولا تُطمئن.
+   */
+  await t.test('ومن أُبلغ بالاحتياج يُبلَّغ بانقضائه', async () => {
+    const ahli = await signUp('donor', 'أبو زيد');
+    await as(ahli, 'setFavoriteMosque', { mosqueId: mosque.id });
+
+    // ومنتمٍ لمسجدٍ آخر لا يُزعَج بفرح غيره — **حالةٌ يجب أن تبقى خضراء**
+    const far = new (Parse.Object.extend('Mosques'))();
+    far.set({
+      externalId: `far_${Date.now()}`, name: 'مسجد الوفاء',
+      governorate: 'ظفار', wilayat: 'صلالة', lat: 17.0, lng: 54.1,
+    });
+    await far.save(null, { useMasterKey: true });
+    const outsider = await signUp('donor', 'أبو نصر');
+    await as(outsider, 'setFavoriteMosque', { mosqueId: far.id });
+
+    const requestId = await newRequest('تجديد فرش المصلّى');
+    const announced = await inbox(ahli);
+    assert.match(announced[0], /احتياجٌ جديد/, 'لم يُبلَّغ بالاحتياج أصلاً');
+
+    await as(salim, 'expressInterest', { requestId });
+    await as(imam, 'assignWorker', { requestId, workerId: salim.id });
+    await as(salim, 'startWork', { requestId });
+    await as(salim, 'markWorkDone', { requestId, notes: 'تمّ' });
+    await as(imam, 'completeService', { requestId, rating: 5, volunteerHours: 2 });
+
+    const after = await inbox(ahli);
+    assert.ok(after.length > announced.length,
+      `أُنجز العمل في مسجده ولم يُخبَر — الوارد كما هو: ${JSON.stringify(after)}`);
+    // **الرسالة لا الحال**: نموٌّ في الوارد قد يجيء من خبرٍ آخر
+    assert.match(after[0], /أُنجز/, `أُخبر بغير ما وقع: «${after[0]}»`);
+    assert.match(after[0], /تجديد فرش المصلّى/, 'فرجٌ بلا ذكر ما انقضى');
+    assert.match(after[0], /جامع البلاغ/, 'خبرٌ بلا اسم المسجد الذي انتمى إليه');
+
+    assert.deepEqual(await inbox(outsider), [],
+      'وصل خبرُ مسجدٍ إلى من أعلن انتماءه لغيره');
+
+    // والإمام اعتمد بنفسه، والمنفّذ وصلته رسالةٌ باسمه — فلا يُثنّى عليهما
+    assert.equal((await inbox(imam)).some((body) => /^أُنجز في جامع البلاغ/.test(body)),
+      false, 'أُخبر الإمام بخبرٍ صنعه بنفسه');
+    assert.equal((await inbox(salim)).some((body) => /^أُنجز في جامع البلاغ/.test(body)),
+      false, 'أُخبر المنفّذ مرّتين بإنجازٍ واحد');
+  });
+
+  await t.test('والإلغاء نهايةٌ تُبلَّغ كالإنجاز', async () => {
+    const ahli = await signUp('donor', 'أبو حمد');
+    await as(ahli, 'setFavoriteMosque', { mosqueId: mosque.id });
+
+    const requestId = await newRequest('إصلاح باب المصلّى');
+    const announced = await inbox(ahli);
+    assert.equal(announced.length, 1, 'لم يُبلَّغ بالاحتياج أصلاً');
+
+    await as(imam, 'cancelServiceRequest', { requestId });
+
+    const after = await inbox(ahli);
+    assert.ok(after.length > announced.length,
+      `أُلغي الطلب وبقي في وارده احتياجٌ لم يعد قائماً: ${JSON.stringify(after)}`);
+    assert.match(after[0], /لم يعد/, `أُخبر بغير ما وقع: «${after[0]}»`);
+    assert.match(after[0], /إصلاح باب المصلّى/, 'إلغاءٌ بلا ذكر ما أُلغي');
+  });
+
   await t.test('ولا يصل خبرُ أحدٍ إلى غيره', async () => {
     // الوارد صفٌّ لكل مستهدَف، فخطأٌ في `userId` يُسرّب حركة مسجدٍ إلى غريب
     const seen = await inbox(khalid);

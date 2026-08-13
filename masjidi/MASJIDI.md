@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA **يُثبَّت ويعمل بلا إنترنت** — ويحرسه `verify:pwa`. و**React Native ليس ناقصاً بل غير مطلوب**: الواجهة تُثبَّت على أندرويد وiOS، وعميلٌ ثانٍ يُضاعف السطح بلا أثرٍ للمستخدم في المرحلة الأولى |
-| الاختبارات | ✅ 366 حالة على بديل Parse (`npm test`) + 208 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 31 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 366 حالة على بديل Parse (`npm test`) + 210 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 31 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -4085,6 +4085,60 @@ releaseAssignment: **سقط** (101) Object not found.
 
 ---
 
+### 🟠 قناةٌ تُنذر ولا تُطمئن
+
+فُتحت في الدورة الماضية قناةٌ لمن أعلن أن هذا مسجده. فالسؤال الذي يليها:
+**ماذا يصله فيها؟**
+
+قِيست دورة الطلب كاملةً على `parse-server` حقيقي فوق PostgreSQL، من عين
+المنتمي، ستَّ محطّات:
+
+| المحطّة | وارد المنتمي |
+|---|---|
+| نُشر الاحتياج | ١ |
+| تطوّع متطوّع | ١ |
+| كُلّف المنفّذ | ١ |
+| بدأ العمل | ١ |
+| أُبلغ عن الإنجاز | ١ |
+| **اعتمد الإمام العمل** | **١** |
+
+والرسالة الواحدة هي هي: «احتياجٌ جديد في مصلى النساء بالبطين: إصلاح مكيّفات
+المصلّى». وفي المقابل: الإمام يصله ثلاث رسائل، والمنفّذ اثنتان.
+
+**فالقناة تحمل الخبر السيّئ وحده.** تقول لصاحبها إنّ في مسجده خللاً، ولا تقول
+له إنّه أُصلح. وهذا أسوأ من الصمت: قلقٌ يتراكم بلا خبرٍ يُنهيه، على منصّةٍ
+قامت كلُّها على الشفافية. ومن يفتح التطبيق بعد شهرٍ يرى خمسة أعطالٍ في مسجده
+لا يعلم أنّ أربعةً منها قد أُصلحت.
+
+#### والنهايتان كلتاهما كانتا صامتتين
+
+`completeService` تُشعر المنفّذ وحده، و`cancelServiceRequest` تُشعر المنفّذ
+وحده. فأُلحِق بكلٍّ منهما نداءُ أهل المسجد:
+
+- عند الاعتماد: «أُنجز في {المسجد}: {العنوان} — جزى الله من قام به.»
+- عند الإلغاء: «لم يعد "{العنوان}" مطلوباً في {المسجد}.»
+
+والإلغاء ليس تفصيلاً: تركُه بلا خبرٍ يُبقي في وارد المنتمي احتياجاً لم يعد
+قائماً يظنّه ما زال ينتظر.
+
+#### ويُستثنى اثنان
+
+الإمام ضغط الزرّ بنفسه، والمنفّذ وصلته رسالةٌ أدفأ باسمه («اعتمد الإمام
+عملك… بارك الله فيك»). فمن كان منهما منتمياً للمسجد لا يُثنّى عليه الخبر.
+
+#### والحارسان
+
+في `tests/integration/notified.test.js`: دورةٌ كاملة حتى الاعتماد ثم إلغاءٌ
+منفصل. ويُطالَب النصّ لا العدد — «أُنجز»، واسم الطلب، واسم المسجد. ومعه ثلاثة
+حدودٍ **يجب أن تبقى خضراء**: منتمي مسجدٍ آخر لا يُزعَج بفرح غيره، والإمام لا
+يُخبَر بخبرٍ صنعه بنفسه، والمنفّذ لا يُخبَر مرّتين بإنجازٍ واحد.
+
+وعلى `HEAD` (٤٧٨٩٤ بايتاً — فُحص الحجم قبل قراءة الحُمرة): ستٌّ تمرّ واثنتان
+تسقطان بالنصّ الذي قِيس: «أُنجز العمل في مسجده ولم يُخبَر — الوارد كما هو:
+["احتياجٌ جديد في جامع البلاغ: تجديد فرش المصلّى"]».
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **اختبار التكامل يعمل على PostgreSQL لا MongoDB — وهذا أكبر قيدٍ باقٍ.**
@@ -7280,7 +7334,7 @@ Parse.Cloud.define('completeService', async (request) => {
     .get(requestId, { useMasterKey: true })
     .catch(() => E.notFound('الطلب غير موجود.'));
 
-  await mosqueForImam(imam, serviceRequest.get('mosqueId').id);
+  const mosque = await mosqueForImam(imam, serviceRequest.get('mosqueId').id);
 
   if (serviceRequest.get('status') !== STATUS.PENDING_APPROVAL) {
     E.invalid('الطلب ليس بانتظار الاعتماد.');
@@ -7298,7 +7352,7 @@ Parse.Cloud.define('completeService', async (request) => {
   await audit.record({
     action: audit.ACTIONS.REQUEST_COMPLETED,
     target: serviceRequest,
-    mosque: serviceRequest.get('mosqueId'),
+    mosque,
     actor: imam,
     fromStatus: STATUS.PENDING_APPROVAL,
     toStatus: STATUS.COMPLETED,
@@ -7329,6 +7383,27 @@ Parse.Cloud.define('completeService', async (request) => {
       requestId: serviceRequest.id,
     });
   }
+
+  /*
+   * ويُبلَّغ أهلُ المسجد أنّ ما أقلقهم قد زال.
+   *
+   * قِيس على خادمٍ حقيقي: منتمٍ للمسجد أُبلغ بالاحتياج يوم نُشر، ثم مرّت دورة
+   * الطلب كاملةً — تطوّعٌ، فتكليف، فبدء، فإنجاز، فاعتماد — ووارده **كما هو:
+   * رسالةٌ واحدة يتيمة هي «احتياجٌ جديد في مسجدك»**. الإمام يصله ثلاث،
+   * والمنفّذ اثنتان، والمنتمي واحدة أبداً.
+   *
+   * فالقناة التي فُتحت في الدورة الماضية كانت تحمل الخبر السيّئ وحده: تقول
+   * لصاحبها إنّ في مسجده خللاً ولا تقول له إنّه أُصلح. وهذا أسوأ من الصمت —
+   * قلقٌ يتراكم بلا خبر يُنهيه، على منصّةٍ قامت كلُّها على الشفافية.
+   *
+   * ويُستثنى اثنان: الإمام ضغط الزرّ، والمنفّذ وصلته رسالةٌ أدفأ باسمه.
+   */
+  const followerExclude = [imam.id];
+  if (worker && worker.id) followerExclude.push(worker.id);
+  await pushToMosqueFollowers(mosque, {
+    alert: `أُنجز في ${mosque.get('name')}: ${serviceRequest.get('title')} — جزى الله من قام به.`,
+    requestId: serviceRequest.id,
+  }, { exclude: followerExclude });
 
   // TODO: صرف المستحقات للشركة يتم عبر دالة payout منفصلة بعد الاعتماد (functions/donations.js)
   // TODO: تسجيل ساعات التطوّع في منصة "أيادي" — يحتاج اتفاقية وAPI key رسمي.
@@ -7379,6 +7454,15 @@ Parse.Cloud.define('cancelServiceRequest', async (request) => {
       requestId: serviceRequest.id,
     });
   }
+
+  // ومن أُبلغ بالاحتياج يُبلَّغ بسحبه: الإلغاء نهايةٌ للطلب كالإنجاز، وتركُه
+  // بلا خبرٍ يُبقي في وارد المنتمي احتياجاً لم يعد قائماً يظنّه ما زال ينتظر.
+  const cancelExclude = [imam.id];
+  if (worker && worker.id) cancelExclude.push(worker.id);
+  await pushToMosqueFollowers(mosque, {
+    alert: `لم يعد "${serviceRequest.get('title')}" مطلوباً في ${mosque.get('name')}.`,
+    requestId: serviceRequest.id,
+  }, { exclude: cancelExclude });
 
   return { status: STATUS.CANCELLED };
 });
@@ -10938,7 +11022,7 @@ Parse.Cloud.define('completeService', async (request) => {
     .get(requestId, { useMasterKey: true })
     .catch(() => E.notFound('الطلب غير موجود.'));
 
-  await mosqueForImam(imam, serviceRequest.get('mosqueId').id);
+  const mosque = await mosqueForImam(imam, serviceRequest.get('mosqueId').id);
 
   if (serviceRequest.get('status') !== STATUS.PENDING_APPROVAL) {
     E.invalid('الطلب ليس بانتظار الاعتماد.');
@@ -10956,7 +11040,7 @@ Parse.Cloud.define('completeService', async (request) => {
   await audit.record({
     action: audit.ACTIONS.REQUEST_COMPLETED,
     target: serviceRequest,
-    mosque: serviceRequest.get('mosqueId'),
+    mosque,
     actor: imam,
     fromStatus: STATUS.PENDING_APPROVAL,
     toStatus: STATUS.COMPLETED,
@@ -10987,6 +11071,27 @@ Parse.Cloud.define('completeService', async (request) => {
       requestId: serviceRequest.id,
     });
   }
+
+  /*
+   * ويُبلَّغ أهلُ المسجد أنّ ما أقلقهم قد زال.
+   *
+   * قِيس على خادمٍ حقيقي: منتمٍ للمسجد أُبلغ بالاحتياج يوم نُشر، ثم مرّت دورة
+   * الطلب كاملةً — تطوّعٌ، فتكليف، فبدء، فإنجاز، فاعتماد — ووارده **كما هو:
+   * رسالةٌ واحدة يتيمة هي «احتياجٌ جديد في مسجدك»**. الإمام يصله ثلاث،
+   * والمنفّذ اثنتان، والمنتمي واحدة أبداً.
+   *
+   * فالقناة التي فُتحت في الدورة الماضية كانت تحمل الخبر السيّئ وحده: تقول
+   * لصاحبها إنّ في مسجده خللاً ولا تقول له إنّه أُصلح. وهذا أسوأ من الصمت —
+   * قلقٌ يتراكم بلا خبر يُنهيه، على منصّةٍ قامت كلُّها على الشفافية.
+   *
+   * ويُستثنى اثنان: الإمام ضغط الزرّ، والمنفّذ وصلته رسالةٌ أدفأ باسمه.
+   */
+  const followerExclude = [imam.id];
+  if (worker && worker.id) followerExclude.push(worker.id);
+  await pushToMosqueFollowers(mosque, {
+    alert: `أُنجز في ${mosque.get('name')}: ${serviceRequest.get('title')} — جزى الله من قام به.`,
+    requestId: serviceRequest.id,
+  }, { exclude: followerExclude });
 
   // TODO: صرف المستحقات للشركة يتم عبر دالة payout منفصلة بعد الاعتماد (functions/donations.js)
   // TODO: تسجيل ساعات التطوّع في منصة "أيادي" — يحتاج اتفاقية وAPI key رسمي.
@@ -11037,6 +11142,15 @@ Parse.Cloud.define('cancelServiceRequest', async (request) => {
       requestId: serviceRequest.id,
     });
   }
+
+  // ومن أُبلغ بالاحتياج يُبلَّغ بسحبه: الإلغاء نهايةٌ للطلب كالإنجاز، وتركُه
+  // بلا خبرٍ يُبقي في وارد المنتمي احتياجاً لم يعد قائماً يظنّه ما زال ينتظر.
+  const cancelExclude = [imam.id];
+  if (worker && worker.id) cancelExclude.push(worker.id);
+  await pushToMosqueFollowers(mosque, {
+    alert: `لم يعد "${serviceRequest.get('title')}" مطلوباً في ${mosque.get('name')}.`,
+    requestId: serviceRequest.id,
+  }, { exclude: cancelExclude });
 
   return { status: STATUS.CANCELLED };
 });
