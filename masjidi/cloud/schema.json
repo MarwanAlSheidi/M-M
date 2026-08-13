@@ -471,7 +471,8 @@
           "required": true
         },
         "kind": {
-          "type": "String"
+          "type": "String",
+          "_comment": "محجوز — لا كاتبَ له اليوم ولا قارئ. تصنيف الأخبار حين يُطلب."
         },
         "requestId": {
           "type": "String"

@@ -32,7 +32,12 @@ Parse.Cloud.define('getMyNotifications', async (request) => {
     items: rows.map((row) => ({
       id: row.id,
       body: row.get('body'),
-      kind: row.get('kind') || null,
+      /*
+       * و`kind` كان يُرسَل هنا ولا يُكتب في موضعٍ واحد: قِيس فلم يمرّره أيُّ
+       * مستدعٍ لـ`pushToUsers` قطّ. فحقلٌ لا كاتبَ له ولا قارئ ليس تصنيفاً
+       * مؤجّلاً بل حمولةٌ فارغة على كل إشعار — وتصنيفُ الأخبار حين يُطلب
+       * ثلاثةُ أسطر. والعمود يبقى في المخطط موسوماً بأنه محجوز.
+       */
       requestId: row.get('requestId') || null,
       readAt: row.get('readAt') || null,
       createdAt: row.get('createdAt'),

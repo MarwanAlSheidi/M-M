@@ -205,7 +205,8 @@ async function store(users, payload) {
       const row = new Notification();
       row.set('userId', user);
       row.set('body', String(payload.alert || '').slice(0, 500));
-      if (payload.kind) row.set('kind', payload.kind);
+      // ولا `kind`: لم يمرّره مستدعٍ قطّ، وقارئُه لا يقرؤه. `Notifications.kind`
+      // عمودٌ محجوز — يُملأ يوم يُطلب التصنيف، لا قبله.
       if (payload.requestId) row.set('requestId', String(payload.requestId));
       if (payload.mosqueId) row.set('mosqueId', payload.mosqueId);
       return row;
@@ -3691,7 +3692,12 @@ Parse.Cloud.define('getMyNotifications', async (request) => {
     items: rows.map((row) => ({
       id: row.id,
       body: row.get('body'),
-      kind: row.get('kind') || null,
+      /*
+       * و`kind` كان يُرسَل هنا ولا يُكتب في موضعٍ واحد: قِيس فلم يمرّره أيُّ
+       * مستدعٍ لـ`pushToUsers` قطّ. فحقلٌ لا كاتبَ له ولا قارئ ليس تصنيفاً
+       * مؤجّلاً بل حمولةٌ فارغة على كل إشعار — وتصنيفُ الأخبار حين يُطلب
+       * ثلاثةُ أسطر. والعمود يبقى في المخطط موسوماً بأنه محجوز.
+       */
       requestId: row.get('requestId') || null,
       readAt: row.get('readAt') || null,
       createdAt: row.get('createdAt'),

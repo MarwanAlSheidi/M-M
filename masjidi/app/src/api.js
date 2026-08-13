@@ -298,6 +298,20 @@ export const requestsForMosque = (mosqueId) =>
   });
 
 /**
+ * الاحتياج الذي يتكلّم عنه إشعار — أو `null` إن زال.
+ *
+ * `getMyNotifications` تُرسل `requestId` مع كل خبر منذ أوّل يوم **ولا تقرؤه
+ * الشاشة**: بطاقةُ التنبيه تعرض النصّ والتاريخ ثم تنتهي. فمن قيل له «احتياجٌ
+ * جديد في مسجدك» لا يملك أن يرى ما هو — والمتبرّع خاصّةً لا شاشة له غير هذه.
+ *
+ * وبنفس `listRequests` لا باستعلامٍ جديد: شكلُ الصفّ واحدٌ في كل شاشة.
+ */
+export const requestById = async (requestId) => {
+  const rows = await listRequests((query) => query.equalTo('objectId', requestId));
+  return rows[0] || null;
+};
+
+/**
  * الأعمال المُسنَدة إليّ.
  *
  * المتطوّع والشركة لا يشتركان في حقلٍ واحد على الخادم، فكان الاستعلام على

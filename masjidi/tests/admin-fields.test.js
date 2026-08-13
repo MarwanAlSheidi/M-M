@@ -39,6 +39,16 @@ const ALLOWED_UNREAD = {
   getMyInterests: ['requestId', 'requestStatus', 'note'],
   // `interestId` و`volunteerId` معرّفان للتكليف لا للقراءة
   getRequestInterests: ['interestId', 'volunteerId'],
+  /*
+   * `items` غلافُ القائمة لا حقلاً في صفّها، و`unread` عددٌ فوق الشاشة يُقرأ
+   * من `result.unread` لا من صفّ.
+   *
+   * وكان معهما `kind` و`requestId`: **لم تكن هذه البوّابة تنظر إلى الوارد
+   * أصلاً** — الحارس قائمةٌ منتقاة من خمسة أزواج، وصندوق الوارد ليس فيها. فبقي
+   * في عماها ما بُني الحارس ليجده: `requestId` يُرسَل ويُسقَط، فيُقال للمتبرّع
+   * «احتياجٌ جديد في مسجدك» ولا يملك أن يرى ما هو.
+   */
+  getMyNotifications: ['items', 'unread'],
 };
 
 /** الكائن الذي تُعيده الدالّة، حقلاً حقلاً. */
@@ -73,6 +83,8 @@ const SCREENS = [
   { screen: 'ImamHome', fn: 'getMyClaims', from: 'cloud/functions/mosques.js', bind: 'claim' },
   { screen: 'MyTasks', fn: 'getMyInterests', from: 'cloud/functions/requests.js', bind: 'row' },
   { screen: 'RequestDetail', fn: 'getRequestInterests', from: 'cloud/functions/requests.js', bind: 'row' },
+  // صندوق الوارد — وكان خارج هذه القائمة، وهو القناة الوحيدة لمن لا شاشة له
+  { screen: 'Notifications', fn: 'getMyNotifications', from: 'cloud/functions/notifications.js', bind: 'row' },
 ];
 
 test('ما يُرسَل إلى الشاشة يُقرأ فيها', async (t) => {

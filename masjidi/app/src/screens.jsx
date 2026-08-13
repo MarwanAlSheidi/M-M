@@ -1809,7 +1809,46 @@ function DataCredits() {
  * التطبيق لا يسجّله بعد. فهذه الشاشة هي القناة التي تصل فعلاً — لا رفاهية
  * فوق الدفع بل بديله العامل.
  */
+/**
+ * الاحتياج الذي يتكلّم عنه الخبر — قراءةً لا فعلاً.
+ *
+ * الأفعال لها شاشاتها: «يهمّني» في «الفرص»، والاعتماد في «مساجدي». وهذه تجيب
+ * سؤالاً واحداً: **ما الذي قيل لي إنه وقع؟** فمن أُخبر ولم يستطع أن يرى، خبرُه
+ * قلقٌ لا معرفة.
+ */
+function NotifiedRequest({ requestId, onBack }) {
+  const state = useList(async () => {
+    const row = await api.requestById(requestId);
+    return row ? [row] : [];
+  }, [requestId]);
+
+  return (
+    <>
+      <button className="link" onClick={onBack}>→ رجوع</button>
+      <Listing state={state} empty="لم يعد هذا الاحتياج موجوداً.">
+        <div>
+          {state.rows.map((row) => (
+            <article className="card" key={row.id}>
+              <div className="spread">
+                <h3>{row.title}</h3>
+                <StatusTag status={row.status} />
+              </div>
+              <p>{row.mosqueName}</p>
+              <Where wilayat={row.wilayat} village={row.village} />
+              <p>{row.description}</p>
+              <div className="row">
+                <span className="tag">{api.CATEGORIES[row.category] || 'أخرى'}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      </Listing>
+    </>
+  );
+}
+
 export function Notifications() {
+  const [opened, setOpened] = useState(null);
   const [unread, setUnread] = useState(0);
   const state = useList(async () => {
     const result = await api.getMyNotifications(50);
@@ -1832,6 +1871,8 @@ export function Notifications() {
     }
   }
 
+  if (opened) return <NotifiedRequest requestId={opened} onBack={() => setOpened(null)} />;
+
   return (
     <>
       <div className="spread">
@@ -1849,6 +1890,15 @@ export function Notifications() {
             <article className={row.readAt ? 'card' : 'card unread'} key={row.id}>
               <p style={{ margin: 0 }}>{row.body}</p>
               <p className="when">{new Date(row.createdAt).toLocaleString('ar')}</p>
+              {/*
+                والخبر يقود إلى ما أخبر عنه. `requestId` يصل من الخادم مع كل
+                إشعارٍ منذ أوّل يوم وكانت الشاشة تُسقطه، فيُقال للمتبرّع «احتياجٌ
+                جديد في مسجدك» ولا يملك أن يرى ما هو — ولا شاشة له غير هذه.
+              */}
+              {row.requestId && (
+                <button className="link" data-testid="open-notified"
+                  onClick={() => setOpened(row.requestId)}>ما هذا الاحتياج؟</button>
+              )}
             </article>
           ))}
         </div>

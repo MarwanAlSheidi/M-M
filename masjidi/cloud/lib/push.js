@@ -25,7 +25,8 @@ async function store(users, payload) {
       const row = new Notification();
       row.set('userId', user);
       row.set('body', String(payload.alert || '').slice(0, 500));
-      if (payload.kind) row.set('kind', payload.kind);
+      // ولا `kind`: لم يمرّره مستدعٍ قطّ، وقارئُه لا يقرؤه. `Notifications.kind`
+      // عمودٌ محجوز — يُملأ يوم يُطلب التصنيف، لا قبله.
       if (payload.requestId) row.set('requestId', String(payload.requestId));
       if (payload.mosqueId) row.set('mosqueId', payload.mosqueId);
       return row;
