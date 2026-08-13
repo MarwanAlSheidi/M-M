@@ -513,10 +513,73 @@ Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
     .limit(Math.min(Number(limit) || 50, 100))
     .find({ useMasterKey: true });
 
+  /*
+   * وعنوانُ الاحتياج مع كل سطرٍ يخصّه.
+   *
+   * قِيس على خادمٍ حقيقي في مسجدٍ له ثلاثة احتياجات — وهو الحال المعتاد لا
+   * النادر — فكان السجلّ تسعةَ أسطرٍ **لا يقول واحدٌ منها عن أيّ احتياجٍ
+   * يتكلّم**: «طلب صيانة جديد» ثلاث مرّات متطابقة، و«كُلّف منفّذ بالعمل»
+   * مرّتين. فمن قرأه لم يعرف أنُقل الفرش أم أُصلحت المكيّفات، ولا أيّ الثلاثة
+   * أُلغي.
+   *
+   * والقاعدة كانت مكتوبةً في هذا الملفّ نفسه ومطبَّقةً على تصويب الموقع وحده:
+   * «السجلّ أداةُ الشفافية لا سطرٌ يُثبت أن شيئاً وقع». والاحتياجات هي أكثرُ
+   * ما يُقيَّد فيه، وهي موضوع المنصّة كلِّها، وكانت وحدها بلا اسم.
+   *
+   * **واستعلامٌ واحد لا استعلامٌ لكل سطر**: تسعةُ أسطرٍ تعني تسعة طلبات HTTP
+   * إلى القاعدة على باقةٍ محدودة الطلبات، والعناوين تتكرّر بين الأسطر أصلاً.
+   */
+  const idsOf = (className) => [...new Set(entries
+    .filter((entry) => entry.get('targetClass') === className)
+    .map((entry) => entry.get('targetId'))
+    .filter(Boolean))];
+
+  /*
+   * والاهتمام مقيَّدٌ على كائن `TaskInterests` لا على الطلب — وهو معرّفٌ لا
+   * يملك قارئٌ أن يفتحه. فيُترجَم إلى طلبه: «سجّل متطوّع اهتمامه» بلا موضوعٍ
+   * كانت آخر سطرين بقيا صامتين بعد الإصلاح الأول، وقِيسا.
+   */
+  const throughInterest = new Map();
+  const interestIds = idsOf('TaskInterests');
+  if (interestIds.length > 0) {
+    const interests = await new Parse.Query('TaskInterests')
+      .containedIn('objectId', interestIds)
+      .select('requestId')
+      .limit(interestIds.length)
+      .find({ useMasterKey: true })
+      .catch(() => []);
+    for (const row of interests) {
+      const pointer = row.get('requestId');
+      if (pointer) throughInterest.set(row.id, pointer.id);
+    }
+  }
+
+  const subjectIds = [...new Set([...idsOf('ServiceRequests'), ...throughInterest.values()])];
+
+  // **استعلامان مهما طال السجلّ**: واحدٌ للاهتمامات وواحدٌ للعناوين
+  const titles = new Map();
+  if (subjectIds.length > 0) {
+    const requests = await new Parse.Query('ServiceRequests')
+      .containedIn('objectId', subjectIds)
+      .select('title')
+      .limit(subjectIds.length)
+      .find({ useMasterKey: true })
+      // السجلّ يُعرض ولو تعذّر الوصول إلى العناوين — والسطر بلا عنوان أفضل من شاشةٍ لا تُفتح
+      .catch(() => []);
+    for (const row of requests) titles.set(row.id, row.get('title'));
+  }
+
+  const subjectOf = (entry) => {
+    const target = entry.get('targetId');
+    return titles.get(throughInterest.get(target) || target) || null;
+  };
+
   return entries.map((entry) => ({
     action: entry.get('action'),
     targetClass: entry.get('targetClass'),
     targetId: entry.get('targetId'),
+    // `null` لطلبٍ حُذف أو قُلّم: السطر يبقى، والعنوان يغيب ولا يُختلق
+    subject: subjectOf(entry),
     fromStatus: entry.get('fromStatus'),
     toStatus: entry.get('toStatus'),
     actorRole: entry.get('actorRole'),

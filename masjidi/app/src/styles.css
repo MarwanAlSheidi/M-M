@@ -137,6 +137,8 @@ p.warn { color: #7a5200; font-size: 13px; }
 /* غير المقروء يُميَّز بحافّة لا بلون خلفية — يبقى مقروءاً في الوضع الداكن */
 .card.unread { border-right: 3px solid var(--green); }
 .when { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+/* موضوع سطر السجلّ — يُميَّز عن الفعل ولا يُطمَس: هو ما يُبحث عنه في الشاشة */
+.subject { color: var(--ink); font-weight: 600; }
 .tabs button .badge {
   background: #b3261e; color: #fff; border-radius: 999px;
   font-size: 11px; padding: 0 5px; margin-inline-start: 4px;

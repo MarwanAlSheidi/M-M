@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA **يُثبَّت ويعمل بلا إنترنت** — ويحرسه `verify:pwa`. و**React Native ليس ناقصاً بل غير مطلوب**: الواجهة تُثبَّت على أندرويد وiOS، وعميلٌ ثانٍ يُضاعف السطح بلا أثرٍ للمستخدم في المرحلة الأولى |
-| الاختبارات | ✅ 366 حالة على بديل Parse (`npm test`) + 210 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 31 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 366 حالة على بديل Parse (`npm test`) + 215 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 31 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -383,6 +383,7 @@ tests/
     notified.test.js   كلُّ انتقالٍ في دورة الطلب يبلغ صاحبه — والوارد ينمو به
     suspended-worker.test.js  إيقافُ مكلَّفٍ بعمل: يُخبَر الإمام، ولا يُقيَّد غيابٌ على ممنوع
     claim-reviewed.test.js  مقدّم طلب الملكية يُخبَر بقراره — قبولاً أو رفضاً
+    trail-subject.test.js  سجلّ المسجد يقول عن أيّ احتياجٍ يتكلّم كلُّ سطر
     export.test.js     السجلّ يُصدَّر، ولا تُصدَّر معه هواتف الناس
     concurrency.test.js  ضغطتان في لحظةٍ واحدة: السمعة والتكليف
   e2e/                 متصفّح حقيقي فوق خادم حقيقي — `npm run test:e2e`
@@ -4136,6 +4137,56 @@ releaseAssignment: **سقط** (101) Object not found.
 وعلى `HEAD` (٤٧٨٩٤ بايتاً — فُحص الحجم قبل قراءة الحُمرة): ستٌّ تمرّ واثنتان
 تسقطان بالنصّ الذي قِيس: «أُنجز العمل في مسجده ولم يُخبَر — الوارد كما هو:
 ["احتياجٌ جديد في جامع البلاغ: تجديد فرش المصلّى"]».
+
+---
+
+### 🟠 سجلٌّ لا يقول عن أيّ احتياجٍ يتكلّم
+
+القناة صارت تحمل الخبرين، فتُبع أثرُ الخبر: من قرأ «احتياجٌ جديد في مسجدك»
+أين يذهب به؟ قِيس في متصفّح حقيقي من عين المتبرّع: بطاقةُ التنبيه **لا شيء
+فيها يُضغط** (`requestId` يصل من الخادم وتُسقطه الشاشة)، و«حولي» لا تذكر
+الاحتياج، و«حسابي» لا تذكره. والباب الوحيد «سجلّ المسجد».
+
+ثم قِيس السجلّ نفسه في مسجدٍ له **ثلاثة احتياجات** — وهو الحال المعتاد لا
+النادر:
+
+```
+ 1. أُلغي الطلب                 2. كُلّف منفّذ بالعمل
+ 3. سجّل متطوّع اهتمامه          4. بدأ العمل
+ 5. كُلّف منفّذ بالعمل            6. سجّل متطوّع اهتمامه
+ 7. طلب صيانة جديد              8. طلب صيانة جديد
+ 9. طلب صيانة جديد
+```
+
+**تسعةُ أسطرٍ، لا يقول واحدٌ منها موضوعَه.** ثلاثةُ «طلب صيانة جديد» متطابقة،
+ومرّتا «كُلّف منفّذ». فمن قرأه لم يعرف أنُقل الفرش أم أُصلحت المكيّفات، ولا
+أيّ الثلاثة أُلغي. وهذه هي الشاشة التي وُصفت في الكود بأنها «أداةُ الشفافية لا
+سطرٌ يُثبت أن شيئاً وقع» — والقاعدة كانت مكتوبةً في الملفّ نفسه ومطبَّقةً على
+**تصويب الموقع وحده**، بينما الاحتياجات — موضوع المنصّة كلِّها وأكثرُ ما
+يُقيَّد فيها — بلا اسم.
+
+#### والعنوان يُجلب باستعلامين مهما طال السجلّ
+
+جمعُ المعرّفات ثم استعلامٌ واحد بـ`containedIn` و`select('title')`. والباقة
+٢٥ ألف طلبٍ شهرياً، فاستعلامٌ لكل سطرٍ يعني تسعةً في فتحةِ شاشةٍ واحدة —
+والعناوين تتكرّر بين الأسطر أصلاً.
+
+#### والسطران الأخيران كشفا خطأً في الحارس نفسه
+
+بعد الإصلاح الأول صار سبعةٌ من تسعة يقول موضوعه، وبقي «سجّل متطوّع اهتمامه»
+صامتاً: قيدُه على كائن `TaskInterests` لا على الطلب. **وحارسي كان يصفّي
+بـ`targetClass === 'ServiceRequests'` فمرّ أخضرَ على سطرين ما زالا صامتين** —
+لولا أنّ القياس أُعيد بعد الإصلاح لا قبله وحده. فصارت التصفية **بالفعل لا
+بالفئة**، والاهتمام يُترجَم إلى طلبه باستعلامٍ ثانٍ. وصار تسعةٌ من تسعة.
+
+#### والحدود التي تبقى خضراء
+
+سطرٌ ليس عن احتياج (تصويب الموقع) لا يُنسب إليه عنوان؛ وطلبٌ حُذف يُبقي سطرَه
+بعنوانٍ `null` **ولا يُختلق له اسم**؛ وهوية الفاعل لا تُكشف مع العنوان.
+
+وعلى `HEAD` (٢٤١٧٧ بايتاً — فُحص الحجم قبل قراءة الحُمرة): اثنتان تمرّان
+واثنتان تسقطان، والثالثة تسقط عند شرطها المسبق «لم يُقيَّد الاحتياج أصلاً
+فالحدّ غير مقيس» — وهو نصُّ العطب بعينه.
 
 ---
 
@@ -8093,10 +8144,73 @@ Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
     .limit(Math.min(Number(limit) || 50, 100))
     .find({ useMasterKey: true });
 
+  /*
+   * وعنوانُ الاحتياج مع كل سطرٍ يخصّه.
+   *
+   * قِيس على خادمٍ حقيقي في مسجدٍ له ثلاثة احتياجات — وهو الحال المعتاد لا
+   * النادر — فكان السجلّ تسعةَ أسطرٍ **لا يقول واحدٌ منها عن أيّ احتياجٍ
+   * يتكلّم**: «طلب صيانة جديد» ثلاث مرّات متطابقة، و«كُلّف منفّذ بالعمل»
+   * مرّتين. فمن قرأه لم يعرف أنُقل الفرش أم أُصلحت المكيّفات، ولا أيّ الثلاثة
+   * أُلغي.
+   *
+   * والقاعدة كانت مكتوبةً في هذا الملفّ نفسه ومطبَّقةً على تصويب الموقع وحده:
+   * «السجلّ أداةُ الشفافية لا سطرٌ يُثبت أن شيئاً وقع». والاحتياجات هي أكثرُ
+   * ما يُقيَّد فيه، وهي موضوع المنصّة كلِّها، وكانت وحدها بلا اسم.
+   *
+   * **واستعلامٌ واحد لا استعلامٌ لكل سطر**: تسعةُ أسطرٍ تعني تسعة طلبات HTTP
+   * إلى القاعدة على باقةٍ محدودة الطلبات، والعناوين تتكرّر بين الأسطر أصلاً.
+   */
+  const idsOf = (className) => [...new Set(entries
+    .filter((entry) => entry.get('targetClass') === className)
+    .map((entry) => entry.get('targetId'))
+    .filter(Boolean))];
+
+  /*
+   * والاهتمام مقيَّدٌ على كائن `TaskInterests` لا على الطلب — وهو معرّفٌ لا
+   * يملك قارئٌ أن يفتحه. فيُترجَم إلى طلبه: «سجّل متطوّع اهتمامه» بلا موضوعٍ
+   * كانت آخر سطرين بقيا صامتين بعد الإصلاح الأول، وقِيسا.
+   */
+  const throughInterest = new Map();
+  const interestIds = idsOf('TaskInterests');
+  if (interestIds.length > 0) {
+    const interests = await new Parse.Query('TaskInterests')
+      .containedIn('objectId', interestIds)
+      .select('requestId')
+      .limit(interestIds.length)
+      .find({ useMasterKey: true })
+      .catch(() => []);
+    for (const row of interests) {
+      const pointer = row.get('requestId');
+      if (pointer) throughInterest.set(row.id, pointer.id);
+    }
+  }
+
+  const subjectIds = [...new Set([...idsOf('ServiceRequests'), ...throughInterest.values()])];
+
+  // **استعلامان مهما طال السجلّ**: واحدٌ للاهتمامات وواحدٌ للعناوين
+  const titles = new Map();
+  if (subjectIds.length > 0) {
+    const requests = await new Parse.Query('ServiceRequests')
+      .containedIn('objectId', subjectIds)
+      .select('title')
+      .limit(subjectIds.length)
+      .find({ useMasterKey: true })
+      // السجلّ يُعرض ولو تعذّر الوصول إلى العناوين — والسطر بلا عنوان أفضل من شاشةٍ لا تُفتح
+      .catch(() => []);
+    for (const row of requests) titles.set(row.id, row.get('title'));
+  }
+
+  const subjectOf = (entry) => {
+    const target = entry.get('targetId');
+    return titles.get(throughInterest.get(target) || target) || null;
+  };
+
   return entries.map((entry) => ({
     action: entry.get('action'),
     targetClass: entry.get('targetClass'),
     targetId: entry.get('targetId'),
+    // `null` لطلبٍ حُذف أو قُلّم: السطر يبقى، والعنوان يغيب ولا يُختلق
+    subject: subjectOf(entry),
     fromStatus: entry.get('fromStatus'),
     toStatus: entry.get('toStatus'),
     actorRole: entry.get('actorRole'),
@@ -11774,10 +11888,73 @@ Parse.Cloud.define('getMosqueAuditTrail', async (request) => {
     .limit(Math.min(Number(limit) || 50, 100))
     .find({ useMasterKey: true });
 
+  /*
+   * وعنوانُ الاحتياج مع كل سطرٍ يخصّه.
+   *
+   * قِيس على خادمٍ حقيقي في مسجدٍ له ثلاثة احتياجات — وهو الحال المعتاد لا
+   * النادر — فكان السجلّ تسعةَ أسطرٍ **لا يقول واحدٌ منها عن أيّ احتياجٍ
+   * يتكلّم**: «طلب صيانة جديد» ثلاث مرّات متطابقة، و«كُلّف منفّذ بالعمل»
+   * مرّتين. فمن قرأه لم يعرف أنُقل الفرش أم أُصلحت المكيّفات، ولا أيّ الثلاثة
+   * أُلغي.
+   *
+   * والقاعدة كانت مكتوبةً في هذا الملفّ نفسه ومطبَّقةً على تصويب الموقع وحده:
+   * «السجلّ أداةُ الشفافية لا سطرٌ يُثبت أن شيئاً وقع». والاحتياجات هي أكثرُ
+   * ما يُقيَّد فيه، وهي موضوع المنصّة كلِّها، وكانت وحدها بلا اسم.
+   *
+   * **واستعلامٌ واحد لا استعلامٌ لكل سطر**: تسعةُ أسطرٍ تعني تسعة طلبات HTTP
+   * إلى القاعدة على باقةٍ محدودة الطلبات، والعناوين تتكرّر بين الأسطر أصلاً.
+   */
+  const idsOf = (className) => [...new Set(entries
+    .filter((entry) => entry.get('targetClass') === className)
+    .map((entry) => entry.get('targetId'))
+    .filter(Boolean))];
+
+  /*
+   * والاهتمام مقيَّدٌ على كائن `TaskInterests` لا على الطلب — وهو معرّفٌ لا
+   * يملك قارئٌ أن يفتحه. فيُترجَم إلى طلبه: «سجّل متطوّع اهتمامه» بلا موضوعٍ
+   * كانت آخر سطرين بقيا صامتين بعد الإصلاح الأول، وقِيسا.
+   */
+  const throughInterest = new Map();
+  const interestIds = idsOf('TaskInterests');
+  if (interestIds.length > 0) {
+    const interests = await new Parse.Query('TaskInterests')
+      .containedIn('objectId', interestIds)
+      .select('requestId')
+      .limit(interestIds.length)
+      .find({ useMasterKey: true })
+      .catch(() => []);
+    for (const row of interests) {
+      const pointer = row.get('requestId');
+      if (pointer) throughInterest.set(row.id, pointer.id);
+    }
+  }
+
+  const subjectIds = [...new Set([...idsOf('ServiceRequests'), ...throughInterest.values()])];
+
+  // **استعلامان مهما طال السجلّ**: واحدٌ للاهتمامات وواحدٌ للعناوين
+  const titles = new Map();
+  if (subjectIds.length > 0) {
+    const requests = await new Parse.Query('ServiceRequests')
+      .containedIn('objectId', subjectIds)
+      .select('title')
+      .limit(subjectIds.length)
+      .find({ useMasterKey: true })
+      // السجلّ يُعرض ولو تعذّر الوصول إلى العناوين — والسطر بلا عنوان أفضل من شاشةٍ لا تُفتح
+      .catch(() => []);
+    for (const row of requests) titles.set(row.id, row.get('title'));
+  }
+
+  const subjectOf = (entry) => {
+    const target = entry.get('targetId');
+    return titles.get(throughInterest.get(target) || target) || null;
+  };
+
   return entries.map((entry) => ({
     action: entry.get('action'),
     targetClass: entry.get('targetClass'),
     targetId: entry.get('targetId'),
+    // `null` لطلبٍ حُذف أو قُلّم: السطر يبقى، والعنوان يغيب ولا يُختلق
+    subject: subjectOf(entry),
     fromStatus: entry.get('fromStatus'),
     toStatus: entry.get('toStatus'),
     actorRole: entry.get('actorRole'),

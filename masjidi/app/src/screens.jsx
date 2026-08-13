@@ -465,6 +465,12 @@ export function MosqueTrail({ mosqueId, mosqueName }) {
             <article className="card" key={`${entry.createdAt}-${at}`}>
               <p style={{ margin: 0 }}>
                 {api.AUDIT_LABEL[entry.action] || entry.action}
+                {/*
+                  وعن أيّ احتياجٍ يتكلّم. في مسجدٍ له ثلاثة احتياجات كان السجلّ
+                  «طلب صيانة جديد» ثلاثاً متطابقة و«كُلّف منفّذ» مرّتين، فلا
+                  يُعرف أنُقل الفرش أم أُصلحت المكيّفات.
+                */}
+                {entry.subject && <span className="subject"> — {entry.subject}</span>}
               </p>
               {/*
                 التفصيل حيث يوجد: «صوّب الإمام الموقع» لا يقول ماذا كان قبله،
