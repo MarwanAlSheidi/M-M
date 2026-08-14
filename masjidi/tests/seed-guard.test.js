@@ -18,6 +18,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -110,14 +111,40 @@ test('كلُّ أداةٍ تقول على أي خادمٍ تعمل', async (t) =
     PARSE_SERVER_URL: `https://${HOST}/parse`,
   };
 
-  const TOOLS = [
-    { file: 'seed_mosques.js', argv: ['--limit', '2'] },
-    { file: 'apply_schema.js', argv: [] },
-    { file: 'promote_admin.js', argv: ['--list'] },
-    { file: 'preflight.js', argv: [] },
-    // وأمرُ النشر أولى بها: يمشي الترتيب كلَّه على خادمٍ واحد
-    { file: 'deploy.js', argv: [] },
-  ];
+  /*
+   * **والقائمة تُمسح من `scripts/` لا تُكتب باليد.**
+   *
+   * كانت أربعةً مكتوبة، فأُضيف `deploy.js` بيدٍ في جولةٍ سابقة، **وبقي
+   * `export_records.js` خارجها** — وهو يلمس خادماً ويكتب نسخةَ السجلّ. قِيس
+   * فإذا هو يُعلن وجهتَه فعلاً، فلا عطبَ اليوم؛ **لكنّ الحارس كان أعمى عنه**،
+   * وأداةٌ تُضاف غداً تشحن صامتةً ولا يمسكها شيء.
+   *
+   * وهي ثالثةُ مرّةٍ يقع فيها هذا الصنف في هذا المستودع (البوّابة الحقلية،
+   * وأوامرُ الباب الأوّل، وهذه) — **فقائمةٌ مكتوبةٌ باليد في حارسٍ لا تنمو مع
+   * ما تحرسه**.
+   */
+  const CHEAP_ARGV = {
+    // ما يكتب أو يُنفق يُشغَّل بأرخص صيغةٍ تبلغ الإعلان
+    'seed_mosques.js': ['--limit', '2'],
+    'promote_admin.js': ['--list'],
+  };
+
+  /** أدواتٌ لا تلمس خادماً — ولكلٍّ سببُه. */
+  const NOT_A_TOOL = {
+    'verify.js': 'يُشغّل الاختبارات محلياً ولا يلمس خادماً',
+    'resolve_locations.js': 'يقرأ OpenStreetMap ويكتب ملفّاً — بلا خادم',
+  };
+
+  const scriptsDir = path.join(__dirname, '..', 'scripts');
+  const TOOLS = fs.readdirSync(scriptsDir)
+    .filter((name) => name.endsWith('.js'))
+    .filter((name) => !NOT_A_TOOL[name])
+    .filter((name) => /PARSE_MASTER_KEY|Parse\.initialize|PARSE_SERVER_URL/
+      .test(fs.readFileSync(path.join(scriptsDir, name), 'utf8')))
+    .map((file) => ({ file, argv: CHEAP_ARGV[file] || [] }));
+
+  assert.ok(TOOLS.length >= 5,
+    `مُسحت ${TOOLS.length} أدوات — الأداة تقرأ ناقصاً`);
 
   for (const tool of TOOLS) {
     await t.test(tool.file, () => {
