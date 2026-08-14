@@ -374,8 +374,36 @@ export const assignWorker = (requestId, workerId) => run('assignWorker', { reque
  * وبالجمع: نداءٌ واحد للقائمة كلّها لا نداءٌ لكل بطاقة. تُعيد خريطةً
  * `{ [requestId]: {role, name, phone} }`، وما ليس المستدعي طرفاً فيه يغيب.
  */
-export const getRequestContacts = (requestIds) =>
-  (requestIds.length ? run('getRequestContacts', { requestIds }) : Promise.resolve({}));
+/*
+ * والخادم يردّ ما تجاوز عشرين — **يردّه كلَّه لا الزائدَ منه**.
+ *
+ * وحدُّ التكليفات ثلاثة، لكنّ `pending_imam_approval` **خارجَ ذلك الحدّ قصداً**:
+ * من أتمّ عمله لا يُحبس على بطء غيره. فتتراكم أعمالُه المنتظِرة بلا سقف —
+ * وقِيس على خادمٍ حقيقي: متطوّعٌ أتمّ **واحداً وعشرين** عملاً تنتظر الاعتماد،
+ * فسقط النداء كلُّه بـ«لا تتجاوز 20 طلباً في المرّة».
+ *
+ * **والسقوط صامت**: `contacts.error` لا يُعرض في موضع. فيرى المتطوّع مهامَّه
+ * كلَّها بلا اسمٍ ولا هاتف — لا لواحدةٍ منها — وهو واقفٌ عند المسجد لا يعرف
+ * بمن يتّصل، ولا كلمةَ تقول له لماذا.
+ *
+ * فتُقسَّم الدفعة. والقاعدة «نداءٌ للقائمة لا لكل صفّ» قائمة: `assignedToMe`
+ * محدودةٌ بخمسين، فالنداءات ثلاثةٌ على أكثر تقدير مهما طال الطابور.
+ */
+const CONTACTS_PER_CALL = 20;
+
+export const getRequestContacts = async (requestIds) => {
+  if (!requestIds.length) return {};
+
+  const batches = [];
+  for (let at = 0; at < requestIds.length; at += CONTACTS_PER_CALL) {
+    batches.push(requestIds.slice(at, at + CONTACTS_PER_CALL));
+  }
+
+  const parts = await Promise.all(
+    batches.map((requestIds_) => run('getRequestContacts', { requestIds: requestIds_ })),
+  );
+  return Object.assign({}, ...parts);
+};
 export const releaseAssignment = (requestId, reason) => run('releaseAssignment', { requestId, reason });
 export const startWork = (requestId) => run('startWork', { requestId });
 export const markWorkDone = (requestId, notes, photoUrls) =>

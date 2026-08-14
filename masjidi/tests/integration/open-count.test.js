@@ -132,4 +132,48 @@ test('شارةُ الطلبات المفتوحة تعدّ ما لم يُفرَغ
     assert.deepEqual(nearby.map((row) => row.title), [],
       `عُرضت فرصةٌ على عملٍ لا يقبل متطوّعاً: ${JSON.stringify(nearby.map((r) => r.title))}`);
   });
+  /*
+   * وما ينتظر الاعتماد يتراكم بلا سقفٍ على المنفّذ — **قصداً**.
+   *
+   * حدُّ التكليفات ثلاثة، و`pending_imam_approval` خارجه: من أتمّ عمله لا
+   * يُحبس على بطء غيره. وهذا صحيح، **ومنه يجيء العطب**: تتجاوز مهامُّه الحيّة
+   * عشرين، فيردّ `getRequestContacts` النداءَ كلَّه — لا الزائدَ منه — فيرى
+   * مهامَّه بلا اسمٍ ولا هاتفٍ لواحدةٍ منها. يحرس القسمةَ
+   * `tests/contacts-batch.test.js`، وهذا يُثبت أنّ التراكم واقعٌ لا مفترض.
+   */
+  await t.test('والمنتظِرُ للاعتماد لا يُحبس المنفّذ عن عملٍ جديد', async () => {
+    // **الحالةُ تصنع شرطَها بنفسها**: الاعتمادُ على ترتيب ما قبلها يجعل
+    // الحمرةَ خبراً عن الترتيب لا عن الشيفرة — ووقع ذلك في أوّل صياغة.
+    const waiting = (await as(imam, 'createServiceRequest', {
+      mosqueId: mosque.id, title: 'صيانة الأبواب', category: 'other',
+      description: 'أبوابُ المسجد بحاجةٍ إلى صيانةٍ ومفصّلاتُها مهترئة.',
+    })).objectId;
+    await as(salim, 'expressInterest', { requestId: waiting });
+    await as(imam, 'assignWorker', { requestId: waiting, workerId: salim.id });
+    await as(salim, 'startWork', { requestId: waiting });
+    await as(salim, 'markWorkDone', { requestId: waiting, notes: 'تمّ' });
+
+    const before = await new Parse.Query('ServiceRequests')
+      .equalTo('assignedVolunteerId', salim)
+      .equalTo('status', 'pending_imam_approval')
+      .count({ useMasterKey: true });
+    assert.ok(before >= 1, `لا عملَ ينتظر الاعتماد — القياس لم يقع (${before})`);
+
+    // ثلاثةٌ جديدة تُسنَد إليه رغم ما ينتظر الاعتماد
+    for (let at = 0; at < 3; at += 1) {
+      const id = (await as(imam, 'createServiceRequest', {
+        mosqueId: mosque.id, title: `عملٌ إضافيّ ${at + 1}`, category: 'other',
+        description: 'وصفٌ كافٍ لهذا الاحتياج حتى يفهمه من يقرؤه في المسجد.',
+      })).objectId;
+      await as(salim, 'expressInterest', { requestId: id });
+      await as(imam, 'assignWorker', { requestId: id, workerId: salim.id });
+    }
+
+    const live = await new Parse.Query('ServiceRequests')
+      .equalTo('assignedVolunteerId', salim)
+      .containedIn('status', ['assigned', 'in_progress', 'pending_imam_approval'])
+      .count({ useMasterKey: true });
+    assert.ok(live > 3,
+      `المهامُّ الحيّة ${live} — والحدُّ ثلاثةٌ للمُسنَد وحده، فالتراكم غير واقع`);
+  });
 });
