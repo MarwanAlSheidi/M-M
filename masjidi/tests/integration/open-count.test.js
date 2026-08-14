@@ -1,0 +1,135 @@
+/**
+ * شارةُ «N طلب مفتوح» تعدّ ما لم يُفرَغ منه.
+ *
+ * **العطب المقيس:** كانت `pending_imam_approval` خارج المعدود. وقِيست دورة
+ * الطلب على خادمٍ حقيقي من عين القائم على المسجد:
+ *
+ *     كُلّف المنفّذ        الشارة=1   ·  غيرُ المغلقة فعلاً=1
+ *     بدأ العمل            الشارة=1   ·  غيرُ المغلقة فعلاً=1
+ *     **أُبلغ بالإنجاز**    **الشارة=0** ·  غيرُ المغلقة فعلاً=1
+ *     اعتمده               الشارة=0   ·  غيرُ المغلقة فعلاً=0
+ *
+ * فاللحظةُ التي يصير فيها الطلبُ **بانتظاره هو** هي التي تختفي فيها شارتُه.
+ * يفتح «مساجدي» فيرى مسجداً بلا شيء معلّق، وفي الطابور عملٌ أُنجز ينتظر
+ * معاينته — وينتظر معه متطوّعٌ سمعتُه وساعاتُه موقوفةٌ على ضغطته.
+ *
+ * ولماذا التكامل لا الوحدة: العدّاد يكتبه `afterSave` باستعلامٍ على القاعدة،
+ * ويقرؤه `getMyMosques` من كائنٍ آخر — سلسلةٌ لا يقيسها إلا خادمٌ حقيقي.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const { startStack, applySchema, unavailableReason } = require('./harness');
+
+const skip = unavailableReason();
+const options = skip ? { skip } : {};
+
+test('شارةُ الطلبات المفتوحة تعدّ ما لم يُفرَغ منه', options, async (t) => {
+  const stack = await startStack();
+  const { Parse } = stack;
+  t.after(() => stack.stop());
+
+  await applySchema(Parse);
+
+  let unique = 0;
+  const tokens = new Map();
+  async function signUp(role, fullName) {
+    const user = new Parse.User();
+    user.set('username', `${role}_${Date.now()}_${++unique}`);
+    user.set('password', 'Integration12345!');
+    user.set('role', role);
+    user.set('fullName', fullName);
+    await user.signUp();
+    tokens.set(user.id, user.getSessionToken());
+    return user;
+  }
+  const as = (user, fn, params = {}) =>
+    Parse.Cloud.run(fn, params, { sessionToken: tokens.get(user.id) });
+
+  const imam = await signUp('imam', 'الشيخ سعيد');
+  const salim = await signUp('volunteer', 'سالم بن راشد');
+
+  const mosque = new (Parse.Object.extend('Mosques'))();
+  mosque.set({
+    externalId: `count_${Date.now()}`, name: 'البلاغ', type: 'جامع',
+    governorate: 'مسقط', wilayat: 'بوشر', isClaimed: true, imamId: imam,
+    lat: 23.6, lng: 58.5, hasLocation: true,
+  });
+  await mosque.save(null, { useMasterKey: true });
+
+  /** الشارة كما يقرؤها صاحبُ المسجد على بطاقته. */
+  const badge = async () => {
+    const mine = await as(imam, 'getMyMosques', {});
+    const card = mine.find((each) => each.id === mosque.id);
+    assert.ok(card, 'المسجد غائبٌ عن «مساجدي» — القياس لم يقع');
+    return card.openRequestsCount;
+  };
+
+  const requestId = (await as(imam, 'createServiceRequest', {
+    mosqueId: mosque.id, title: 'إصلاح إنارة الصحن', category: 'electrical',
+    description: 'إنارة صحن المسجد معطّلة منذ أسبوع ولا يُرى الطريق ليلاً.',
+  })).objectId;
+
+  /* ————— حدودٌ يجب أن تبقى خضراء ————— */
+
+  await t.test('الطلب المنشور يُعدّ', async () => {
+    assert.equal(await badge(), 1, 'نُشر احتياجٌ ولم تعدّه الشارة');
+  });
+
+  await t.test('والمكلَّف يبقى معدوداً', async () => {
+    await as(salim, 'expressInterest', { requestId });
+    await as(imam, 'assignWorker', { requestId, workerId: salim.id });
+    assert.equal(await badge(), 1, 'كُلّف المنفّذ فسقط الطلب من الشارة');
+    await as(salim, 'startWork', { requestId });
+    assert.equal(await badge(), 1, 'بدأ العمل فسقط الطلب من الشارة');
+  });
+
+  /* ————— العطب نفسه ————— */
+
+  await t.test('وما ينتظر معاينةَ صاحبِ المسجد يُعدّ — وهو أولى', async () => {
+    await as(salim, 'markWorkDone', { requestId, notes: 'أُصلحت الإنارة' });
+    assert.equal(await badge(), 1,
+      'صار الطلبُ بانتظار صاحب المسجد فاختفى من شارته — وهي اللحظة التي يلزمه فيها');
+  });
+
+  await t.test('ثمّ يُغلق بالاعتماد فتخلو الشارة', async () => {
+    await as(imam, 'completeService', { requestId, rating: 5, volunteerHours: 2 });
+    assert.equal(await badge(), 0, 'اعتُمد العمل وبقي معدوداً مفتوحاً');
+  });
+
+  await t.test('والملغى لا يُعدّ كذلك', async () => {
+    const second = (await as(imam, 'createServiceRequest', {
+      mosqueId: mosque.id, title: 'دهان السور', category: 'paint',
+      description: 'سور المسجد بحاجةٍ إلى دهانٍ بعد الشتاء، والطلاء متقشّر.',
+    })).objectId;
+    assert.equal(await badge(), 1, 'الطلب الثاني لم يُعدّ');
+
+    await as(imam, 'cancelServiceRequest', { requestId: second });
+    assert.equal(await badge(), 0, 'أُلغي الطلب وبقي معدوداً مفتوحاً');
+  });
+
+  /*
+   * **ولا تُخترع فرصةٌ للمتطوّع** — العدّاد تصفيةٌ أوّلية في «الفرص»، ثم
+   * تُستعلَم الطلبات بـ`open_for_volunteers` وحدها. فمسجدٌ كلُّ ما فيه طلبٌ
+   * ينتظر الاعتماد يدخل المرشّحين ويخرج بلا فرصة — مرشَّحٌ زائد لا فرصةٌ كاذبة.
+   */
+  await t.test('ولا يرى المتطوّع فرصةً في عملٍ ينتظر الاعتماد', async () => {
+    const third = (await as(imam, 'createServiceRequest', {
+      mosqueId: mosque.id, title: 'تنظيف الخزّان', category: 'cleaning',
+      description: 'خزّان المسجد بحاجةٍ إلى تنظيفٍ قبل الصيف، ولم يُنظَّف منذ سنة.',
+    })).objectId;
+    await as(salim, 'expressInterest', { requestId: third });
+    await as(imam, 'assignWorker', { requestId: third, workerId: salim.id });
+    await as(salim, 'startWork', { requestId: third });
+    await as(salim, 'markWorkDone', { requestId: third, notes: 'تمّ' });
+
+    assert.equal(await badge(), 1, 'المنتظِرُ للاعتماد غير معدود');
+
+    const nearby = await as(salim, 'getNearbyOpportunities', {
+      lat: 23.6, lng: 58.5, radiusKm: 5,
+    });
+    assert.deepEqual(nearby.map((row) => row.title), [],
+      `عُرضت فرصةٌ على عملٍ لا يقبل متطوّعاً: ${JSON.stringify(nearby.map((r) => r.title))}`);
+  });
+});

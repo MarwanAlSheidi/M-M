@@ -189,7 +189,28 @@ Parse.Cloud.beforeSave('Transactions', async (request) => {
   }
 });
 
-/** عدّاد الطلبات المفتوحة للعرض السريع في الخريطة. */
+/**
+ * عدّاد الطلبات المفتوحة — وهو شارةُ القائم على المسجد.
+ *
+ * **العطب المقيس:** كانت `pending_imam_approval` خارج المعدود، فقِيست دورة
+ * الطلب على خادمٍ حقيقي من عين صاحب المسجد:
+ *
+ *     كُلّف المنفّذ          الشارة=1
+ *     بدأ العمل              الشارة=1
+ *     **أُبلغ بالإنجاز**      **الشارة=0**   ← وغيرُ المغلقة فعلاً 1
+ *     اعتمده                 الشارة=0
+ *
+ * فاللحظةُ التي يصير فيها الطلبُ **بانتظاره هو** هي اللحظة التي تختفي فيها
+ * شارتُه: يفتح «مساجدي» فيرى مسجداً بلا شيء معلّق، وفي الطابور عملٌ أُنجز
+ * ينتظر معاينته — وينتظر معه متطوّعٌ سمعتُه وساعاتُه موقوفةٌ على ضغطته.
+ *
+ * وطلبٌ بانتظار الاعتماد **ليس مغلقاً**: لا يُحسب مفتوحاً لأنه يقبل متطوّعين
+ * — لا يقبلهم — بل لأنّ أحداً لم يفرغ منه بعد.
+ *
+ * ولا يُفسد ذلك «الفرص»: `getNearbyOpportunities` تستعمل العدّاد **تصفيةً
+ * أوّلية** ثم تستعلم الطلبات بـ`open_for_volunteers` وحدها، فمسجدٌ يدخل
+ * المرشّحين بطلبٍ ينتظر الاعتماد يخرج بلا فرصة — مرشَّحٌ زائد لا فرصةٌ كاذبة.
+ */
 Parse.Cloud.afterSave('ServiceRequests', async (request) => {
   const serviceRequest = request.object;
   const previous = request.original ? request.original.get('status') : null;
@@ -200,7 +221,8 @@ Parse.Cloud.afterSave('ServiceRequests', async (request) => {
 
   const openCount = await new Parse.Query('ServiceRequests')
     .equalTo('mosqueId', mosquePointer)
-    .containedIn('status', ['pending_funding', 'open_for_volunteers', 'funded', 'assigned', 'in_progress'])
+    .containedIn('status', ['pending_funding', 'open_for_volunteers', 'funded',
+      'assigned', 'in_progress', 'pending_imam_approval'])
     .count({ useMasterKey: true });
 
   const mosque = await mosquePointer.fetch({ useMasterKey: true });
