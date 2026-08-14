@@ -259,6 +259,17 @@ export function Auth({ onDone }) {
             <Field label="رقم الهاتف" value={form.phone} onChange={set('phone')} inputMode="tel" />
             {/* لا `ROLES`: تلك تُترجم دوراً مخزَّناً فتشمل `admin`، وهذه تُختار */}
             <Field label="الصفة" value={form.role} onChange={set('role')} options={api.SIGNUP_ROLES} />
+            {/*
+              ومن يقرأ «قائم على مسجد» يسأل: أهذا أنا؟ فيُقال له.
+              وصفتُه الدقيقة تُختار عند التسجيل على المسجد لا هنا — فالحسابُ
+              واحدٌ للثلاثة، والصلاحيات واحدة.
+            */}
+            {form.role === 'imam' && (
+              <p className="hint">
+                إمامُ المسجد أو وكيلُه أو مساعدُ الإمام — وتُحدَّد صفتُك بالضبط
+                عند تسجيلك على المسجد.
+              </p>
+            )}
 
             <Field label="المحافظة" value={form.governorate} onChange={set('governorate')}
               options={{ '': '— اختر —', ...Object.fromEntries(api.GOVERNORATES.map((g) => [g, g])) }} />

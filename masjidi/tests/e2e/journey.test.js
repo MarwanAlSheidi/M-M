@@ -109,7 +109,12 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     });
     await signUpVia(khalid, { username: `khalid_${stamp}`, fullName: 'خالد بن سيف', role: 'volunteer' });
 
-    assert.match(await imam.locator('header .who').innerText(), /إمام مسجد/);
+    /*
+     * **قائمٌ على مسجد، لا إمامٌ بالضرورة.** وكيلُ المسجد ومساعدُ الإمام
+     * يسجّلان بهذا الدور نفسه، وكان اسمُه «إمام مسجد» فيُجبَران على إعلان
+     * إمامةٍ ليست لهما — في ترويسة كلّ شاشة.
+     */
+    assert.match(await imam.locator('header .who').innerText(), /قائم على مسجد/);
   });
 
   // المسجد وملكيته يُهيّآن بالمفتاح الرئيسي: مسار طلب الملكية له اختباره في

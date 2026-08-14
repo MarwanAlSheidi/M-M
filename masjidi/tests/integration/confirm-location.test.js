@@ -168,7 +168,7 @@ test('تثبيت موقع المسجد', options, async (t) => {
 
     await assert.rejects(
       as(volunteer, 'confirmMosqueLocation', { mosqueId: mosque.id, lat: 23.61, lng: 58.51 }),
-      /لأئمة المساجد فقط/,
+      /للقائمين على المساجد فقط/,
     );
   });
 

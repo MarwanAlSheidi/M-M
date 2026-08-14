@@ -9,7 +9,7 @@ const ROLES = ['imam', 'volunteer', 'donor', 'contractor', 'admin'];
  * واجهة عربية، وتكشف تسمية داخلية لا تعني قارئها شيئاً.
  */
 const ROLE_LABEL = {
-  imam: 'أئمة المساجد',
+  imam: 'القائمين على المساجد',
   volunteer: 'المتطوّعين',
   donor: 'المتبرّعين',
   contractor: 'شركات الخدمات المعتمدة',

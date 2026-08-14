@@ -114,6 +114,53 @@ test('المنازعة تبلغ عين المشرف', options, async (t) => {
     assert.equal(/\*\*|contested/.test(said), false, `نصٌّ غير مقروء: «${said}»`);
   });
 
+  /*
+   * ووكيلُ المسجد لا يُنادى إماماً.
+   *
+   * التسجيل على مسجدٍ يلزمه الدور `imam`، وكان اسمُه المعروض «إمام مسجد» —
+   * فوكيلُ المسجد ومساعدُ الإمام **يُجبَران أن يعلنا إمامةً ليست لهما**. وقِيس
+   * في متصفّح على وكيلٍ سجّل حسابه:
+   *
+   *     حسابي:    «الصفة: إمام مسجد»
+   *     الترويسة: «سالم الوكيل · إمام مسجد»   ← في كلّ شاشة
+   *
+   * وهو الكذبُ نفسه الذي وُضعت `CAPACITIES` لتمنعه — أسبقُ منه وأظهر: الصفةُ
+   * الدقيقة مدفونةٌ في نموذجٍ واحد، وهذا في الترويسة دائماً.
+   */
+  await t.test('ووكيلُ المسجد لا يُنادى إماماً', async () => {
+    const agent = await browser.newUserPage();
+    await agent.goto(site.url, { waitUntil: 'networkidle' });
+    await agent.getByRole('button', { name: /سجّل الآن/ }).click();
+    await agent.getByLabel('اسم المستخدم').fill(`wk${stamp}`);
+    await agent.getByLabel('كلمة المرور').fill(PASSWORD);
+    await agent.getByLabel('الاسم الكامل').fill('سالم الوكيل');
+    await agent.selectOption('select', 'imam');
+
+    // ومن يقرأ «قائم على مسجد» يسأل: أهذا أنا؟ فيُقال له قبل أن يختار
+    // `main` لا تُركَّب قبل الدخول — الهيكل كلُّه بعده. فيُقرأ نصُّ النموذج
+    const hint = await agent.locator('body').innerText();
+    assert.match(hint, /وكيلُه|وكيله/,
+      `لا يعرف الوكيل أنّ هذا بابُه:\n${hint.slice(0, 400)}`);
+
+    await agent.getByRole('button', { name: 'إنشاء حساب' }).click();
+    await agent.waitForSelector('nav.tabs');
+
+    const who = await agent.locator('header .who').innerText();
+    assert.equal(/إمام مسجد/.test(who), false,
+      `أُعلنت للوكيل إمامةٌ ليست له في ترويسة كلّ شاشة: «${who}»`);
+
+    await agent.getByRole('button', { name: 'حسابي' }).click();
+    await agent.waitForSelector('.card');
+    const profile = await agent.locator('.card').first().innerText();
+    assert.equal(/الصفة: إمام مسجد/.test(profile), false,
+      `أُعلنت للوكيل إمامةٌ ليست له في حسابه: «${profile}»`);
+    // **ولا اسمَ برمجيّ مكانها** — الحدّ الذي يمنع أن يكون العلاجُ حذفاً
+    assert.match(profile, /الصفة: قائم على مسجد/,
+      `صفةٌ ناقصة أو برمجية: «${profile}»`);
+
+    await agent.close();
+  });
+
   await t.test('وما لم ينازعه أحدٌ يبقى بلا تحذير', async () => {
     const quietCard = cardFor('مسجد الفتح');
     assert.ok(await quietCard.count() > 0, 'الطلب الهادئ غائبٌ عن الطابور');
