@@ -293,6 +293,46 @@ test('لا انتقالَ صامتاً على صاحبه', options, async (t) =>
       `نودي الجامع «مسجد جامع البلاغ»: «${imamSeen}»`);
   });
 
+  /*
+   * وأقربُ الناس إلى العمل يُبلَّغ به.
+   *
+   * `CLAUDE.md` يقول نصّاً: **«لا تبنِ مساراً يعتمد على وصول الدفع وحده»** —
+   * و`Parse.Push` لا يصل اليوم (لا Installation مسجَّل). وكان الإشعار القريب
+   * وحده `{ store: false }`، فقِيس على خادمٍ حقيقي: متطوّعٌ موقعُه **نقطةُ
+   * المسجد نفسها**، ثم نُشر احتياجٌ تطوّعيّ فيه — **ووارده فارغ**. فيُبلَّغ
+   * المتبرّع الذي ضغط «هذا مسجدي»، ولا يُبلَّغ من يستطيع العمل ويقف عنده.
+   */
+  await t.test('وأقربُ متطوّعٍ إلى المسجد يُبلَّغ بالفرصة', async () => {
+    const near = await signUp('volunteer', 'قريبُ الدار');
+    // بالمسار الحقيقي: `lastLat`/`lastLng` تكتبهما المنصّة لا العميل
+    await as(near, 'updateMyLocation', { lat: 23.6, lng: 58.5 });
+
+    // ومتطوّعٌ بعيد — **حدٌّ يجب أن يبقى أخضر**
+    const far = await signUp('volunteer', 'بعيدُ الدار');
+    await as(far, 'updateMyLocation', { lat: 17.0, lng: 54.1 });
+
+    const before = (await inbox(near)).length;
+    await newRequest('تنظيف مواضئ المسجد');
+
+    const after = await inbox(near);
+    assert.ok(after.length > before,
+      `أقربُ متطوّعٍ إلى العمل لم يُبلَّغ به: ${JSON.stringify(after)}`);
+    assert.match(after[0], /فرصة تطوّع/, `أُخبر بغير ما وقع: «${after[0]}»`);
+    assert.match(after[0], /تنظيف مواضئ المسجد/, 'فرصةٌ بلا ذكر ما هي');
+
+    assert.deepEqual(await inbox(far), [],
+      'أُزعج متطوّعٌ على بُعد سبعمئة كيلومتر بفرصةٍ لا تعنيه');
+  });
+
+  await t.test('ولا يُنفق البثُّ الباقةَ — عشرون لا خمسمئة', async () => {
+    const cap = require('node:fs')
+      .readFileSync(require('node:path').join(__dirname, '..', '..', 'cloud', 'lib', 'push.js'), 'utf8')
+      .match(/const NEARBY_CAP = (\d+);/);
+    assert.ok(cap, 'لم يُستخرج حدُّ القريبين — الأداة عمياء');
+    assert.ok(Number(cap[1]) <= 20,
+      `حدُّ القريبين ${cap[1]} — والحجّة التي أسقطت الحفظ كانت الباقة`);
+  });
+
   await t.test('ولا يصل خبرُ أحدٍ إلى غيره', async () => {
     // الوارد صفٌّ لكل مستهدَف، فخطأٌ في `userId` يُسرّب حركة مسجدٍ إلى غريب
     const seen = await inbox(khalid);

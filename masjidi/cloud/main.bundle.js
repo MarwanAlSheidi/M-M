@@ -255,6 +255,17 @@ async function pushToUsers(users, payload, options = {}) {
 }
 
 
+/**
+ * كم متطوّعاً يُبلَّغ بفرصةٍ واحدة.
+ *
+ * كان البثّ يجمع خمسمئة ثم **لا يحفظ لأحد** — والحجّة الباقة: خمسمئة سطر عند
+ * كل طلب. والحجّة صحيحة، **والنتيجة أنّ أحداً لا يُبلَّغ أصلاً**.
+ *
+ * وعملُ صيانةٍ في مسجدٍ يحتاج متطوّعاً واحداً لا خمسمئة. فالعشرون الأقربُ
+ * سخاءٌ لا شحّ، **وتُكتب في دفعةٍ واحدة** (`saveAll` يجمع عشرين في طلب).
+ */
+const NEARBY_CAP = 20;
+
 /** متطوعون قريبون: نطاق جغرافي أولاً، ثم المحافظة كخطة بديلة. */
 async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
   const base = new Parse.Query(Parse.User);
@@ -279,12 +290,13 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
       volunteers = geo
         .sortByDistance(await near.find({ useMasterKey: true }), lat, lng, radiusKm,
           'lastLat', 'lastLng')
+        .slice(0, NEARBY_CAP)
         .map(({ row }) => row);
     }
 
     if (volunteers.length === 0) {
       base.equalTo('governorate', mosque.get('governorate'));
-      base.limit(500);
+      base.limit(NEARBY_CAP);
       volunteers = await base.find({ useMasterKey: true });
     }
   } catch (error) {
@@ -294,10 +306,22 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
     return { stored: 0, pushed: 0, failed: true };
   }
 
-  // البثّ لا يُحفظ: خمسمائة سطر عند كل طلب جديد تُنهك باقة الطلبات، والفرصة
-  // القريبة لها قناتها أصلاً — `getNearbyOpportunities` يراها المتطوّع متى فتح
-  // التطبيق. الحفظ للموجَّه الذي لا بديل له.
-  return pushToUsers(volunteers, payload, { store: false });
+  /*
+   * **ويُحفظ في الوارد.**
+   *
+   * كان `{ store: false }` والحجّة أنّ للفرصة قناتَها — «الفرص» يفتحها
+   * المتطوّع متى شاء. لكنّ `CLAUDE.md` يقول نصّاً: **«لا تبنِ مساراً يعتمد
+   * على وصول الدفع وحده»**، و`Parse.Push` لا يصل اليوم أصلاً — لا Installation
+   * مسجَّل. فكان هذا المسار الوحيد الذي يخالف القاعدة.
+   *
+   * وقِيس على خادمٍ حقيقي: متطوّعٌ موقعُه **نقطةُ المسجد نفسها** (`lastLat`
+   * و`lastLng` مكتوبان بـ`updateMyLocation`)، ثم نُشر احتياجٌ تطوّعيّ في ذلك
+   * المسجد — **ووارده فارغ**. فمن هو أقرب الناس إلى العمل لا يعلم به حتى يفتح
+   * التطبيق من تلقاء نفسه، بينما يُبلَّغ المتبرّع الذي ضغط «هذا مسجدي».
+   *
+   * والباقةُ محفوظة: العشرون الأقربُ لا الخمسمئة، ودفعةٌ واحدة لكلّها.
+   */
+  return pushToUsers(volunteers, payload);
 }
 
 /**

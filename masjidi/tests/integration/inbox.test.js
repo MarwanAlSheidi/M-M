@@ -111,16 +111,23 @@ test('صندوق الوارد على خادم حقيقي', options, async (t) =>
     assert.match(box.items[0].body, /سُحب تكليفك/);
   });
 
-  await t.test('البثّ الواسع لا يُخزَّن', async () => {
+  /*
+   * **قرارٌ نُقض بقياس.** كان البثّ القريب لا يُخزَّن حفظاً للباقة، فكانت
+   * النتيجة أنّ أحداً لا يُبلَّغ: `Parse.Push` لا يصل — لا Installation
+   * مسجَّل — و`CLAUDE.md` ينهى نصّاً عن مسارٍ يعتمد على وصوله وحده.
+   * فصار يُحفظ للعشرين الأقربَ لا للخمسمئة.
+   */
+  await t.test('والبثّ القريب يبلغ أقربَ المتطوّعين', async () => {
     await as(nearby, 'updateMyLocation', { lat: 23.601, lng: 58.501 });
     const before = (await as(nearby, 'getMyNotifications')).items.length;
 
     await as(imam, 'createServiceRequest',
       { mosqueId: mosque.id, title: 'تنظيف السجاد', description: 'قبل صلاة الجمعة' });
 
-    const after = (await as(nearby, 'getMyNotifications')).items.length;
-    assert.equal(after, before,
-      'سطرٌ لكل متطوّع قريب عند كل طلب يُنهك باقة الطلبات — والفرصة لها قناتها');
+    const seen = (await as(nearby, 'getMyNotifications')).items;
+    assert.ok(seen.length > before,
+      'نُشرت فرصةٌ ولم تبلغ أقربَ متطوّعٍ إليها — والدفع لا يصل اليوم');
+    assert.match(seen[0].body, /فرصة تطوّع/, `أُخبر بغير ما وقع: «${seen[0].body}»`);
   });
 
   await t.test('الوارد لا يُقرأ بتجاوز دالة السحابة', async () => {
