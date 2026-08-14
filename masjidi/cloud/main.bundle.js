@@ -1823,7 +1823,7 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
     locationLearned,
     locationRejected,
     ...(locationRejected ? {
-      message: 'اعتُمد الإمام، ولم يُعتمد الموقع المُرسل — بعيدٌ عن مساجد الولاية. '
+      message: 'اعتُمد تسجيلك، ولم يُعتمد الموقع المُرسل — بعيدٌ عن مساجد الولاية. '
         + 'المسجد يبقى مجهول الموقع حتى يثبّته إمامه من عنده.',
     } : {}),
   };
@@ -2146,7 +2146,7 @@ Parse.Cloud.define('expressInterest', async (request) => {
     });
   }
 
-  return { interestId: interest.id, message: 'سُجّل اهتمامك، والإمام يختار المنفّذ.' };
+  return { interestId: interest.id, message: 'سُجّل اهتمامك، والقائم على المسجد يختار المنفّذ.' };
 });
 
 /** سحب الاهتمام قبل الاختيار. */
@@ -2738,7 +2738,7 @@ Parse.Cloud.define('completeService', async (request) => {
   if (worker) {
     const hours = serviceRequest.get('volunteerHours');
     await pushToUsers(worker, {
-      alert: `اعتمد الإمام عملك في "${serviceRequest.get('title')}" — بارك الله فيك.`
+      alert: `اعتُمد عملك في "${serviceRequest.get('title')}" — بارك الله فيك.`
         + (hours > 0 ? ` وسُجّلت لك ${hours} ساعة تطوّع.` : ''),
       requestId: serviceRequest.id,
     });

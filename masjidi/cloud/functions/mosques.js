@@ -760,7 +760,7 @@ Parse.Cloud.define('reviewMosqueClaim', async (request) => {
     locationLearned,
     locationRejected,
     ...(locationRejected ? {
-      message: 'اعتُمد الإمام، ولم يُعتمد الموقع المُرسل — بعيدٌ عن مساجد الولاية. '
+      message: 'اعتُمد تسجيلك، ولم يُعتمد الموقع المُرسل — بعيدٌ عن مساجد الولاية. '
         + 'المسجد يبقى مجهول الموقع حتى يثبّته إمامه من عنده.',
     } : {}),
   };

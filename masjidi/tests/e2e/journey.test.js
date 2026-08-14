@@ -388,7 +388,7 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     await khalid.waitForSelector('text=صورة مختارة');
 
     await khalid.getByRole('button', { name: 'أنجزتُ العمل' }).click();
-    await khalid.waitForSelector('text=بانتظار معاينة الإمام');
+    await khalid.waitForSelector('text=بانتظار معاينة القائم على المسجد');
     });
   });
 
@@ -529,7 +529,7 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
     // حقيقي: وارده بعد الاعتماد كما هو قبله، ورقمُه أعلاه صار 1.
     await khalid.getByRole('button', { name: /التنبيهات/ }).click();
     await khalid.waitForSelector('.card');
-    assert.match(await khalid.locator('main').innerText(), /اعتمد الإمام عملك/,
+    assert.match(await khalid.locator('main').innerText(), /اعتُمد عملك/,
       'قُيِّم المتطوّع ولم يبلغه خبرُ اعتماد عمله');
     });
   });
@@ -544,7 +544,7 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       const entries = (await imam.locator('.card').allInnerTexts()).join('\n');
       // الرحلة كاملةً جرت على هذا المسجد، فليكن أثرها فيه
       for (const expected of ['طلب صيانة جديد', 'كُلّف منفّذ بالعمل',
-        'سُحب التكليف وعاد الطلب متاحاً', 'اعتمد الإمام العمل']) {
+        'سُحب التكليف وعاد الطلب متاحاً', 'اعتُمد العمل']) {
         assert.ok(entries.includes(expected), `«${expected}» غائبة عن السجلّ`);
       }
       // بالعربية لا بأسماء الأفعال البرمجية
@@ -647,8 +647,8 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
       await heir.getByLabel('اسم المسجد').fill('جامع الرحمة');
       await heir.getByRole('button', { name: 'بحث' }).click();
       // المسجَّل كان بلا زرٍّ أصلاً — فلا طريق لخَلَف الإمام ولو فُتح الخادم
-      await heir.waitForSelector('button:has-text("أطلب نقل الإمامة")');
-      await heir.getByRole('button', { name: /أطلب نقل الإمامة/ }).first().click();
+      await heir.waitForSelector('button:has-text("أطلب نقل الإشراف")');
+      await heir.getByRole('button', { name: /أطلب نقل الإشراف/ }).first().click();
       await heir.waitForSelector('.notice');
       assert.match(await heir.locator('.notice').innerText(), /طلب نقل/,
         'قيل له «سيُراجع خلال أيام عمل» — ومراجعةُ النقل ليست كذلك');
@@ -835,7 +835,7 @@ test('الرحلة كاملة في متصفّح', options, async (t) => {
         async () => await page.locator('.notice').count() === 0);
 
       await page.getByRole('button', { name: 'سجلّ المسجد' }).click();
-      await page.waitForSelector('text=صوّب إمام المسجد موقعه');
+      await page.waitForSelector('text=صُوّب موقع المسجد');
       assert.match(await page.locator('main').innerText(), /من 22\.93/,
         'السجلّ يقول «صُوّب» ولا يقول ماذا كان — فلا يُراجَع');
     });

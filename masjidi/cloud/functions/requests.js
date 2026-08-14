@@ -238,7 +238,7 @@ Parse.Cloud.define('expressInterest', async (request) => {
     });
   }
 
-  return { interestId: interest.id, message: 'سُجّل اهتمامك، والإمام يختار المنفّذ.' };
+  return { interestId: interest.id, message: 'سُجّل اهتمامك، والقائم على المسجد يختار المنفّذ.' };
 });
 
 /** سحب الاهتمام قبل الاختيار. */
@@ -830,7 +830,7 @@ Parse.Cloud.define('completeService', async (request) => {
   if (worker) {
     const hours = serviceRequest.get('volunteerHours');
     await pushToUsers(worker, {
-      alert: `اعتمد الإمام عملك في "${serviceRequest.get('title')}" — بارك الله فيك.`
+      alert: `اعتُمد عملك في "${serviceRequest.get('title')}" — بارك الله فيك.`
         + (hours > 0 ? ` وسُجّلت لك ${hours} ساعة تطوّع.` : ''),
       requestId: serviceRequest.id,
     });

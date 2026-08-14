@@ -148,3 +148,65 @@ test('لا يُقال للمستخدم إنّ المسجد يُملَك', async 
       `لغةُ تملُّكٍ فيما يُعرض — والمساجد للأوقاف:\n${offenders.join('\n')}`);
   });
 });
+
+/**
+ * ولا يُنادى القائمُ على المسجد إماماً وهو وكيلٌ أو مساعد.
+ *
+ * صُحّح اسمُ الدور، وبقيت الجُمل: «بانتظار اعتماد الإمام» يقرؤها المنفّذ،
+ * و«اعتمد الإمام العمل» يقرؤها المصلّي في سجلّ المسجد، و«إمام المسجد» على
+ * بطاقة التواصل — **يقرؤها منفّذٌ على وشك أن يهاتفه**، فيُناديه بما ليس له.
+ *
+ * والاستثناءُ مكتوبٌ لا مسكوتٌ عنه: `CAPACITIES` تُسمّي الصفات الثلاث قصداً،
+ * وهي الموضع الوحيد الذي يُقال فيه «إمام المسجد» — لأنه اختيارُ صاحبه.
+ */
+test('لا يُنادى القائمُ على المسجد إماماً', async (t) => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+
+  const speech = (rel) => read(rel)
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => '\n'.repeat((block.match(/\n/g) || []).length))
+    .split('\n')
+    .map((line) => line.replace(/\/\/.*$/, ''));
+
+  const FILES = [
+    'app/src/api.js', 'app/src/screens.jsx', 'app/src/errors.js',
+    'cloud/functions/requests.js', 'cloud/functions/mosques.js',
+    'cloud/functions/users.js', 'cloud/lib/auth.js', 'cloud/lib/worker.js',
+  ];
+
+  /** مواضع تُسمّي الصفة قصداً — ولكلٍّ سببُه. */
+  const ALLOWED = [
+    // جدولا الصفات: «إمام المسجد» فيهما اختيارٌ يختاره صاحبه لا وصفٌ يُفرض عليه
+    /CAPACITIES = \{/,
+    /imam: 'إمام المسجد'/,
+    /assistant: 'مساعد الإمام'/,
+    // ونصُّ الرفض يعدّد الصفات الثلاث ليعرف المخطئ ما المقبول
+    /الصفة: إمام المسجد أو وكيله أو مساعده/,
+    // والدلالة تحت اختيار الدور: تقول للوكيل إنّ هذا بابُه
+    /إمامُ المسجد أو وكيلُه أو مساعدُ الإمام/,
+  ];
+
+  await t.test('الأداة ترى ما تبحث عنه', () => {
+    assert.match("'اعتمد الإمام العمل'", /الإمام|إمام المسجد/);
+    for (const rel of FILES) {
+      assert.ok(speech(rel).join('\n').length > 400, `${rel}: قُرئ ناقصاً — الأداة عمياء`);
+    }
+    // وضابطٌ يمنع أن يبتلع الاستثناءُ كلَّ شيء
+    assert.equal(ALLOWED.some((each) => each.test("'اعتمد الإمام العمل'")), false,
+      'الاستثناء يبتلع جملةً ليست منه');
+  });
+
+  await t.test('ولا جملةَ تفترض إمامةً فيما يُعرض', () => {
+    const offenders = [];
+    for (const rel of FILES) {
+      speech(rel).forEach((line, at) => {
+        if (!/الإمام|إمام المسجد|الأئمة/.test(line)) return;
+        if (ALLOWED.some((each) => each.test(line))) return;
+        offenders.push(`${rel}:${at + 1} ${line.trim().slice(0, 70)}`);
+      });
+    }
+    assert.deepEqual(offenders, [],
+      `جُملٌ تفترض إمامةً — والمسجَّل قد يكون وكيلاً أو مساعداً:\n${offenders.join('\n')}`);
+  });
+});

@@ -105,7 +105,7 @@ test('لا انتقالَ صامتاً على صاحبه', options, async (t) =>
 
     assert.ok(after.length > before.length,
       `وارد المتطوّع لم يتغيّر بالاعتماد: ${JSON.stringify(after)}`);
-    assert.match(after[0], /اعتمد الإمام عملك/);
+    assert.match(after[0], /اعتُمد عملك/);
     // الساعات تُسجَّل ولا تُقال — وهي ما يبقى للمتطوّع من عمله
     assert.match(after[0], /3 ساعة/, 'سُجّلت ساعاته ولم يُخبَر بها');
 
@@ -127,7 +127,7 @@ test('لا انتقالَ صامتاً على صاحبه', options, async (t) =>
     await as(imam, 'completeService', { requestId, rating: 4 });
 
     const seen = await inbox(company);
-    assert.ok(seen.some((body) => /اعتمد الإمام عملك/.test(body)),
+    assert.ok(seen.some((body) => /اعتُمد عملك/.test(body)),
       `وارد الشركة بلا خبر الاعتماد: ${JSON.stringify(seen)}`);
     // ولا تُقال ساعات تطوّع لمن لم تُسجَّل له
     assert.ok(!seen.some((body) => /ساعة تطوّع/.test(body)));
@@ -296,7 +296,7 @@ test('لا انتقالَ صامتاً على صاحبه', options, async (t) =>
   await t.test('ولا يصل خبرُ أحدٍ إلى غيره', async () => {
     // الوارد صفٌّ لكل مستهدَف، فخطأٌ في `userId` يُسرّب حركة مسجدٍ إلى غريب
     const seen = await inbox(khalid);
-    assert.equal(seen.some((body) => /اعتمد الإمام عملك/.test(body)), false,
+    assert.equal(seen.some((body) => /اعتُمد عملك/.test(body)), false,
       'وصل خالداً خبرُ اعتماد عملٍ ليس له');
     assert.equal(seen.some((body) => /بدأ العمل/.test(body)), false);
   });

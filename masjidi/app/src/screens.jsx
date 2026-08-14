@@ -279,7 +279,7 @@ export function Auth({ onDone }) {
                 <label>مهاراتك</label>
                 <SkillPicker value={skills} onChange={setSkills} />
                 <p className="hint">
-                  الإمام يرى مهاراتك عند اختيار المنفّذ — واتركها فارغة إن شئت.
+                  القائم على المسجد يرى مهاراتك عند اختيار المنفّذ — واتركها فارغة إن شئت.
                 </p>
               </>
             )}
@@ -926,7 +926,7 @@ export function MyTasks() {
               )}
               {row.status === 'pending_imam_approval' && (
                 <>
-                  <p>بانتظار معاينة الإمام واعتماده.</p>
+                  <p>بانتظار معاينة القائم على المسجد واعتماده.</p>
                   {/* بلا وسم تأخّر: لم يُوعَد المتطوّع بمدّةٍ للاعتماد، وحدٌّ
                       مخترَع يصير عُرفاً ويُخوّف بلا وجه حقّ */}
                   <Waited since={row.workDoneAt} label="أبلغتَ بالإنجاز"
@@ -948,7 +948,7 @@ export function MyTasks() {
               <div className="spread">
                 <h3>{row.requestTitle}</h3>
                 <span className={`tag ${row.status === 'active' ? '' : 'off'}`}>
-                  {row.status === 'active' ? 'بانتظار اختيار الإمام'
+                  {row.status === 'active' ? 'بانتظار اختيار القائم على المسجد'
                     : row.status === 'withdrawn' ? 'مسحوب' : 'أُغلق'}
                 </span>
               </div>
@@ -1284,7 +1284,7 @@ function Counterpart({ contact }) {
 
   return (
     <p className="notice" data-testid="counterpart">
-      {contact.role === 'imam' ? 'إمام المسجد' : 'المنفّذ'}: {contact.name}
+      {contact.role === 'imam' ? 'القائم على المسجد' : 'المنفّذ'}: {contact.name}
       {contact.phone && <> · <a href={`tel:${contact.phone}`}>{contact.phone}</a></>}
     </p>
   );
@@ -1549,7 +1549,7 @@ export function ClaimMosque() {
           */}
           {mosque.isClaimed ? (
             <button className="link" onClick={() => claim(mosque)}>
-              هذا مسجدي وأنا إمامه الآن — أطلب نقل الإمامة
+              هذا مسجدي وأنا القائم عليه الآن — أطلب نقل الإشراف
             </button>
           ) : (
             <button className="ghost" onClick={() => claim(mosque)}>

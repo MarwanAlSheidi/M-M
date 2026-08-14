@@ -132,7 +132,7 @@ test('انتقال المسجد بين الأئمّة', options, async (t) => {
     assert.equal(row.currentImamPhone, '90000001', 'ولا سبيل للاتصال بمن يُنزع منه');
   });
 
-  await t.test('والاعتماد ينقل الإمامة ويُخبر السابق', async () => {
+  await t.test('والاعتماد ينقل الإشراف ويُخبر السابق', async () => {
     const before = (await inboxOf(departed)).length;
     await as(admin, 'reviewMosqueClaim', { claimId, approve: true });
 
