@@ -34,13 +34,23 @@ npm run verify            # الطبقات الخمس — ويسقط إن تُخ
 التفصيل وترتيبه في [`docs/DEPLOY.md`](./docs/DEPLOY.md). وهذه الخريطة وحدها:
 
 ```bash
-cp .env.example .env                 # مفاتيح Back4app
-npm run schema                       # الحقول والصلاحيات والفهارس
-# ثم الصق cloud/main.bundle.js في لوحة Cloud Code
-npm run preflight                    # ← اللحظة الحاسمة: يقيس على قاعدتك الحيّة
+cp .env.example .env                 # مفاتيح Back4app — أربعة أسطر
+npm run deploy                       # المخطط ثم محافظةٌ واحدة رخيصة
+# ثم الصق cloud/main.bundle.js في لوحة Cloud Code،
+# وأضف فهرساً **فريداً** على Mosques.externalId من Database → Indexes
 npm run admin -- --username <اسمه>   # أوّل مشرف — بدونه المنصّة معطّلة
+npm run preflight                    # ← اللحظة الحاسمة: يقيس على قاعدتك الحيّة
+```
+
+و`npm run deploy` **يقف عند أوّل سقوط ويقول ما الذي لم يقم** — فلا يمضي إلى ما
+بعد خطوةٍ لم تتمّ. وإعادتُه بلا ثمن: قِيس تشغيلُه مرّتين على خادمٍ حقيقي فبقيت
+المساجد 264 لا 528 (`tests/integration/first-deploy.test.js`). وما يُنفَّذ
+باليد في اللوحة **لا يقول عنه «تمّ»** — يُذكّر به ويترك `preflight` يكشفه.
+
+ولاحقاً، بعد أشهر التشغيل:
+
+```bash
 npm run export                       # نسخةٌ من السجلّ قبل أن يحذفه التقليم
-node scripts/seed_mosques.js --governorate musandam   # ابدأ بمحافظة
 ```
 
 **و`npm run preflight` يبقى أحمر حتى تُنفَّذ الخطوات اليدوية** — وأهمُّها فهرسٌ

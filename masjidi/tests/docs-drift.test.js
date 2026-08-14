@@ -99,13 +99,43 @@ test('الوثائق تقول ما يُنفَّذ', async (t) => {
       'README لا يذكر دليل النشر — فمن يتبعه لا يبلغه');
   });
 
-  await t.test('وأهمُّ الأوامر لمالكٍ جديد مذكورةٌ فيه', () => {
+  /*
+   * وأوامرُ النشر كلُّها مذكورةٌ في الباب الأوّل — **لا ثلاثةٌ منتقاة**.
+   *
+   * كان الحارس قائمةً مكتوبةً باليد (`preflight`, `verify`, `admin`)، فلمّا
+   * أُضيف `npm run deploy` — وهو **أوّلُ ما يُشغّله المالك الجديد** — مرّ
+   * الحارسُ أخضرَ وبقي الأمرُ غائباً عن README وحده، مذكوراً في `DEPLOY.md`
+   * و`CLAUDE.md`. فمن يقرأ الباب الأوّل يتبع الطريق الطويل ولا يعلم بالقصير.
+   *
+   * **فالقائمة تُشتقّ من `package.json` لا تُكتب بجانبه.** وما لا يخصّ مالكاً
+   * جديداً يُستثنى **بسببٍ مكتوب** — كما في `ALLOWED_UNREAD`.
+   */
+  await t.test('وأوامرُ المالك الجديد كلُّها في الباب الأوّل', () => {
     const readme = read('README.md');
-    // `preflight` يقيس ما لم يُقَس (MongoDB)، و`verify` يحرس، و`admin` بدونه
-    // المنصّة معطّلة — وثلاثتها كانت غائبةً عن الباب الأوّل
-    for (const command of ['preflight', 'verify', 'admin']) {
-      assert.match(readme, new RegExp(command), `README بلا ذكرٍ لـ${command}`);
-    }
+    const scripts = Object.keys(
+      JSON.parse(read('package.json')).scripts || {});
+    assert.ok(scripts.length >= 10,
+      `قُرئ ${scripts.length} أمراً — الأداة تقرأ ناقصاً`);
+
+    /** أوامرُ لا يحتاجها من يتسلّم المستودع — ولكلٍّ سببُه. */
+    const NOT_FOR_OWNER = {
+      // طبقاتُ الفحص تُشغَّل بـ`npm run verify` وحده، وهو مذكور
+      test: 'يُشغَّل ضمن verify',
+      lint: 'يُشغَّل ضمن verify',
+      'test:integration': 'يُشغَّل ضمن verify',
+      'test:e2e': 'يُشغَّل ضمن verify',
+      // تنظيف البيانات جرى مرّةً واحدة، وناتجُه في المستودع
+      'clean:data': 'البيانات منظّفةٌ ومحفوظة في data/',
+      // صيغٌ فرعية من `seed`، وتفصيلُها في DEPLOY لا في الباب الأوّل
+      'seed:dry': 'صيغةٌ فرعية من الاستيراد',
+      'seed:verify': 'صيغةٌ فرعية من الاستيراد',
+      seed: 'يُذكر بصيغته الكاملة `node scripts/seed_mosques.js` في README',
+    };
+
+    const missing = scripts.filter((name) => !NOT_FOR_OWNER[name]
+      && !readme.includes(`run ${name}`));
+    assert.deepEqual(missing, [],
+      `أوامرُ يحتاجها المالك الجديد وليست في الباب الأوّل: ${missing.join('، ')}`);
   });
 
   await t.test('ولا تتناقض وثيقتان في وجه القارئ', () => {
