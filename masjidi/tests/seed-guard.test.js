@@ -115,6 +115,8 @@ test('كلُّ أداةٍ تقول على أي خادمٍ تعمل', async (t) =
     { file: 'apply_schema.js', argv: [] },
     { file: 'promote_admin.js', argv: ['--list'] },
     { file: 'preflight.js', argv: [] },
+    // وأمرُ النشر أولى بها: يمشي الترتيب كلَّه على خادمٍ واحد
+    { file: 'deploy.js', argv: [] },
   ];
 
   for (const tool of TOOLS) {
@@ -130,4 +132,59 @@ test('كلُّ أداةٍ تقول على أي خادمٍ تعمل', async (t) =
       assert.doesNotMatch(output, /APPID0123456789/, 'طُبع معرّف التطبيق كاملاً');
     });
   }
+});
+
+/**
+ * أمرُ النشر يقف عند أوّل سقوط — ويخرج بغير صفر.
+ *
+ * **لماذا يلزم حارسٌ على هذا بالذات:** ثلاثٌ من خطوات النشر لها رمزُ خروجٍ
+ * **يجب أن يُقرأ ولا يُقرأ**. و`apply_schema` يخرج بغير صفر وقد سقط صنفٌ
+ * كامل — فمن مضى إلى ما بعده ترك صنفاً غائباً **يُنشئه أوّلُ من يكتب فيه
+ * بصلاحياتٍ مفتوحة**.
+ *
+ * وقِيس على هذا السكربت نفسه قبل إصلاحه: كتلةُ نصٍّ فيها علامتا اقتباسٍ
+ * متداخلتان صارت **قالباً موسوماً** — تمرّ من `node --check` وتنهار عند
+ * التشغيل، **وتخرج بصفر وهي منهارة**. فالحارس على السلوك لا على الصياغة.
+ */
+test('أمرُ النشر يقف عند أوّل سقوط', async (t) => {
+  const DEPLOY = scriptAt('deploy.js');
+  const runDeploy = (env) => {
+    const result = spawnSync(process.execPath, [DEPLOY], {
+      encoding: 'utf8', timeout: 300000, cwd: path.join(__dirname, '..'), env,
+    });
+    return { ...result, output: `${result.stdout || ''}${result.stderr || ''}` };
+  };
+
+  await t.test('بمفاتيح ناقصة: يُردّ بالعربية ويخرج بغير صفر', () => {
+    const result = runDeploy({
+      ...process.env,
+      PARSE_APP_ID: '', PARSE_MASTER_KEY: '', PARSE_JS_KEY: '', PARSE_SERVER_URL: '',
+    });
+
+    assert.notEqual(result.status, 0, 'مضى بمفاتيح ناقصة');
+    // **لا انهيار**: القالب الموسوم كان يخرج بصفر وهو منهار
+    assert.doesNotMatch(result.output, /is not a function|SyntaxError|TypeError/,
+      `انهار بدل أن يقف: ${result.output.slice(-300)}`);
+    assert.match(result.output, /[؀-ۿ]/, 'ردٌّ بلا عربية');
+    assert.match(result.output, /PARSE_APP_ID/, 'لا يقول أيَّ مفتاحٍ ينقص');
+  });
+
+  await t.test('وبخادمٍ لا يُبلَغ: يقف عند المخطط ولا يمضي إلى الاستيراد', () => {
+    const result = runDeploy({
+      ...process.env,
+      PARSE_APP_ID: 'APPID0123456789',
+      PARSE_MASTER_KEY: 'not-a-real-key',
+      PARSE_JS_KEY: 'js',
+      PARSE_SERVER_URL: 'https://example-app.back4app.com/parse',
+    });
+
+    assert.notEqual(result.status, 0, 'خرج بصفر وقد سقط المخطط');
+    assert.match(result.output, /لم يُطبَّق المخطط/, 'لا يقول ما الذي لم يقم');
+    // **ولا يمضي**: الاستيراد بعد المخطط، فبلوغُه يعني أنّ الوقوف لم يقع
+    assert.doesNotMatch(result.output, /مساجد محافظة/,
+      'مضى إلى الاستيراد بعد سقوط المخطط');
+    // ولا يُنسخ سرٌّ إلى سجلٍّ أو لقطة شاشة
+    assert.doesNotMatch(result.output, /not-a-real-key/, 'طُبع المفتاح الرئيس');
+    assert.doesNotMatch(result.output, /APPID0123456789/, 'طُبع معرّف التطبيق كاملاً');
+  });
 });
