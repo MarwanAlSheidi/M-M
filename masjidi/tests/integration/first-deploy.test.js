@@ -30,6 +30,7 @@ const { execFile } = require('node:child_process');
 
 const { startStack, applySchema, unavailableReason } = require('./harness');
 const integration = require('./harness');
+const { MANUAL_STEPS } = require('../../scripts/lib/manual');
 
 const skip = unavailableReason();
 const options = skip ? { skip } : {};
@@ -73,12 +74,28 @@ test('أوّلُ نشرٍ يُعاد بلا ثمن', options, async (t) => {
     assert.equal(await countMosques(), 264, 'عددُ المساجد بعد أوّل تشغيلة ليس المنتظر');
   });
 
-  await t.test('ولا تقول «تمّ» عمّا لم تفعله', () => {
-    // خطوتان في اللوحة لا في الطرفية — والقاعدة أنّ خطوةً يدويةً تُفحص بأثرها
-    assert.match(first.output, /خطوتان لا يفعلهما هذا الأمر/,
-      'لم يُذكَّر بما بقي في اللوحة');
-    assert.match(first.output, /فهرساً \*\*فريداً\*\*|فهرساً فريداً/,
-      'لم يُذكَر الفهرس الفريد — وهو الحماية الوحيدة قبل وقوع التكرار');
+  /*
+   * **والقائمة تُشتقّ من مصدرها لا تُكتب هنا.**
+   *
+   * كان هذا الحارس يؤكّد نصّ «خطوتان لا يفعلهما هذا الأمر» — فحين كانت
+   * اللوحة تطلب أربعاً (الفهرس، والجدولة، ورفع الملفات، ولصق الكود) كان
+   * الحارسُ **يثبّت النقص** لا يكشفه: قائمةٌ مكتوبةٌ باليد داخل حارس لا تنمو
+   * بنموّ ما تحرسه — وهي القاعدة الخامسة والأربعون في `CLAUDE.md`، ورابعُ
+   * وقوعٍ لها. فتُقرأ من `scripts/lib/manual.js` ويُقابَل بها المخرَج.
+   */
+  await t.test('ولا تقول «تمّ» عمّا لم تفعله — وتسمّي ما بقي كلَّه', () => {
+    assert.ok(MANUAL_STEPS.length >= 4, 'المصدر نفسه ناقص');
+
+    // علامات التشكيل النصّي تُسقَط من الطرفين — المقصود ما يُقرأ لا كيف يُزيَّن
+    const plain = (text) => text.replace(/[*`]/g, '');
+    const shown = plain(first.output);
+
+    for (const manual of MANUAL_STEPS) {
+      assert.ok(shown.includes(plain(manual.title)),
+        `خطوةٌ في اللوحة لم يُذكَّر بها: ${plain(manual.title)}`);
+      assert.ok(shown.includes(plain(manual.where)),
+        `«${plain(manual.title)}» ذُكرت بلا موضعها في اللوحة (${manual.where})`);
+    }
   });
 
   await t.test('والإعادةُ لا تُضاعف مسجداً ولا تُنفق باقةً', async () => {

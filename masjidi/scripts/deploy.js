@@ -15,9 +15,9 @@
  * - لا يرفع كود السحابة: الرفع بالـCLI أو باللصق، وكلاهما خارج هذا.
  * - لا يستورد البيانات كاملةً: `--all` يُطلب باسمه في `seed_mosques` وحده،
  *   وهذا يقف عند محافظةٍ واحدة رخيصة.
- * - **ولا يُنشئ الفهرس الفريد**: مخطط Parse لا يعبّر عن التفرّد، فيُضاف من
- *   اللوحة. ولا يُقال «تمّ» عمّا لم يُفعل — يُقال إنه باقٍ، ويُتركُ `preflight`
- *   يكشفه أحمرَ.
+ * - **ولا يلمس لوحةَ Back4app**: الفهرسُ الفريد وجدولةُ المهام وتفعيلُ رفع
+ *   الملفات كلُّها هناك. ولا يُقال «تمّ» عمّا لم يُفعل — تُسمّى واحدةً واحدةً
+ *   من `lib/manual.js`، ويُتركُ `preflight` يكشف ما يقدر على كشفه أحمرَ.
  */
 
 require('dotenv').config();
@@ -27,6 +27,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { announceTarget } = require('./lib/target');
+const { MANUAL_STEPS } = require('./lib/manual');
 
 const ROOT = path.join(__dirname, '..');
 const REQUIRED = ['PARSE_APP_ID', 'PARSE_MASTER_KEY', 'PARSE_JS_KEY', 'PARSE_SERVER_URL'];
@@ -99,16 +100,25 @@ function main() {
 
   /* ————— ٤. ما يبقى بيدك ————— */
 
-  console.log(`\n${'─'.repeat(60)}\n▸ خطوتان لا يفعلهما هذا الأمر\n${'─'.repeat(60)}`);
-  console.log('  ١. الصق `cloud/main.bundle.js` في لوحة Cloud Code (أو ارفع `cloud/` بالـCLI).');
-  console.log('  ٢. أضف فهرساً **فريداً** على `Mosques.externalId` من Database → Indexes.');
-  console.log('     مخطط Parse لا يعبّر عن التفرّد، وهو الحماية الوحيدة قبل وقوع التكرار.');
+  /*
+   * **والعدد يُشتقّ ولا يُكتب.** كان السطر «خطوتان لا يفعلهما هذا الأمر»
+   * ويعدّ اثنتين، والوثيقة تفصّل **أربعاً** — الجدولةُ ورفعُ الملفات ساقطتان
+   * من هذا المسار وحده، وهو المسار الذي يقرؤه المستعجل. انظر `lib/manual.js`.
+   */
+  const count = ['', 'خطوةٌ واحدة', 'خطوتان', 'ثلاث خطوات', 'أربع خطوات'][MANUAL_STEPS.length]
+    || `${MANUAL_STEPS.length} خطوات`;
+  console.log(`\n${'─'.repeat(60)}\n▸ ${count} لا يفعلها هذا الأمر — في اللوحة لا في الطرفية\n${'─'.repeat(60)}`);
+  MANUAL_STEPS.forEach((manual, at) => {
+    console.log(`  ${at + 1}. ${manual.title} — ${manual.where}`);
+    console.log(`     ${manual.why}.`);
+  });
   console.log('\n  ثم أنشئ حسابك من التطبيق، وارفعه مشرفاً:');
   console.log('     npm run admin -- --username <اسمك>');
   console.log('\n  ثم — وهذا ما يُقاس به كلُّ ما سبق:');
   console.log('     npm run preflight');
   console.log('\n  و`preflight` يبقى **أحمر** حتى يُضاف الفهرس الفريد. فذلك مقصود:');
   console.log('  خطوةٌ يدويةٌ تُفحص بأثرها لا يُوثق بها.');
+  console.log('  ومنها ما لا يُفحص من هناك بحال — يقوله التقرير في `unverifiable`.');
 
   console.log('\n✓ ما يُنفَّذ من هنا تمّ. والباقي أعلاه.');
   return undefined;
