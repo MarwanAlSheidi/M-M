@@ -141,8 +141,12 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
    * التطبيق من تلقاء نفسه، بينما يُبلَّغ المتبرّع الذي ضغط «هذا مسجدي».
    *
    * والباقةُ محفوظة: العشرون الأقربُ لا الخمسمئة، ودفعةٌ واحدة لكلّها.
+   *
+   * **وتُعيد من بلغهم** — لا عدَدَهم وحده: من كان قريباً ومنتمياً معاً يصله
+   * الخبر مرّتين بصيغتين، فيحتاج نداءُ أهل المسجد أن يعرف من سبقه إليه.
    */
-  return pushToUsers(volunteers, payload);
+  const result = await pushToUsers(volunteers, payload);
+  return { ...result, userIds: volunteers.map((user) => user.id) };
 }
 
 /**

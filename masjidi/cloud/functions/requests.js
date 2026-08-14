@@ -96,11 +96,25 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
     toStatus: serviceRequest.get('status'),
   });
 
+  /*
+   * ومن بلغه نداءُ القرب لا يُنادى ثانيةً بصفة الانتماء.
+   *
+   * قِيس على خادمٍ حقيقي على من هو **قريبٌ ومنتمٍ معاً** — وهو أرجحُ الناس لا
+   * أندرُهم: أهلُ الحيّ هم المتطوّعون وهم المنتمون:
+   *
+   *     «احتياجٌ جديد في جامع البلاغ: إصلاح الإنارة»
+   *     «فرصة تطوّع: إصلاح الإنارة — جامع البلاغ»
+   *
+   * خبران عن حدثٍ واحد بصيغتين. ووارد الإشعارات قناةٌ واحدة، فالتكرار فيها
+   * يُقرأ حدثين ثم يُقرأ ضجيجاً.
+   */
+  let notifiedNearby = [];
   if (cost === 0) {
-    await pushToNearbyVolunteers(mosque, {
+    const near = await pushToNearbyVolunteers(mosque, {
       alert: `فرصة تطوّع: ${serviceRequest.get('title')} — ${mosqueTitle(mosque)}`,
       requestId: serviceRequest.id,
     });
+    notifiedNearby = near.userIds || [];
   }
 
   /*
@@ -114,7 +128,7 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
   await pushToMosqueFollowers(mosque, {
     alert: `احتياجٌ جديد في ${mosqueTitle(mosque)}: ${serviceRequest.get('title')}`,
     requestId: serviceRequest.id,
-  }, { exclude: [imam.id] });
+  }, { exclude: [imam.id, ...notifiedNearby] });
 
   return serviceRequest.toJSON();
 });

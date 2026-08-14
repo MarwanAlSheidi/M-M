@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA **يُثبَّت ويعمل بلا إنترنت** — ويحرسه `verify:pwa`. و**React Native ليس ناقصاً بل غير مطلوب**: الواجهة تُثبَّت على أندرويد وiOS، وعميلٌ ثانٍ يُضاعف السطح بلا أثرٍ للمستخدم في المرحلة الأولى |
-| الاختبارات | ✅ 395 حالة على بديل Parse (`npm test`) + 248 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 45 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 395 حالة على بديل Parse (`npm test`) + 249 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 45 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -4895,6 +4895,43 @@ export_records.js  **لا**   seed_mosques.js     ✓
 
 ---
 
+### 🟠 وفتحُ القناة فتح باباً للتكرار — وهو عطبٌ من صنعي
+
+الدورة الماضية جعلت نداء القرب يُحفظ. **فسُئل ما الذي فتحه ذلك**، لا ما الذي
+أغلقه. وقِيس على من هو **قريبٌ ومنتمٍ معاً** — وهو أرجحُ الناس لا أندرُهم: أهلُ
+الحيّ هم المتطوّعون وهم المنتمون:
+
+```
+قريبٌ ومنتمٍ:  2 خبراً
+   · احتياجٌ جديد في جامع البلاغ: إصلاح الإنارة
+   · فرصة تطوّع: إصلاح الإنارة — جامع البلاغ
+قريبٌ فقط:    1
+منتمٍ فقط:    1
+```
+
+**خبران عن حدثٍ واحد بصيغتين.** ووارد الإشعارات قناةٌ واحدة، فالتكرار فيها
+يُقرأ حدثين أوّلَ مرّة، ثم يُقرأ ضجيجاً — وهو ما يُطفئ القناة كلَّها.
+
+#### والمِيسمُ كان موجوداً ولم يكن يعرف
+
+`pushToMosqueFollowers` تقبل `exclude` أصلاً — يُستثنى بها الإمام لأنه من نشر
+الخبر. **ولم تكن تعرف من بلغه نداءُ القرب قبلها.** فصارت `pushToNearbyVolunteers`
+تُعيد `userIds` لا العدد وحده، ويُضمّون إلى المستثنين.
+
+**وصيغةُ المتطوّع هي التي تبقى** لمن كان الاثنين: «فرصة تطوّع» فيها فعلٌ
+يُفعل، و«احتياجٌ جديد في مسجدك» خبرٌ يُقرأ.
+
+#### وحمرةٌ أولى لم تكن خبراً عن الشيفرة
+
+أوّلُ محاولةٍ لإضافة الحارس أخفقت في **مطابقة نصّ الإرساء** (`async () =>` لا
+`() =>`)، فلم يُضَف شيء — **ثم مرّ الفحص على `HEAD` أخضرَ**، وهو أخضرُ لا يعني
+شيئاً: قِيس ملفٌّ لم يتغيّر. ولولا قراءةُ الرسالة لسُجّل «الحارس لا يسقط».
+
+وعلى `HEAD` بعد التصحيح: أربعُ حالاتٍ حولها خضراء، وتسقط واحدة بالنصّ المقيس —
+والرسالة تعرض الخبرين معاً.
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **`nearestKnownInWilayat` تُعيد `name` ولا يقرؤه مستهلك.** الثلاثةُ الذين
@@ -6249,8 +6286,12 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
    * التطبيق من تلقاء نفسه، بينما يُبلَّغ المتبرّع الذي ضغط «هذا مسجدي».
    *
    * والباقةُ محفوظة: العشرون الأقربُ لا الخمسمئة، ودفعةٌ واحدة لكلّها.
+   *
+   * **وتُعيد من بلغهم** — لا عدَدَهم وحده: من كان قريباً ومنتمياً معاً يصله
+   * الخبر مرّتين بصيغتين، فيحتاج نداءُ أهل المسجد أن يعرف من سبقه إليه.
    */
-  return pushToUsers(volunteers, payload);
+  const result = await pushToUsers(volunteers, payload);
+  return { ...result, userIds: volunteers.map((user) => user.id) };
 }
 
 /**
@@ -7519,11 +7560,25 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
     toStatus: serviceRequest.get('status'),
   });
 
+  /*
+   * ومن بلغه نداءُ القرب لا يُنادى ثانيةً بصفة الانتماء.
+   *
+   * قِيس على خادمٍ حقيقي على من هو **قريبٌ ومنتمٍ معاً** — وهو أرجحُ الناس لا
+   * أندرُهم: أهلُ الحيّ هم المتطوّعون وهم المنتمون:
+   *
+   *     «احتياجٌ جديد في جامع البلاغ: إصلاح الإنارة»
+   *     «فرصة تطوّع: إصلاح الإنارة — جامع البلاغ»
+   *
+   * خبران عن حدثٍ واحد بصيغتين. ووارد الإشعارات قناةٌ واحدة، فالتكرار فيها
+   * يُقرأ حدثين ثم يُقرأ ضجيجاً.
+   */
+  let notifiedNearby = [];
   if (cost === 0) {
-    await pushToNearbyVolunteers(mosque, {
+    const near = await pushToNearbyVolunteers(mosque, {
       alert: `فرصة تطوّع: ${serviceRequest.get('title')} — ${mosqueTitle(mosque)}`,
       requestId: serviceRequest.id,
     });
+    notifiedNearby = near.userIds || [];
   }
 
   /*
@@ -7537,7 +7592,7 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
   await pushToMosqueFollowers(mosque, {
     alert: `احتياجٌ جديد في ${mosqueTitle(mosque)}: ${serviceRequest.get('title')}`,
     requestId: serviceRequest.id,
-  }, { exclude: [imam.id] });
+  }, { exclude: [imam.id, ...notifiedNearby] });
 
   return serviceRequest.toJSON();
 });
@@ -9701,8 +9756,12 @@ async function pushToNearbyVolunteers(mosque, payload, radiusKm = 15) {
    * التطبيق من تلقاء نفسه، بينما يُبلَّغ المتبرّع الذي ضغط «هذا مسجدي».
    *
    * والباقةُ محفوظة: العشرون الأقربُ لا الخمسمئة، ودفعةٌ واحدة لكلّها.
+   *
+   * **وتُعيد من بلغهم** — لا عدَدَهم وحده: من كان قريباً ومنتمياً معاً يصله
+   * الخبر مرّتين بصيغتين، فيحتاج نداءُ أهل المسجد أن يعرف من سبقه إليه.
    */
-  return pushToUsers(volunteers, payload);
+  const result = await pushToUsers(volunteers, payload);
+  return { ...result, userIds: volunteers.map((user) => user.id) };
 }
 
 /**
@@ -11431,11 +11490,25 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
     toStatus: serviceRequest.get('status'),
   });
 
+  /*
+   * ومن بلغه نداءُ القرب لا يُنادى ثانيةً بصفة الانتماء.
+   *
+   * قِيس على خادمٍ حقيقي على من هو **قريبٌ ومنتمٍ معاً** — وهو أرجحُ الناس لا
+   * أندرُهم: أهلُ الحيّ هم المتطوّعون وهم المنتمون:
+   *
+   *     «احتياجٌ جديد في جامع البلاغ: إصلاح الإنارة»
+   *     «فرصة تطوّع: إصلاح الإنارة — جامع البلاغ»
+   *
+   * خبران عن حدثٍ واحد بصيغتين. ووارد الإشعارات قناةٌ واحدة، فالتكرار فيها
+   * يُقرأ حدثين ثم يُقرأ ضجيجاً.
+   */
+  let notifiedNearby = [];
   if (cost === 0) {
-    await pushToNearbyVolunteers(mosque, {
+    const near = await pushToNearbyVolunteers(mosque, {
       alert: `فرصة تطوّع: ${serviceRequest.get('title')} — ${mosqueTitle(mosque)}`,
       requestId: serviceRequest.id,
     });
+    notifiedNearby = near.userIds || [];
   }
 
   /*
@@ -11449,7 +11522,7 @@ Parse.Cloud.define('createServiceRequest', async (request) => {
   await pushToMosqueFollowers(mosque, {
     alert: `احتياجٌ جديد في ${mosqueTitle(mosque)}: ${serviceRequest.get('title')}`,
     requestId: serviceRequest.id,
-  }, { exclude: [imam.id] });
+  }, { exclude: [imam.id, ...notifiedNearby] });
 
   return serviceRequest.toJSON();
 });

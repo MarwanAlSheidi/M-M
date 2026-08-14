@@ -324,6 +324,33 @@ test('لا انتقالَ صامتاً على صاحبه', options, async (t) =>
       'أُزعج متطوّعٌ على بُعد سبعمئة كيلومتر بفرصةٍ لا تعنيه');
   });
 
+  /*
+   * ومن كان قريباً ومنتمياً معاً يصله **خبرٌ واحد**.
+   *
+   * وهو أرجحُ الناس لا أندرُهم: أهلُ الحيّ هم المتطوّعون وهم المنتمون. وقِيس
+   * بعد إتاحة حفظ نداء القرب:
+   *
+   *     «احتياجٌ جديد في جامع البلاغ: إصلاح الإنارة»
+   *     «فرصة تطوّع: إصلاح الإنارة — جامع البلاغ»
+   *
+   * خبران عن حدثٍ واحد بصيغتين — ووارد الإشعارات قناةٌ واحدة، فالتكرار فيها
+   * يُقرأ حدثين ثم يُقرأ ضجيجاً. **وصيغةُ المتطوّع أولى**: فيها فعلٌ يُفعل.
+   */
+  await t.test('ومن كان قريباً ومنتمياً يصله خبرٌ واحد لا اثنان', async () => {
+    const both = await signUp('volunteer', 'قريبٌ ومنتمٍ');
+    await as(both, 'updateMyLocation', { lat: 23.6, lng: 58.5 });
+    await as(both, 'setFavoriteMosque', { mosqueId: mosque.id });
+
+    const before = (await inbox(both)).length;
+    await newRequest('إصلاح باب المصلّى');
+    const after = await inbox(both);
+
+    assert.equal(after.length - before, 1,
+      `خبران عن حدثٍ واحد: ${JSON.stringify(after.slice(0, 2))}`);
+    assert.match(after[0], /فرصة تطوّع/,
+      `بقيت صيغةُ الانتماء وسقطت صيغةُ الفعل: «${after[0]}»`);
+  });
+
   await t.test('ولا يُنفق البثُّ الباقةَ — عشرون لا خمسمئة', async () => {
     const cap = require('node:fs')
       .readFileSync(require('node:path').join(__dirname, '..', '..', 'cloud', 'lib', 'push.js'), 'utf8')
