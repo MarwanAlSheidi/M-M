@@ -1879,11 +1879,24 @@ function DataCredits() {
  * فوق الدفع بل بديله العامل.
  */
 /**
- * الاحتياج الذي يتكلّم عنه الخبر — قراءةً لا فعلاً.
+ * الاحتياج الذي يتكلّم عنه الخبر — قراءةً، **وفعلاً حيث تكون الدعوةُ دعوة**.
  *
- * الأفعال لها شاشاتها: «يهمّني» في «الفرص»، والاعتماد في «مساجدي». وهذه تجيب
- * سؤالاً واحداً: **ما الذي قيل لي إنه وقع؟** فمن أُخبر ولم يستطع أن يرى، خبرُه
- * قلقٌ لا معرفة.
+ * كانت قراءةً محضة، والحجّة: «الأفعال لها شاشاتها — يهمّني في الفرص، والاعتماد
+ * في مساجدي». وكانت الحجّة صحيحةً يوم كُتبت، ثم **نُقض شرطُها**: صار نداءُ
+ * القرب يُحفظ في الوارد، فصار الوارد قناةَ **الدعوة** لا الخبر وحده. وقِيس في
+ * متصفّح حقيقي على متطوّعٍ كان عند المسجد ساعةَ نُشر الاحتياج ثم فتح التطبيق
+ * من بيته:
+ *
+ *     الوارد:   فرصة تطوّع: إصلاح مكبّر الصوت — جامع البلاغ
+ *     الدعوة:   إصلاح مكبّر الصوت · مفتوح للتطوّع · جامع البلاغ
+ *     الأزرار:  ["→ رجوع"]
+ *     الفرص:    «لا توجد فرص مفتوحة الآن.»
+ *
+ * **دُعي، ولا يملك إلا أن ينصرف.** و«الفرص» تُحسب من موقعه **الآن**، والدعوة
+ * أُرسلت بموقعه **حينها** — فالشاشة التي أُحيل إليها هي آخرُ مكانٍ تظهر فيه.
+ *
+ * فالفعل يُعرض حيث وقعت الدعوة، **وبشرطيه**: متطوّعٌ، واحتياجٌ لا يزال مفتوحاً.
+ * والمتبرّع لا يُعرض عليه — «يهمّني» ليس فعله، وعرضُه وعدٌ يُردّ عند الخادم.
  */
 function NotifiedRequest({ requestId, onBack }) {
   const state = useList(async () => {
@@ -1891,9 +1904,27 @@ function NotifiedRequest({ requestId, onBack }) {
     return row ? [row] : [];
   }, [requestId]);
 
+  const action = useAction();
+  const [message, setMessage] = useState('');
+  const isVolunteer = api.currentRole() === 'volunteer';
+
+  const join = (id) => action.run(async () => {
+    setMessage('');
+    try {
+      const result = await api.expressInterest(id);
+      setMessage(result.message);
+    } catch (error) {
+      // الخادم يعرف ما لا تعرفه الشاشة: سبق التسجيل، أو سُحب منه، أو بلغ حدّه
+      setMessage(api.messageOf(error));
+    }
+    // الحال تتبدّل بعد التسجيل، فتُقرأ من الخادم لا تُفترض
+    await state.refresh();
+  });
+
   return (
     <>
       <button className="link" onClick={onBack}>→ رجوع</button>
+      {message && <div className="notice">{message}</div>}
       <Listing state={state} empty="لم يعد هذا الاحتياج موجوداً.">
         <div>
           {state.rows.map((row) => (
@@ -1908,6 +1939,10 @@ function NotifiedRequest({ requestId, onBack }) {
               <div className="row">
                 <span className="tag">{api.CATEGORIES[row.category] || 'أخرى'}</span>
                 <UrgencyTag urgency={row.urgency} />
+                {isVolunteer && row.status === 'open_for_volunteers' && (
+                  <button data-testid="join-notified"
+                    onClick={() => join(row.id)} disabled={action.busy}>يهمّني</button>
+                )}
               </div>
             </article>
           ))}
