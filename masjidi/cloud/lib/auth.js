@@ -114,6 +114,45 @@ const TEXT_LIMITS = {
   crNumber: 30,
 };
 
+/**
+ * كلمةُ المرور — **الطولُ وحده، ولا رموزَ مفروضة**.
+ *
+ * `parse-server` لا يفرض شيئاً ما لم يُضبط `passwordPolicy` في تهيئة الخادم،
+ * وهي بيدِ Back4app لا بيدنا. **لكنّ `beforeSave` يرى الكلمةَ خاماً** — قِيس
+ * على خادمٍ حقيقي: التسجيل يمرّ بـ`beforeSave(_User)` وفيه
+ * `password: "abc"` قبل التعمية، ورميُ خطأٍ هناك يردّ التسجيل فعلاً. فهذا
+ * أحدُ البابين اللذين يُغلقان من الكود وحده — بخلاف حدِّ المعدّل الذي قِيس
+ * فإذا هو لا يُسجَّل من كود السحابة إطلاقاً.
+ *
+ * **وثمانيةٌ طولاً بلا اشتراط رموز**: فرضُ الرموز على ناسٍ يدخلون من هواتفهم
+ * يدفعهم إلى كتابتها على ورقةٍ أو إلى `Aa1!` وأخواتها، والطولُ وحده أنفعُ من
+ * التعقيد المفروض. ويُردّ ما كان اسمَ المستخدم نفسه أو حرفاً واحداً مكرَّراً —
+ * وهما ما يقع فعلاً لا ما يُتخيَّل.
+ *
+ * ولا تُفحص إلا حين تُكتب: حفظٌ لا يمسّ الكلمة لا يحمل الحقل أصلاً، فلا
+ * يُحاسَب صاحبُ حسابٍ قديم على قاعدةٍ سُنّت بعده.
+ */
+const PASSWORD_MIN = 8;
+
+function checkPassword(user) {
+  const password = user.get('password');
+  if (typeof password !== 'string' || password === '') return;
+
+  if (password.length < PASSWORD_MIN) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      `كلمة المرور قصيرة — ${PASSWORD_MIN} أحرف على الأقل.`);
+  }
+  const username = user.get('username');
+  if (username && password.toLowerCase() === String(username).toLowerCase()) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      'كلمة المرور لا تكون اسم المستخدم نفسه.');
+  }
+  if (new Set(password).size === 1) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      'كلمة المرور حرفٌ واحد مكرَّر — اخترْ غيرها.');
+  }
+}
+
 /** يقصّ حقول الحساب النصّية إلى حدودها، ويُعيد ما قُصّ منها. */
 function clampUserText(user) {
   const trimmed = [];
@@ -130,6 +169,7 @@ function clampUserText(user) {
 }
 
 module.exports = {
+  PASSWORD_MIN, checkPassword,
   ROLES, requireUser, requireRole, mosqueForImam, fetchPointer,
   TEXT_LIMITS, clampUserText,
 };

@@ -158,6 +158,45 @@ const TEXT_LIMITS = {
   crNumber: 30,
 };
 
+/**
+ * كلمةُ المرور — **الطولُ وحده، ولا رموزَ مفروضة**.
+ *
+ * `parse-server` لا يفرض شيئاً ما لم يُضبط `passwordPolicy` في تهيئة الخادم،
+ * وهي بيدِ Back4app لا بيدنا. **لكنّ `beforeSave` يرى الكلمةَ خاماً** — قِيس
+ * على خادمٍ حقيقي: التسجيل يمرّ بـ`beforeSave(_User)` وفيه
+ * `password: "abc"` قبل التعمية، ورميُ خطأٍ هناك يردّ التسجيل فعلاً. فهذا
+ * أحدُ البابين اللذين يُغلقان من الكود وحده — بخلاف حدِّ المعدّل الذي قِيس
+ * فإذا هو لا يُسجَّل من كود السحابة إطلاقاً.
+ *
+ * **وثمانيةٌ طولاً بلا اشتراط رموز**: فرضُ الرموز على ناسٍ يدخلون من هواتفهم
+ * يدفعهم إلى كتابتها على ورقةٍ أو إلى `Aa1!` وأخواتها، والطولُ وحده أنفعُ من
+ * التعقيد المفروض. ويُردّ ما كان اسمَ المستخدم نفسه أو حرفاً واحداً مكرَّراً —
+ * وهما ما يقع فعلاً لا ما يُتخيَّل.
+ *
+ * ولا تُفحص إلا حين تُكتب: حفظٌ لا يمسّ الكلمة لا يحمل الحقل أصلاً، فلا
+ * يُحاسَب صاحبُ حسابٍ قديم على قاعدةٍ سُنّت بعده.
+ */
+const PASSWORD_MIN = 8;
+
+function checkPassword(user) {
+  const password = user.get('password');
+  if (typeof password !== 'string' || password === '') return;
+
+  if (password.length < PASSWORD_MIN) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      `كلمة المرور قصيرة — ${PASSWORD_MIN} أحرف على الأقل.`);
+  }
+  const username = user.get('username');
+  if (username && password.toLowerCase() === String(username).toLowerCase()) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      'كلمة المرور لا تكون اسم المستخدم نفسه.');
+  }
+  if (new Set(password).size === 1) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      'كلمة المرور حرفٌ واحد مكرَّر — اخترْ غيرها.');
+  }
+}
+
 /** يقصّ حقول الحساب النصّية إلى حدودها، ويُعيد ما قُصّ منها. */
 function clampUserText(user) {
   const trimmed = [];
@@ -909,10 +948,49 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
   // بالمفتاح الرئيسي كذلك: الحساب الجديد نشِطٌ دائماً
   if (user.isNew()) user.set('isActive', true);
 
+  // وكلمةُ المرور تُفحص حيث تُكتب — والتسجيل يكتب على `_User` مباشرةً بلا
+  // دالّة سحابة، فحدٌّ مكتوبٌ في دالّةٍ لا يمرّ به. وهي مرئيةٌ خاماً هنا وحدها.
+  checkPassword(user);
+
   // القصّ هنا لا في الدوال: التسجيل يكتب على `_User` مباشرةً بلا دالة سحابة،
   // فكان يُقبل اسمٌ من مئتي ألف حرف — قِيس على خادمٍ حقيقي. و`beforeSave` يمرّ
   // به كلُّ كتابة، فالحدُّ واحدٌ لكل الأبواب.
   clampUserText(user);
+});
+
+/**
+ * الملفّات: صورةٌ من هاتفٍ لا أكثر.
+ *
+ * **العطب الذي تسدّه:** `accept="image/*"` في الواجهة تلميحٌ في المتصفّح لا
+ * حارس، ولا حدَّ حجمٍ ولا نوعٍ على الخادم — و`maxUploadSize` الافتراضي عشرون
+ * ميغابايت. فمستخدمٌ **مصادَقٌ واحد** يملأ الـ٢٥٠ ميغابايت في جلسة، ويرفع ما
+ * ليس صورة. والرفع مفتوحٌ لكل مصادَق: هو شرطُ صورة الإنجاز.
+ *
+ * وقِيس أن هذا الباب يُغلق من كود السحابة فعلاً — بخلاف حدِّ المعدّل:
+ *
+ *     ما رآه المُشغّل: {"name":"a.txt","size":3,"type":"text/plain"}
+ *     ردُّ الكبير:     نعم
+ *
+ * **وخمسةُ ميغابايت**: صورةُ هاتفٍ حديث بين اثنين وخمسة، وستٌّ منها حدُّ
+ * الطلب الواحد (`MAX_PHOTOS`). فثلاثون ميغابايت لطلبٍ كامل، والباقة ٢٥٠.
+ *
+ * **وما لا يُعرف حجمُه يُمرَّر** لا يُردّ: `fileSize` قد يغيب في مساراتٍ لا
+ * تمرّ بالرفع المباشر، وردُّ ما لا نعرفه يقطع مساراً سليماً بحجّة الحيطة —
+ * والنوعُ يبقى مفحوصاً عليه.
+ */
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+Parse.Cloud.beforeSave(Parse.File, (request) => {
+  const type = String((request.file && request.file._source && request.file._source.type) || '');
+  if (!type.startsWith('image/')) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      'تُرفع الصور وحدها — أرفق صورةً من هاتفك.');
+  }
+  if (typeof request.fileSize === 'number' && request.fileSize > MAX_FILE_BYTES) {
+    const mb = Math.round((request.fileSize / (1024 * 1024)) * 10) / 10;
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      `الصورة كبيرة (${mb} م.ب) — الحدّ ٥ م.ب لكل صورة.`);
+  }
 });
 
 /**

@@ -1,4 +1,4 @@
-const { ROLES, clampUserText } = require('./lib/auth');
+const { ROLES, clampUserText, checkPassword } = require('./lib/auth');
 const { warnImamsOfWorkerLoss } = require('./lib/worker');
 const { mosqueTitle } = require('./lib/mosque-name');
 const audit = require('./lib/audit');
@@ -80,10 +80,49 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
   // بالمفتاح الرئيسي كذلك: الحساب الجديد نشِطٌ دائماً
   if (user.isNew()) user.set('isActive', true);
 
+  // وكلمةُ المرور تُفحص حيث تُكتب — والتسجيل يكتب على `_User` مباشرةً بلا
+  // دالّة سحابة، فحدٌّ مكتوبٌ في دالّةٍ لا يمرّ به. وهي مرئيةٌ خاماً هنا وحدها.
+  checkPassword(user);
+
   // القصّ هنا لا في الدوال: التسجيل يكتب على `_User` مباشرةً بلا دالة سحابة،
   // فكان يُقبل اسمٌ من مئتي ألف حرف — قِيس على خادمٍ حقيقي. و`beforeSave` يمرّ
   // به كلُّ كتابة، فالحدُّ واحدٌ لكل الأبواب.
   clampUserText(user);
+});
+
+/**
+ * الملفّات: صورةٌ من هاتفٍ لا أكثر.
+ *
+ * **العطب الذي تسدّه:** `accept="image/*"` في الواجهة تلميحٌ في المتصفّح لا
+ * حارس، ولا حدَّ حجمٍ ولا نوعٍ على الخادم — و`maxUploadSize` الافتراضي عشرون
+ * ميغابايت. فمستخدمٌ **مصادَقٌ واحد** يملأ الـ٢٥٠ ميغابايت في جلسة، ويرفع ما
+ * ليس صورة. والرفع مفتوحٌ لكل مصادَق: هو شرطُ صورة الإنجاز.
+ *
+ * وقِيس أن هذا الباب يُغلق من كود السحابة فعلاً — بخلاف حدِّ المعدّل:
+ *
+ *     ما رآه المُشغّل: {"name":"a.txt","size":3,"type":"text/plain"}
+ *     ردُّ الكبير:     نعم
+ *
+ * **وخمسةُ ميغابايت**: صورةُ هاتفٍ حديث بين اثنين وخمسة، وستٌّ منها حدُّ
+ * الطلب الواحد (`MAX_PHOTOS`). فثلاثون ميغابايت لطلبٍ كامل، والباقة ٢٥٠.
+ *
+ * **وما لا يُعرف حجمُه يُمرَّر** لا يُردّ: `fileSize` قد يغيب في مساراتٍ لا
+ * تمرّ بالرفع المباشر، وردُّ ما لا نعرفه يقطع مساراً سليماً بحجّة الحيطة —
+ * والنوعُ يبقى مفحوصاً عليه.
+ */
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+Parse.Cloud.beforeSave(Parse.File, (request) => {
+  const type = String((request.file && request.file._source && request.file._source.type) || '');
+  if (!type.startsWith('image/')) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      'تُرفع الصور وحدها — أرفق صورةً من هاتفك.');
+  }
+  if (typeof request.fileSize === 'number' && request.fileSize > MAX_FILE_BYTES) {
+    const mb = Math.round((request.fileSize / (1024 * 1024)) * 10) / 10;
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      `الصورة كبيرة (${mb} م.ب) — الحدّ ٥ م.ب لكل صورة.`);
+  }
 });
 
 /**

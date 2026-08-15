@@ -42,10 +42,25 @@ function createMock() {
   const gateway = { status: 'unpaid', amountBaisa: 0, sessions: 0 };
   let seq = 0;
 
-  /** أسماء الفئات المدمجة تصل كدوال لا كنصوص. */
+  /**
+   * أسماء الفئات المدمجة تصل كدوال لا كنصوص.
+   *
+   * **ولا افتراضَ صامت.** كان كلُّ ما ليس نصّاً ولا `Installation` يُقرأ
+   * `_User`، فلمّا سُجّل `beforeSave(Parse.File)` **محا مُشغّل الحسابات**
+   * وجرى على كل تسجيل — وسقطت ثمانِ حالات برسالة «تُرفع الصور وحدها» على
+   * إنشاء مستخدم. فالافتراضُ الصامت أخفى الخطأ خطوةً وأظهره في مكانٍ آخر.
+   *
+   * والتسمية تطابق `parse-server` نفسه: `getClassName` تُعيد
+   * `name.replace('Parse', '@')` لما لا `className` له — فـ`Parse.File`
+   * مفتاحُه `@File` لا `_File`.
+   */
+  const BUILTIN_CLASS = { User: '_User', Installation: '_Installation', File: '@File' };
+
   const classNameOf = (target) => {
     if (typeof target === 'string') return target;
-    return target && target.name === 'Installation' ? '_Installation' : '_User';
+    const name = target && target.name;
+    if (BUILTIN_CLASS[name]) return BUILTIN_CLASS[name];
+    throw new Error(`فئةٌ مدمجة لا يعرفها البديل: ${name || target} — أضِفها إلى BUILTIN_CLASS`);
   };
 
   const nextId = (className) => `${className}_${++seq}`;
@@ -262,6 +277,9 @@ function createMock() {
     ACL: MockACL,
     User: function User() {},
     Installation: function Installation() {},
+    // موجودةٌ ليُسجَّل عليها مُشغّل حجم الصور ونوعها — والبديل لا يرفع ملفاً،
+    // فالمُشغّل يُقاس هنا بتسجيله وعلى خادمٍ حقيقي بأثره
+    File: function File() {},
     GeoPoint: class GeoPoint {},
     // يُلتقط منه المستخدمون المستهدفون: push.js يستعلم على _Installation
     // بشرط containedIn('user', users)، وهو ما يهمّ التحقق منه.

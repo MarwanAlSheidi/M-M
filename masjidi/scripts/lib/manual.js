@@ -60,6 +60,14 @@ const MANUAL_STEPS = [
     checked: false,
   },
   {
+    title: 'اضبط `PARSE_SERVER_SESSION_LENGTH` — 2592000 (شهر) بدل السنة',
+    where: 'Server Settings → Environment Variables',
+    why: 'الافتراض سنةٌ كاملة، فهاتفٌ ضائع يبقى داخلاً اثني عشر شهراً',
+    // خيارُ إقلاعٍ لا هوك له — قِيس: `Config.sessionLength = 31536000`. وكلمةُ
+    // المرور والصورة يُغلقان من الكود، وهذا لا يُغلق منه بحال.
+    checked: false,
+  },
+  {
     title: 'فعّل رفع الملفات للمستخدم المصادَق',
     where: 'Server Settings → File upload',
     why: 'بدونه لا يرفع المنفّذ صورة الإنجاز، فيعتمد الإمام على الثقة وحدها',

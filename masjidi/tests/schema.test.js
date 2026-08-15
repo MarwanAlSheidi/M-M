@@ -161,6 +161,8 @@ test('نقاط الدخول', async (t) => {
 
   const EXPECTED_TRIGGERS = [
     'beforeSave:_User', 'afterSave:_User', 'beforeLogin:_User', 'beforeSave:Mosques',
+    // الصور: النوع والحجم — وهو البابُ الثاني الذي يُغلق من كود السحابة
+    'beforeSave:@File',
     'beforeSave:ServiceRequests', 'beforeSave:Transactions',
     'afterSave:ServiceRequests',
     // الطبقة الثانية خلف الصلاحيات — أربعةٌ للكتابة وسبعةٌ للحذف

@@ -60,7 +60,7 @@
 | سكربت الاستيراد | ✅ شُغّل على البيانات كاملةً (18,214) على خادم حقيقي — القاعدة 22MB والبحث 69–180ms والقرب 4–34ms |
 | بوابة الدفع | ⚠️ محوّل مكتوب بلا مفاتيح — **لا تُفعّل** (انظر القيود) |
 | تطبيق العميل | ✅ واجهة ويب عربية في `app/`: مسارا التطوّع والشركات، القرب، خريطة جوجل (بمفتاح اختياري)، صندوق الوارد، وPWA **يُثبَّت ويعمل بلا إنترنت** — ويحرسه `verify:pwa`. و**React Native ليس ناقصاً بل غير مطلوب**: الواجهة تُثبَّت على أندرويد وiOS، وعميلٌ ثانٍ يُضاعف السطح بلا أثرٍ للمستخدم في المرحلة الأولى |
-| الاختبارات | ✅ 397 حالة على بديل Parse (`npm test`) + 267 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 55 حالة في متصفّح حقيقي (`npm run test:e2e`) |
+| الاختبارات | ✅ 397 حالة على بديل Parse (`npm test`) + 277 اختبار تكامل على `parse-server` حقيقي فوق PostgreSQL ببيانات وزارة حقيقية (`npm run test:integration`) + 55 حالة في متصفّح حقيقي (`npm run test:e2e`) |
 
 ---
 
@@ -382,7 +382,7 @@ scripts/
   lib/index-plan.js    تخطيط الفهارس الناقصة وفرز المكانيّ — تحت الاختبار
   lib/tokenize.js      كلمات البحث — يشترك فيها الاستيراد واختبار التكامل
   lib/target.js        أيُّ خادمٍ يعمل عليه الأمر — يُقال قبل الفعل بلا إفشاء سرّ
-  lib/manual.js        خطوات اللوحة الخمس التي لا يفعلها أمر — مصدرٌ واحد لثلاثة قرّاء
+  lib/manual.js        خطوات اللوحة الستّ التي لا يفعلها أمر — مصدرٌ واحد لثلاثة قرّاء
   lib/rate-limit.js    حدُّ المعدّل: تهيئةُ خادمٍ لا كودُ سحابة — والقياس مكتوبٌ فيه
   build_single_file.py توليد cloud/main.bundle.js من ملفات cloud/
   build_single_doc.py  توليد MASJIDI.md من المستودع كله
@@ -434,6 +434,7 @@ tests/
     contact.test.js    طرفا التكليف يتعارفان، ولا يعرفهما ثالث
     approved-contractor.test.js  الشركات المعتمدة تبلغ الإمام — ولا هاتفَ يسبق التكليف
     rate-limit.test.js  حدُّ المعدّل: يموت صامتاً من كود السحابة، ويعمل من تهيئة الخادم
+    hardening.test.js  ما يُغلَق من كود السحابة: كلمةُ المرور والصورة — وما لا يُغلَق
     notified.test.js   كلُّ انتقالٍ في دورة الطلب يبلغ صاحبه — والوارد ينمو به
     suspended-worker.test.js  إيقافُ مكلَّفٍ بعمل: يُخبَر الإمام، ولا يُقيَّد غيابٌ على ممنوع
     claim-reviewed.test.js  مقدّم طلب الإشراف يُخبَر بقراره — قبولاً أو رفضاً
@@ -5186,6 +5187,62 @@ _JobStatus: succeeded — حُذف 3 إشعاراً أقدم من 90 يوماً.
 
 ---
 
+### 🟠 وسُئل الباقي بالمنهج نفسه — فانقسم نصفين
+
+الدورة الماضية قِيست فيها الحمايةُ الأولى فإذا هي لا تُسجَّل من كود السحابة
+إطلاقاً. **فلم أشحن سطراً في هذه قبل أن أنتهكه وأنظر أيقع المنع** (القاعدة ٤٨).
+والباقي ثلاثة، فانقسم انقساماً حادّاً:
+
+```
+كلمةُ المرور:  beforeSave(_User) يراها خاماً — "abc" قبل التعمية
+               ردُّ القصيرة: **نعم**
+الصورة:        beforeSave(Parse.File): {"name":"a.txt","size":3,"type":"text/plain"}
+               ردُّ الكبير: **نعم**
+طولُ الجلسة:   sessionLength = 31,536,000 ثانية — سنةٌ كاملة، **ولا هوك له**
+```
+
+فاثنان يُغلقان من الكود المرفوع، وواحدٌ لا يُغلق منه بحال.
+
+#### ما أُغلق
+
+**كلمةُ المرور**: ثمانيةٌ طولاً، ولا تكون اسمَ المستخدم، ولا حرفاً واحداً
+مكرَّراً. **ولا رموزَ مفروضة** — فرضُها على ناسٍ يدخلون من هواتفهم يدفعهم إلى
+ورقةٍ أو إلى `Aa1!`، والطولُ وحده أنفع. ولا تُفحص إلا حين تُكتب: حفظٌ لا يمسّها
+لا يحمل الحقل، فلا يتجمّد حسابٌ أُنشئ قبل اليوم.
+
+**الصورة**: نوعُها `image/*` وحجمُها ٥ م.ب. و`accept="image/*"` في الواجهة
+تلميحٌ في المتصفّح لا حارس، و`maxUploadSize` الافتراضي عشرون ميغابايت — فمصادَقٌ
+واحد كان يملأ الـ٢٥٠ في جلسة.
+
+#### وعطبٌ كشفه الإصلاح في أداة القياس نفسها
+
+تسجيلُ `beforeSave(Parse.File)` **محا مُشغّل الحسابات** في بديل Parse، فجرى
+حارسُ الصور على كل تسجيلٍ وسقطت ثمانِ حالات برسالة «تُرفع الصور وحدها» على
+إنشاء مستخدم. والسبب سطرٌ في `parse-mock.js`:
+
+```js
+return target && target.name === 'Installation' ? '_Installation' : '_User';
+```
+
+**كلُّ ما ليس نصّاً ولا `Installation` يُقرأ `_User`** — افتراضٌ صامت يبتلع كلَّ
+فئةٍ مدمجة جديدة. فصار جدولاً صريحاً يرمي على المجهول، والتسميةُ تطابق
+`parse-server` نفسه (`Parse.File` مفتاحُه `@File` لا `_File`).
+
+#### وما لم يُغلق يُسمَّى
+
+طولُ الجلسة خيارُ إقلاعٍ لا هوك له. فصار **سادسَ خطوات اللوحة**، والحارس يقرأ
+مقدارَه من القاعدة الحيّة ويشترط أن تكون الخطوة مذكورةً — فلا يُنسى صامتاً.
+
+#### وحمرةٌ لم تكن خبراً عن الحماية
+
+أوّلُ صياغةٍ للحارس قرأت `PASSWORD_MIN` من مصدره بـ`exec(...)[1]` مباشرةً، فحين
+غاب الثابت على `HEAD` سقط الملفّ كلُّه عند تحميله بـ
+`Cannot read properties of null` — **صفرُ حالاتٍ ورمزُ سقوط**، لا يُميَّز من
+عطبٍ في البيئة. فصار يُقرأ بغيابٍ محتمَل، وسقطت الستُّ برسائلها هي وبقيت
+الثلاثُ الخضراء خضراء.
+
+---
+
 ### ما لم يُعالَج بعد
 
 - **المتطوّع لا يبلغ «كلُّ الفرص» ما دام موقعه يعمل.** `Opportunities` تشتقّ
@@ -5941,7 +5998,7 @@ Parse.Cloud.define('health', async () => ({
 #### `cloud/triggers.js`
 
 ```javascript
-const { ROLES, clampUserText } = require('./lib/auth');
+const { ROLES, clampUserText, checkPassword } = require('./lib/auth');
 const { warnImamsOfWorkerLoss } = require('./lib/worker');
 const { mosqueTitle } = require('./lib/mosque-name');
 const audit = require('./lib/audit');
@@ -6023,10 +6080,49 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
   // بالمفتاح الرئيسي كذلك: الحساب الجديد نشِطٌ دائماً
   if (user.isNew()) user.set('isActive', true);
 
+  // وكلمةُ المرور تُفحص حيث تُكتب — والتسجيل يكتب على `_User` مباشرةً بلا
+  // دالّة سحابة، فحدٌّ مكتوبٌ في دالّةٍ لا يمرّ به. وهي مرئيةٌ خاماً هنا وحدها.
+  checkPassword(user);
+
   // القصّ هنا لا في الدوال: التسجيل يكتب على `_User` مباشرةً بلا دالة سحابة،
   // فكان يُقبل اسمٌ من مئتي ألف حرف — قِيس على خادمٍ حقيقي. و`beforeSave` يمرّ
   // به كلُّ كتابة، فالحدُّ واحدٌ لكل الأبواب.
   clampUserText(user);
+});
+
+/**
+ * الملفّات: صورةٌ من هاتفٍ لا أكثر.
+ *
+ * **العطب الذي تسدّه:** `accept="image/*"` في الواجهة تلميحٌ في المتصفّح لا
+ * حارس، ولا حدَّ حجمٍ ولا نوعٍ على الخادم — و`maxUploadSize` الافتراضي عشرون
+ * ميغابايت. فمستخدمٌ **مصادَقٌ واحد** يملأ الـ٢٥٠ ميغابايت في جلسة، ويرفع ما
+ * ليس صورة. والرفع مفتوحٌ لكل مصادَق: هو شرطُ صورة الإنجاز.
+ *
+ * وقِيس أن هذا الباب يُغلق من كود السحابة فعلاً — بخلاف حدِّ المعدّل:
+ *
+ *     ما رآه المُشغّل: {"name":"a.txt","size":3,"type":"text/plain"}
+ *     ردُّ الكبير:     نعم
+ *
+ * **وخمسةُ ميغابايت**: صورةُ هاتفٍ حديث بين اثنين وخمسة، وستٌّ منها حدُّ
+ * الطلب الواحد (`MAX_PHOTOS`). فثلاثون ميغابايت لطلبٍ كامل، والباقة ٢٥٠.
+ *
+ * **وما لا يُعرف حجمُه يُمرَّر** لا يُردّ: `fileSize` قد يغيب في مساراتٍ لا
+ * تمرّ بالرفع المباشر، وردُّ ما لا نعرفه يقطع مساراً سليماً بحجّة الحيطة —
+ * والنوعُ يبقى مفحوصاً عليه.
+ */
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+Parse.Cloud.beforeSave(Parse.File, (request) => {
+  const type = String((request.file && request.file._source && request.file._source.type) || '');
+  if (!type.startsWith('image/')) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      'تُرفع الصور وحدها — أرفق صورةً من هاتفك.');
+  }
+  if (typeof request.fileSize === 'number' && request.fileSize > MAX_FILE_BYTES) {
+    const mb = Math.round((request.fileSize / (1024 * 1024)) * 10) / 10;
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      `الصورة كبيرة (${mb} م.ب) — الحدّ ٥ م.ب لكل صورة.`);
+  }
 });
 
 /**
@@ -6379,6 +6475,45 @@ const TEXT_LIMITS = {
   crNumber: 30,
 };
 
+/**
+ * كلمةُ المرور — **الطولُ وحده، ولا رموزَ مفروضة**.
+ *
+ * `parse-server` لا يفرض شيئاً ما لم يُضبط `passwordPolicy` في تهيئة الخادم،
+ * وهي بيدِ Back4app لا بيدنا. **لكنّ `beforeSave` يرى الكلمةَ خاماً** — قِيس
+ * على خادمٍ حقيقي: التسجيل يمرّ بـ`beforeSave(_User)` وفيه
+ * `password: "abc"` قبل التعمية، ورميُ خطأٍ هناك يردّ التسجيل فعلاً. فهذا
+ * أحدُ البابين اللذين يُغلقان من الكود وحده — بخلاف حدِّ المعدّل الذي قِيس
+ * فإذا هو لا يُسجَّل من كود السحابة إطلاقاً.
+ *
+ * **وثمانيةٌ طولاً بلا اشتراط رموز**: فرضُ الرموز على ناسٍ يدخلون من هواتفهم
+ * يدفعهم إلى كتابتها على ورقةٍ أو إلى `Aa1!` وأخواتها، والطولُ وحده أنفعُ من
+ * التعقيد المفروض. ويُردّ ما كان اسمَ المستخدم نفسه أو حرفاً واحداً مكرَّراً —
+ * وهما ما يقع فعلاً لا ما يُتخيَّل.
+ *
+ * ولا تُفحص إلا حين تُكتب: حفظٌ لا يمسّ الكلمة لا يحمل الحقل أصلاً، فلا
+ * يُحاسَب صاحبُ حسابٍ قديم على قاعدةٍ سُنّت بعده.
+ */
+const PASSWORD_MIN = 8;
+
+function checkPassword(user) {
+  const password = user.get('password');
+  if (typeof password !== 'string' || password === '') return;
+
+  if (password.length < PASSWORD_MIN) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      `كلمة المرور قصيرة — ${PASSWORD_MIN} أحرف على الأقل.`);
+  }
+  const username = user.get('username');
+  if (username && password.toLowerCase() === String(username).toLowerCase()) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      'كلمة المرور لا تكون اسم المستخدم نفسه.');
+  }
+  if (new Set(password).size === 1) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      'كلمة المرور حرفٌ واحد مكرَّر — اخترْ غيرها.');
+  }
+}
+
 /** يقصّ حقول الحساب النصّية إلى حدودها، ويُعيد ما قُصّ منها. */
 function clampUserText(user) {
   const trimmed = [];
@@ -6395,6 +6530,7 @@ function clampUserText(user) {
 }
 
 module.exports = {
+  PASSWORD_MIN, checkPassword,
   ROLES, requireUser, requireRole, mosqueForImam, fetchPointer,
   TEXT_LIMITS, clampUserText,
 };
@@ -9914,6 +10050,45 @@ const TEXT_LIMITS = {
   crNumber: 30,
 };
 
+/**
+ * كلمةُ المرور — **الطولُ وحده، ولا رموزَ مفروضة**.
+ *
+ * `parse-server` لا يفرض شيئاً ما لم يُضبط `passwordPolicy` في تهيئة الخادم،
+ * وهي بيدِ Back4app لا بيدنا. **لكنّ `beforeSave` يرى الكلمةَ خاماً** — قِيس
+ * على خادمٍ حقيقي: التسجيل يمرّ بـ`beforeSave(_User)` وفيه
+ * `password: "abc"` قبل التعمية، ورميُ خطأٍ هناك يردّ التسجيل فعلاً. فهذا
+ * أحدُ البابين اللذين يُغلقان من الكود وحده — بخلاف حدِّ المعدّل الذي قِيس
+ * فإذا هو لا يُسجَّل من كود السحابة إطلاقاً.
+ *
+ * **وثمانيةٌ طولاً بلا اشتراط رموز**: فرضُ الرموز على ناسٍ يدخلون من هواتفهم
+ * يدفعهم إلى كتابتها على ورقةٍ أو إلى `Aa1!` وأخواتها، والطولُ وحده أنفعُ من
+ * التعقيد المفروض. ويُردّ ما كان اسمَ المستخدم نفسه أو حرفاً واحداً مكرَّراً —
+ * وهما ما يقع فعلاً لا ما يُتخيَّل.
+ *
+ * ولا تُفحص إلا حين تُكتب: حفظٌ لا يمسّ الكلمة لا يحمل الحقل أصلاً، فلا
+ * يُحاسَب صاحبُ حسابٍ قديم على قاعدةٍ سُنّت بعده.
+ */
+const PASSWORD_MIN = 8;
+
+function checkPassword(user) {
+  const password = user.get('password');
+  if (typeof password !== 'string' || password === '') return;
+
+  if (password.length < PASSWORD_MIN) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      `كلمة المرور قصيرة — ${PASSWORD_MIN} أحرف على الأقل.`);
+  }
+  const username = user.get('username');
+  if (username && password.toLowerCase() === String(username).toLowerCase()) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      'كلمة المرور لا تكون اسم المستخدم نفسه.');
+  }
+  if (new Set(password).size === 1) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      'كلمة المرور حرفٌ واحد مكرَّر — اخترْ غيرها.');
+  }
+}
+
 /** يقصّ حقول الحساب النصّية إلى حدودها، ويُعيد ما قُصّ منها. */
 function clampUserText(user) {
   const trimmed = [];
@@ -10665,10 +10840,49 @@ Parse.Cloud.beforeSave(Parse.User, async (request) => {
   // بالمفتاح الرئيسي كذلك: الحساب الجديد نشِطٌ دائماً
   if (user.isNew()) user.set('isActive', true);
 
+  // وكلمةُ المرور تُفحص حيث تُكتب — والتسجيل يكتب على `_User` مباشرةً بلا
+  // دالّة سحابة، فحدٌّ مكتوبٌ في دالّةٍ لا يمرّ به. وهي مرئيةٌ خاماً هنا وحدها.
+  checkPassword(user);
+
   // القصّ هنا لا في الدوال: التسجيل يكتب على `_User` مباشرةً بلا دالة سحابة،
   // فكان يُقبل اسمٌ من مئتي ألف حرف — قِيس على خادمٍ حقيقي. و`beforeSave` يمرّ
   // به كلُّ كتابة، فالحدُّ واحدٌ لكل الأبواب.
   clampUserText(user);
+});
+
+/**
+ * الملفّات: صورةٌ من هاتفٍ لا أكثر.
+ *
+ * **العطب الذي تسدّه:** `accept="image/*"` في الواجهة تلميحٌ في المتصفّح لا
+ * حارس، ولا حدَّ حجمٍ ولا نوعٍ على الخادم — و`maxUploadSize` الافتراضي عشرون
+ * ميغابايت. فمستخدمٌ **مصادَقٌ واحد** يملأ الـ٢٥٠ ميغابايت في جلسة، ويرفع ما
+ * ليس صورة. والرفع مفتوحٌ لكل مصادَق: هو شرطُ صورة الإنجاز.
+ *
+ * وقِيس أن هذا الباب يُغلق من كود السحابة فعلاً — بخلاف حدِّ المعدّل:
+ *
+ *     ما رآه المُشغّل: {"name":"a.txt","size":3,"type":"text/plain"}
+ *     ردُّ الكبير:     نعم
+ *
+ * **وخمسةُ ميغابايت**: صورةُ هاتفٍ حديث بين اثنين وخمسة، وستٌّ منها حدُّ
+ * الطلب الواحد (`MAX_PHOTOS`). فثلاثون ميغابايت لطلبٍ كامل، والباقة ٢٥٠.
+ *
+ * **وما لا يُعرف حجمُه يُمرَّر** لا يُردّ: `fileSize` قد يغيب في مساراتٍ لا
+ * تمرّ بالرفع المباشر، وردُّ ما لا نعرفه يقطع مساراً سليماً بحجّة الحيطة —
+ * والنوعُ يبقى مفحوصاً عليه.
+ */
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+Parse.Cloud.beforeSave(Parse.File, (request) => {
+  const type = String((request.file && request.file._source && request.file._source.type) || '');
+  if (!type.startsWith('image/')) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      'تُرفع الصور وحدها — أرفق صورةً من هاتفك.');
+  }
+  if (typeof request.fileSize === 'number' && request.fileSize > MAX_FILE_BYTES) {
+    const mb = Math.round((request.fileSize / (1024 * 1024)) * 10) / 10;
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR,
+      `الصورة كبيرة (${mb} م.ب) — الحدّ ٥ م.ب لكل صورة.`);
+  }
 });
 
 /**
@@ -15605,10 +15819,25 @@ function createMock() {
   const gateway = { status: 'unpaid', amountBaisa: 0, sessions: 0 };
   let seq = 0;
 
-  /** أسماء الفئات المدمجة تصل كدوال لا كنصوص. */
+  /**
+   * أسماء الفئات المدمجة تصل كدوال لا كنصوص.
+   *
+   * **ولا افتراضَ صامت.** كان كلُّ ما ليس نصّاً ولا `Installation` يُقرأ
+   * `_User`، فلمّا سُجّل `beforeSave(Parse.File)` **محا مُشغّل الحسابات**
+   * وجرى على كل تسجيل — وسقطت ثمانِ حالات برسالة «تُرفع الصور وحدها» على
+   * إنشاء مستخدم. فالافتراضُ الصامت أخفى الخطأ خطوةً وأظهره في مكانٍ آخر.
+   *
+   * والتسمية تطابق `parse-server` نفسه: `getClassName` تُعيد
+   * `name.replace('Parse', '@')` لما لا `className` له — فـ`Parse.File`
+   * مفتاحُه `@File` لا `_File`.
+   */
+  const BUILTIN_CLASS = { User: '_User', Installation: '_Installation', File: '@File' };
+
   const classNameOf = (target) => {
     if (typeof target === 'string') return target;
-    return target && target.name === 'Installation' ? '_Installation' : '_User';
+    const name = target && target.name;
+    if (BUILTIN_CLASS[name]) return BUILTIN_CLASS[name];
+    throw new Error(`فئةٌ مدمجة لا يعرفها البديل: ${name || target} — أضِفها إلى BUILTIN_CLASS`);
   };
 
   const nextId = (className) => `${className}_${++seq}`;
@@ -15825,6 +16054,9 @@ function createMock() {
     ACL: MockACL,
     User: function User() {},
     Installation: function Installation() {},
+    // موجودةٌ ليُسجَّل عليها مُشغّل حجم الصور ونوعها — والبديل لا يرفع ملفاً،
+    // فالمُشغّل يُقاس هنا بتسجيله وعلى خادمٍ حقيقي بأثره
+    File: function File() {},
     GeoPoint: class GeoPoint {},
     // يُلتقط منه المستخدمون المستهدفون: push.js يستعلم على _Installation
     // بشرط containedIn('user', users)، وهو ما يهمّ التحقق منه.
@@ -17761,6 +17993,8 @@ test('نقاط الدخول', async (t) => {
 
   const EXPECTED_TRIGGERS = [
     'beforeSave:_User', 'afterSave:_User', 'beforeLogin:_User', 'beforeSave:Mosques',
+    // الصور: النوع والحجم — وهو البابُ الثاني الذي يُغلق من كود السحابة
+    'beforeSave:@File',
     'beforeSave:ServiceRequests', 'beforeSave:Transactions',
     'afterSave:ServiceRequests',
     // الطبقة الثانية خلف الصلاحيات — أربعةٌ للكتابة وسبعةٌ للحذف
