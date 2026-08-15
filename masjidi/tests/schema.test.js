@@ -153,7 +153,7 @@ test('نقاط الدخول', async (t) => {
     'startWork', 'markWorkDone', 'getRequestContacts',
     'completeService', 'cancelServiceRequest', 'initiateDonation',
     'confirmDonation', 'paymentWebhook', 'payoutContractor', 'refundDonation',
-    'getMosqueLedger', 'listPendingContractors', 'reviewContractor',
+    'getMosqueLedger', 'listPendingContractors', 'listApprovedContractors', 'reviewContractor',
     'setFavoriteMosque', 'getMyProfile', 'updateMyProfile',
     'getMyNotifications', 'markNotificationsRead',
     'getMosqueAuditTrail', 'health', 'preflight',

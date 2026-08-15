@@ -153,7 +153,7 @@
 | ملف المسجد | `getMyMosques` · `requestsForMosque` | **جاهز** | — |
 | **مؤشّر الاستدامة** | — | **بناء** | حقول لكل فئة، ومنطق حساب، وتاريخ للمقارنة، وشاشة أوزان للمشرف |
 | احتياجات المسجد | `openOpportunities` · `requestsForMosque` | **جاهز** | — |
-| تفاصيل الاحتياج | `requestsForMosque` · `getRequestInterests` | **جاهز** | — |
+| تفاصيل الاحتياج | `requestsForMosque` · `getRequestInterests` · `listApprovedContractors` | **جاهز** | — |
 | «أعرف من يستطيع المساعدة» | — | **بناء** | مسار إحالةٍ جديد |
 | التبرّع | `initiateDonation` · `confirmDonation` · `paymentWebhook` | مبنيّ **ومعطَّل** | تصريح الوزارة — لا كود |
 | التطوّع بالمهارات | `expressInterest` · `nearbyOpportunities` · `SkillPicker` | **جاهز** | — |

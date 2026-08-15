@@ -368,6 +368,18 @@ export const withdrawInterest = (requestId) => run('withdrawInterest', { request
 export const getMyInterests = () => run('getMyInterests');
 export const getRequestInterests = (requestId) => run('getRequestInterests', { requestId });
 export const assignWorker = (requestId, workerId) => run('assignWorker', { requestId, workerId });
+
+/**
+ * الشركات المعتمدة — الطريق الوحيد إلى معرّف شركة.
+ *
+ * والشركة لا تُبدي اهتماماً (`expressInterest` للمتطوّعين وحدهم)، فقائمةُ
+ * المهتمّين لا تحمل معرّفها أبداً. **وبلا هذه لا تُكلَّف شركةٌ من التطبيق
+ * بحال** — وإن كان الخادم يقبل التكليف ويعمل مسارُها كاملاً بعده.
+ *
+ * وتُنادى **بالطلب لا مع الشاشة**: أكثرُ الاحتياجات يأخذها متطوّع، فجلبُها مع
+ * كل فتحةٍ لطلبٍ يُنفق من باقةٍ محدودة بلا أن تُقرأ.
+ */
+export const listApprovedContractors = () => run('listApprovedContractors');
 /**
  * الطرف الآخر من التكليف — اسماً ورقماً. الهاتف محميّ فلا يُقرأ باستعلام.
  *

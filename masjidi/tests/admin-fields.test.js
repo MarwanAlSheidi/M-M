@@ -39,6 +39,8 @@ const ALLOWED_UNREAD = {
   getMyInterests: ['requestId', 'requestStatus', 'note'],
   // `interestId` و`volunteerId` معرّفان للتكليف لا للقراءة
   getRequestInterests: ['interestId', 'volunteerId'],
+  // `id` معرّفٌ يمضي إلى `assignWorker` لا نصٌّ يُقرأ — والاسم معروض
+  listApprovedContractors: ['id'],
   /*
    * `items` غلافُ القائمة لا حقلاً في صفّها، و`unread` عددٌ فوق الشاشة يُقرأ
    * من `result.unread` لا من صفّ.
@@ -131,6 +133,8 @@ const SCREENS = [
   },
   { screen: 'Profile', fn: 'getMyProfile', from: 'cloud/functions/users.js', bind: 'profile', also: ['EditProfile'] },
   { screen: 'Opportunities', fn: 'getNearbyOpportunities', from: 'cloud/functions/mosques.js', bind: 'row' },
+  // والشركات المعتمدة — أُضيفت ساعةَ أُضيفت دالّتها، لا بعد أن يسقط منها حقل
+  { screen: 'Contractors', fn: 'listApprovedContractors', from: 'cloud/functions/users.js', bind: 'row' },
 ];
 
 test('ما يُرسَل إلى الشاشة يُقرأ فيها', async (t) => {

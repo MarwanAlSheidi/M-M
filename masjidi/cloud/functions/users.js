@@ -40,6 +40,66 @@ Parse.Cloud.define('listPendingContractors', async (request) => {
 });
 
 /**
+ * الشركات المعتمدة — لعينِ الإمام وحده، ليختار منها منفّذاً.
+ *
+ * **العطب الذي تسدّه: مسارُ الشركات كان مبنيّاً كاملاً ولا مدخل له.** قِيس في
+ * متصفّح حقيقي على إمامٍ عنده احتياجٌ مفتوح وفي القاعدة شركةٌ معتمدة:
+ *
+ *     شاشة الطلب: «المتطوّعون المهتمّون · لم يسجّل أحد اهتمامه بعد.»
+ *     الأزرار:    ["→ رجوع", "إلغاء الطلب"]
+ *     ذكرٌ لشركة: **لا**
+ *
+ * والخادم يقبل التكليف لو بلغه المعرّف — قِيس أيضاً: شركةٌ معتمدة كُلّفت على
+ * طلبٍ تكلفتُه صفر **فنجح** وصار `assigned`. فالطريق سالكٌ من طرفيه ومقطوعٌ
+ * في وسطه: `expressInterest` **للمتطوّعين وحدهم** (والشركة لا تُبدي اهتماماً
+ * قصداً — الإمام يختارها)، وزرُّ التكليف الوحيد في الشاشة يقرأ معرّفه من قائمة
+ * المهتمّين. **فلا دالّة في المستودع كلِّه تُعطي الإمامَ معرّفَ شركة.**
+ *
+ * وعلى ذلك يتعلّق كلُّ ما بُني للشركات: التسجيل بالسجل التجاري، وطابور
+ * الاعتماد عند المشرف، و`isVerifiedContractor`، و`assignedContractorId`،
+ * وتبويب «مهامّي» عندها، و`startWork` و`markWorkDone` — **كلُّه خلف خطوةٍ
+ * واحدة غائبة.** وشركةٌ تُسجَّل وتُعتمد ثم لا يبلغها عملٌ أبداً تنصرف.
+ *
+ * **ولا هاتفَ هنا ولا سجلٌّ تجاري.** الهاتف يصل بعد التكليف عبر
+ * `getRequestContacts` — مقصوراً على طرفَي العمل وعلى مدّته؛ والسجلّ التجاري
+ * أساسُ الاعتماد عند المشرف لا عند الإمام، وهو محجوبٌ في `protectedFields`.
+ * فما يُعطى الإمامُ هو ما يُبنى عليه الاختيار: الاسم، وما أنجزت، وما تغيّبت
+ * عنه، وأين هي.
+ *
+ * **ولا تُحصر في محافظة المسجد.** الشركات قليلة والسلطنة صغيرة، وحصرٌ على حقلٍ
+ * قد يكون فارغاً يُفرغ القائمة كلَّها فيبدو أن لا شركة معتمدة — وذلك أسوأ من
+ * قائمةٍ فيها بعيدٌ يُرى بُعدُه. فتُعرض المحافظة ويبقى الحكم للإمام.
+ */
+Parse.Cloud.define('listApprovedContractors', async (request) => {
+  requireRole(request, 'imam');
+
+  const contractors = await new Parse.Query(Parse.User)
+    .equalTo('role', 'contractor')
+    .equalTo('isVerifiedContractor', true)
+    // الموقوف لا يُعرض ولو كان معتمداً — والشرط `=== false` معناه هنا
+    // «غير موقوف»، فيمرّ من لا قيمة له كما يمرّ من قيمتُه `true`
+    .notEqualTo('isActive', false)
+    .descending('completedJobs')
+    // ترتيبٌ ثانٍ فريد: المتساوون في الإنجاز — وأوّلُ يومٍ كلُّهم أصفار
+    .addAscending('objectId')
+    .limit(50)
+    .find({ useMasterKey: true });
+
+  return contractors.map((contractor) => ({
+    id: contractor.id,
+    fullName: contractor.get('fullName'),
+    companyName: contractor.get('companyName') || null,
+    governorate: contractor.get('governorate') || null,
+    completedJobs: contractor.get('completedJobs') || 0,
+    // `noShowBy` على **الطلب** لا على الحساب؛ والمحسوب منه يُخزَّن هنا
+    // (`requests.js` يشتقّه ويكتبه). وقراءتُه من الحساب كمصفوفة تُعطي صفراً
+    // أبداً — أي «لا غياب» على من تغيّب.
+    abandonedJobs: contractor.get('abandonedJobs') || 0,
+    avgRating: contractor.get('avgRating') ?? null,
+  }));
+});
+
+/**
  * حال اعتماد الشركة: `verified` أو `pending` أو `revoked` — و`null` لغيرها.
  *
  * `isVerifiedContractor` وحدها لا تفرّق بين من لم يُراجَع بعدُ ومن رُوجع فسُحب

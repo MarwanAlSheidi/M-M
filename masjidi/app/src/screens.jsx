@@ -1290,6 +1290,70 @@ function Counterpart({ contact }) {
   );
 }
 
+/**
+ * أو شركةٌ معتمدة — البابُ الذي لم يكن.
+ *
+ * مسارُ الشركات مبنيٌّ كاملاً على الخادم: التسجيل بالسجل التجاري، وطابور
+ * الاعتماد عند المشرف، والتكليف، وتبويب «مهامّي» عندها، والإبلاغ والاعتماد.
+ * **ولم يكن له مدخل.** قِيس في متصفّح حقيقي على إمامٍ عنده احتياجٌ مفتوح وفي
+ * القاعدة شركةٌ معتمدة:
+ *
+ *     شاشة الطلب: «المتطوّعون المهتمّون · لم يسجّل أحد اهتمامه بعد.»
+ *     الأزرار:    ["→ رجوع", "إلغاء الطلب"]
+ *     ذكرٌ لشركة: **لا**
+ *
+ * والشركة لا تُبدي اهتماماً قصداً — الإمام يختارها — فقائمةُ المهتمّين لا
+ * تحمل معرّفها، ولا دالّة كانت تُعطيه إيّاه. والخادم يقبل التكليف: قِيس أنّ
+ * شركةً معتمدة كُلّفت على طلبٍ تكلفتُه صفر **فنجحت** وصار الطلب `assigned`.
+ *
+ * **ولا تُجلب مع الشاشة بل بالطلب.** أكثرُ الاحتياجات يأخذها متطوّع، ونداءٌ
+ * يُنفَق مع كل فتحةٍ لطلبٍ ثمّ لا يُقرأ يستهلك باقةً محدودة (القاعدة ٣٥).
+ */
+function Contractors({ requestId, guard, act }) {
+  const [asked, setAsked] = useState(false);
+  const state = useList(
+    async () => (asked ? api.listApprovedContractors() : []),
+    [asked],
+  );
+
+  if (!asked) {
+    return (
+      <button className="ghost" data-testid="ask-contractors" onClick={() => setAsked(true)}>
+        أو كلّف شركة معتمدة
+      </button>
+    );
+  }
+
+  return (
+    <>
+      <h2>الشركات المعتمدة</h2>
+      <Listing state={state}
+        empty="لا شركة معتمدة بعد — الاعتماد يمرّ بالإدارة، والتطوّع يبقى مفتوحاً.">
+        <div>
+          {state.rows.map((row) => (
+            <article className="card" key={row.id}>
+              <div className="spread">
+                <h3>{row.companyName || row.fullName || 'شركة'}</h3>
+                {row.avgRating != null && <span className="tag">تقييم {row.avgRating}</span>}
+              </div>
+              {/* أين هي — ولا تُحجب البعيدة: قائمةٌ فارغة تُقرأ «لا شركة معتمدة» */}
+              {row.governorate && <p>{row.governorate}</p>}
+              <p>أعمال منجزة: {row.completedJobs}</p>
+              {row.abandonedJobs > 0 && (
+                <p className="warn">تغيّبت عن {row.abandonedJobs} تكليفاً سابقاً.</p>
+              )}
+              <button data-testid="assign-contractor" disabled={guard.busy}
+                onClick={() => act(api.assignWorker, requestId, row.id)}>
+                كلّفها بالعمل
+              </button>
+            </article>
+          ))}
+        </div>
+      </Listing>
+    </>
+  );
+}
+
 function RequestDetail({ request, onBack }) {
   const [status, setStatus] = useState(request.status);
   const interests = useList(
@@ -1363,6 +1427,9 @@ function RequestDetail({ request, onBack }) {
               ))}
             </div>
           </Listing>
+
+          <Contractors requestId={request.id} guard={guard} act={act} />
+
           <button className="danger" disabled={guard.busy} onClick={() => act(api.cancelServiceRequest, request.id)}>
             إلغاء الطلب
           </button>
