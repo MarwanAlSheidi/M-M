@@ -155,7 +155,29 @@ async function startStack() {
   const filesSubDirectory = path.basename(root);
   const filesRoot = path.join(process.cwd(), 'files');
 
+  /*
+   * **بذرةُ حدٍّ واحدة — وبها وحدها تعمل حدود كود السحابة.**
+   *
+   * قِيس في `parse-server` 9.10.0: `Parse.Cloud.define(name, handler,
+   * { rateLimit })` ينادي `addRateLimit(route, appId, true)`، وهي تفعل
+   * `config = Config.get(appId)` — و`Config.get` **يبني كائناً جديداً** في كل
+   * نداء وينسخ إليه مفاتيح المخزون. فإن لم يكن `rateLimits` موجوداً في
+   * المخزون أصلاً، صار `config.rateLimits = []` مصفوفةً على كائنٍ يُرمى،
+   * **والحدُّ يُسجَّل في العدم بلا خطأٍ ولا تحذير**.
+   *
+   * ولا يُنشئه الإقلاع إلا إذا مُرّر `rateLimit` غيرَ فارغ (`ParseServer.app`
+   * يبدأ بـ`rateLimit = []` فلا تدور الحلقة). فبذرةٌ واحدة على مسارٍ لا يُنادى
+   * تُنشئ المصفوفة في المخزون، فتلتصق بها حدود كود السحابة بعدها.
+   *
+   * وتُطلب بمتغيّر بيئة لا افتراضاً: الحارس يقيس الحالين — بالبذرة وبلا — لأن
+   * أشدّ ما في هذا العطب أنه **صامت**.
+   */
+  const seedRateLimit = process.env.MASJIDI_IT_RATELIMIT_SEED
+    ? [{ requestPath: '/__ratelimit_seed__', requestCount: 1e6, requestTimeWindow: 60000 }]
+    : [];
+
   const parseServer = new ParseServer({
+    rateLimit: seedRateLimit,
     databaseURI: `postgres://postgres@127.0.0.1:${pgPort}/masjidi`,
     filesAdapter: new FSFilesAdapter({ filesSubDirectory }),
     fileUpload: { enableForAuthenticatedUser: true },
@@ -172,8 +194,21 @@ async function startStack() {
   await parseServer.start();
   const app = express();
   app.use('/parse', parseServer.app);
+  /*
+   * الاستماع على العودة الداخلية (`127.0.0.1`) هو الافتراض ويبقى.
+   *
+   * **إلا لحارسٍ واحد**: حدُّ معدّل الطلبات في `parse-server` يتخطّى صراحةً كلَّ
+   * طلبٍ مصدرُه `127.0.0.1` ما لم يُطلب `includeInternalRequests` — قِيس في
+   * `middlewares.js`: `if (request.ip === '127.0.0.1' && !route.includeInternalRequests) return true;`
+   * فلا يُختبر الحدُّ من العودة الداخلية أبداً، **ويمرّ حارسٌ يظنّ أنه يقيسه**.
+   * و`includeInternalRequests` ليس علاجاً: تفعيلُه في الإنتاج يحدّ نداءات
+   * الكود لنفسه، فتُردّ مهمّةٌ دورية أو مُشغّل.
+   *
+   * فالعنوان يُبدَّل بمتغيّر بيئة لذلك الحارس وحده، والافتراض لا يتغيّر.
+   */
+  const bindHost = process.env.MASJIDI_IT_BIND || '127.0.0.1';
   const http = await new Promise((resolve) => {
-    const listener = app.listen(apiPort, '127.0.0.1', () => resolve(listener));
+    const listener = app.listen(apiPort, bindHost, () => resolve(listener));
   });
 
   const Parse = require('parse/node');

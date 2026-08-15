@@ -51,6 +51,15 @@ const MANUAL_STEPS = [
     checked: true,
   },
   {
+    title: 'اضبط `PARSE_SERVER_RATE_LIMIT` بالقيمة التي يطبعها `npm run deploy`',
+    where: 'Server Settings → Environment Variables',
+    why: 'بلا حدِّ معدّلٍ يُحرق ٢٥ ألف طلبٍ شهرياً في دقائق، وباب الدخول بلا قفل',
+    // ولا يُفحص من كود السحابة: الفحص يجري بالمفتاح الرئيس، والحدُّ يتخطّى
+    // المفتاح الرئيس صراحةً (`skip: request.auth?.isMaster`) — فيُعطي أخضرَ
+    // كاذباً. ولا يُسجَّل من كود السحابة أصلاً: انظر `scripts/lib/rate-limit.js`.
+    checked: false,
+  },
+  {
     title: 'فعّل رفع الملفات للمستخدم المصادَق',
     where: 'Server Settings → File upload',
     why: 'بدونه لا يرفع المنفّذ صورة الإنجاز، فيعتمد الإمام على الثقة وحدها',

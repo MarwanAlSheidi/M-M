@@ -28,6 +28,7 @@ const path = require('node:path');
 
 const { announceTarget } = require('./lib/target');
 const { MANUAL_STEPS } = require('./lib/manual');
+const { rateLimitConfig } = require('./lib/rate-limit');
 
 const ROOT = path.join(__dirname, '..');
 const REQUIRED = ['PARSE_APP_ID', 'PARSE_MASTER_KEY', 'PARSE_JS_KEY', 'PARSE_SERVER_URL'];
@@ -112,6 +113,17 @@ function main() {
     console.log(`  ${at + 1}. ${manual.title} — ${manual.where}`);
     console.log(`     ${manual.why}.`);
   });
+  /*
+   * **والقيمة تُطبع جاهزةً لا يُطلب من المالك تأليفُها.**
+   *
+   * خطوةٌ يدويةٌ قيمتُها ثلاثون سطراً من JSON لا تُنفَّذ — تُؤجَّل ثم تُنسى.
+   * وحدُّ المعدّل ليس زينة: بدونه يُحرق ٢٥ ألف طلبٍ شهرياً في دقائق.
+   */
+  console.log(`\n${'─'.repeat(60)}\n▸ قيمة PARSE_SERVER_RATE_LIMIT — انسخها كما هي\n${'─'.repeat(60)}`);
+  console.log(JSON.stringify(rateLimitConfig()));
+  console.log('\n  ولا تُضبط من كود السحابة: قِيس أنّ `Parse.Cloud.define(..., { rateLimit })`');
+  console.log('  يُسجّل **صفر** حدود بلا خطأ — انظر `scripts/lib/rate-limit.js`.');
+
   console.log('\n  ثم أنشئ حسابك من التطبيق، وارفعه مشرفاً:');
   console.log('     npm run admin -- --username <اسمك>');
   console.log('\n  ثم — وهذا ما يُقاس به كلُّ ما سبق:');
