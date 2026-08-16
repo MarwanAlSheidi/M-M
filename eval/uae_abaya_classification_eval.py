@@ -27,7 +27,7 @@ TEMPERATURE = 0.0
 
 PROMPT_VERSION = "v0.1"
 DATASET_VERSION = "v1.2"
-HARNESS_VERSION = "v1.1.2"
+HARNESS_VERSION = "v1.2.0"
 
 INPUT_CSV = "UAE_CALIBRATION_DATASET_v1.2.csv"
 
@@ -41,19 +41,19 @@ METADATA_JSON = "RUN_METADATA.json"
 
 
 # ============================================================
-# 2. CRITICAL FIELDS (تم تثبيتها لتشمل الكثافة)
+# 2. CRITICAL FIELDS (مع الكثافة)
 # ============================================================
 
 CRITICAL_FIELDS = [
     "silhouette_normalized",
     "opening_type",
     "embellishment_type",
-    "embellishment_intensity"   # تمت الإضافة بناءً على الملاحظة
+    "embellishment_intensity"
 ]
 
 
 # ============================================================
-# 3. TAXONOMY (مع تقييد fabric_variant)
+# 3. TAXONOMY (مقيدة)
 # ============================================================
 
 ALLOWED_VALUES = {
@@ -91,10 +91,6 @@ ALLOWED_VALUES = {
         None
     ],
 
-    # ------------------------------------------------------------
-    # تم تقييد fabric_variant بقائمة أولية مستخرجة من السوق
-    # لتجنب اختراع النموذج لمتغيرات وهمية.
-    # ------------------------------------------------------------
     "fabric_variant": [
         "layan",
         "nova",
@@ -163,7 +159,7 @@ ALLOWED_VALUES = {
 
 
 # ============================================================
-# 4. FIXED SYSTEM PROMPT v0.1
+# 4. FIXED SYSTEM PROMPT v0.1 (دون تغيير)
 # ============================================================
 
 SYSTEM_PROMPT = """
@@ -269,7 +265,7 @@ EXPECTED_FIELDS = list(ALLOWED_VALUES.keys())
 
 
 # ============================================================
-# 6. SHA256 FILE HASH
+# 6. FILE HASH (SHA256)
 # ============================================================
 
 def file_sha256(filepath):
@@ -310,7 +306,75 @@ def is_null_value(value):
 
 
 # ============================================================
-# 8. VALIDATE + CLEAN AI PREDICTION (مع تقييد fabric_variant)
+# 8. GOLD TAXONOMY NORMALIZATION (مرادفات)
+# ============================================================
+
+GOLD_SYNONYM_MAP = {
+    # Silhouette
+    "farasha": "butterfly",
+    "klosh cut": "klosh",
+    "klosh": "klosh",
+    # Fabric family
+    "nida": "nida",
+    "crepe": "crepe",
+    "chiffon": "chiffon",
+    "satin": "satin",
+    "linen": "linen",
+    "velvet": "velvet",
+    "viscose": "viscose",
+    "cotton": "cotton",
+    "jacquard": "jacquard",
+    "organza": "organza",
+    "cupro": "cupro",
+    "brocade": "brocade",
+    "wool": "wool",
+    # Color
+    "maroon": "burgundy",
+    "navy blue": "navy",
+    "olive green": "olive",
+    # Embellishment
+    "beadwork": "beadwork",
+    "stone": "stone / crystal",
+    "crystal": "stone / crystal",
+    "stones": "stone / crystal",
+    "crystals": "stone / crystal",
+    "laser cut": "laser cut",
+    "lace": "lace",
+    "piping": "piping",
+    # Embroidery
+    "machine embroidery": "machine embroidery",
+    "hand embroidery": "hand embroidery",
+    # Intensity
+    "minimal": "minimal",
+    "medium": "medium",
+    "heavy": "heavy"
+}
+
+def normalize_gold_value(value, field_name):
+    """
+    تطبق التطبيع على قيمة Gold باستخدام خريطة المرادفات.
+    إذا كانت القيمة غير معروفة، تُترك كما هي (مع تحويل إلى lowercase).
+    """
+    if is_null_value(value):
+        return None
+
+    raw_str = str(value).strip().lower()
+
+    # التحقق من المرادفات
+    if raw_str in GOLD_SYNONYM_MAP:
+        return GOLD_SYNONYM_MAP[raw_str]
+
+    # إذا كانت القيمة ضمن الـ taxonomy مباشرة
+    allowed = ALLOWED_VALUES.get(field_name, [])
+    if allowed and raw_str in allowed:
+        return raw_str
+
+    # ترك القيمة كما هي (سيتم اكتشافها لاحقاً إذا كانت خارجة عن التصنيف)
+    return raw_str
+
+
+# ============================================================
+# 9. VALIDATE + CLEAN AI PREDICTION (مع الاحتفاظ بالـ raw)
 # ============================================================
 
 def validate_and_clean_prediction(pred_dict):
@@ -330,14 +394,14 @@ def validate_and_clean_prediction(pred_dict):
         )
 
     cleaned_pred = {}
-
-    # --------------------------------------------------------
-    # Ensure every expected field exists
-    # --------------------------------------------------------
+    raw_pred = {}
 
     for key in EXPECTED_FIELDS:
 
         raw_val = pred_dict.get(key)
+
+        # حفظ القيمة الخام (حتى لو كانت غير صالحة)
+        raw_pred[key] = raw_val
 
         if is_null_value(raw_val):
 
@@ -348,10 +412,6 @@ def validate_and_clean_prediction(pred_dict):
 
         allowed = ALLOWED_VALUES[key]
 
-        # ----------------------------------------------------
-        # Enumerated field: الآن أصبح fabric_variant مقيداً
-        # ----------------------------------------------------
-
         if cleaned in allowed:
 
             cleaned_pred[key] = cleaned
@@ -361,21 +421,18 @@ def validate_and_clean_prediction(pred_dict):
             cleaned_pred[key] = None
             invalid_log[key] = raw_val
 
-    # --------------------------------------------------------
-    # Detect unexpected fields
-    # --------------------------------------------------------
-
+    # كشف الحقول غير المتوقعة
     for key in pred_dict.keys():
 
         if key not in EXPECTED_FIELDS:
 
             invalid_log[f"unexpected_field:{key}"] = pred_dict[key]
 
-    return cleaned_pred, invalid_log
+    return raw_pred, cleaned_pred, invalid_log
 
 
 # ============================================================
-# 9. GOLD FREEZE
+# 10. GOLD FREEZE (مع التطبيع الموسع)
 # ============================================================
 
 gold_transformations = {}
@@ -416,7 +473,7 @@ else:
     gold_df = df.copy()
 
     # --------------------------------------------------------
-    # Klosh correction
+    # 10-a. Klosh correction (مع البحث في الاسم والوصف)
     # --------------------------------------------------------
 
     description_lower = (
@@ -426,11 +483,22 @@ else:
         .str.lower()
     )
 
+    product_name_lower = (
+        gold_df["product_name_raw"]
+        .fillna("")
+        .astype(str)
+        .str.lower()
+    )
+
+    # البحث في أي من الحقلين عن "klosh"
+    klosh_evidence = (
+        description_lower.str.contains("klosh", na=False)
+        |
+        product_name_lower.str.contains("klosh", na=False)
+    )
+
     klosh_mask = (
-        description_lower.str.contains(
-            "klosh",
-            na=False
-        )
+        klosh_evidence
         &
         gold_df["silhouette_normalized"].isna()
     )
@@ -449,19 +517,12 @@ else:
     ] = klosh_count
 
     print(
-        f"   ✅ تم تصحيح {klosh_count} سجلات Klosh."
+        f"   ✅ تم تصحيح {klosh_count} سجلات Klosh (من الاسم أو الوصف)."
     )
 
     # --------------------------------------------------------
-    # Remove unsupported implicit Minimal
+    # 10-b. Remove unsupported implicit Minimal
     # --------------------------------------------------------
-
-    product_name_lower = (
-        gold_df["product_name_raw"]
-        .fillna("")
-        .astype(str)
-        .str.lower()
-    )
 
     explicit_minimal_mask = (
 
@@ -513,6 +574,55 @@ else:
     )
 
     # --------------------------------------------------------
+    # 10-c. Gold Taxonomy Normalization (مرادفات)
+    # --------------------------------------------------------
+
+    gold_fields_to_normalize = [
+        "silhouette_normalized",
+        "opening_type",
+        "fabric_family",
+        "fabric_variant",
+        "color_normalized",
+        "embroidery_type",
+        "embellishment_type",
+        "embellishment_intensity"
+    ]
+
+    normalization_log = {}
+
+    for field in gold_fields_to_normalize:
+
+        if field not in gold_df.columns:
+            continue
+
+        original_values = gold_df[field].copy()
+
+        gold_df[field] = gold_df[field].apply(
+            lambda v: normalize_gold_value(v, field)
+        )
+
+        # تسجيل التغييرات
+        changed_mask = (original_values != gold_df[field]) & (~original_values.isna())
+        if changed_mask.sum() > 0:
+            normalization_log[field] = {
+                "changed_count": int(changed_mask.sum()),
+                "examples": [
+                    {
+                        "original": str(original_values.iloc[i]),
+                        "normalized": str(gold_df[field].iloc[i])
+                    }
+                    for i in changed_mask[changed_mask].index[:3]  # أول 3 أمثلة
+                ]
+            }
+
+    if normalization_log:
+        gold_transformations["gold_taxonomy_normalization"] = normalization_log
+        print(
+            f"   ✅ تم تطبيع {sum(v['changed_count'] for v in normalization_log.values())} "
+            f"قيم Gold وفق مرادفات التصنيف."
+        )
+
+    # --------------------------------------------------------
     # Save immutable Gold
     # --------------------------------------------------------
 
@@ -529,23 +639,28 @@ else:
 
 
 # ============================================================
-# 10. GOLD HASH
+# 11. GOLD HASH + INPUT HASH + SCRIPT HASH
 # ============================================================
 
 gold_sha256 = file_sha256(
     LOCKED_GOLD_CSV
 )
 
+input_sha256 = file_sha256(
+    INPUT_CSV
+) if os.path.exists(INPUT_CSV) else None
+
+script_sha256 = file_sha256(
+    __file__
+) if os.path.exists(__file__) else None
+
 print(
-    f"🔐 Gold SHA256:"
-)
-print(
-    gold_sha256
+    f"🔐 Gold SHA256: {gold_sha256}"
 )
 
 
 # ============================================================
-# 11. VERIFY REQUIRED GOLD COLUMNS
+# 12. VERIFY REQUIRED GOLD COLUMNS
 # ============================================================
 
 required_gold_columns = [
@@ -579,10 +694,10 @@ if missing_columns:
 
 
 # ============================================================
-# 12. API PREDICTION
+# 13. API PREDICTION (مع Retry)
 # ============================================================
 
-def get_ai_prediction(row):
+def get_ai_prediction_with_retry(row, max_retries=3, base_delay=1.0):
 
     product_name = (
         row["product_name_raw"]
@@ -605,77 +720,110 @@ def get_ai_prediction(row):
         f"الوصف: {description}"
     )
 
-    try:
+    retry_log = []
+    last_error = None
 
-        response = client.chat.completions.create(
+    for attempt in range(max_retries):
 
-            model=MODEL,
+        try:
 
-            messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": user_prompt
+            response = client.chat.completions.create(
+
+                model=MODEL,
+
+                messages=[
+                    {
+                        "role": "system",
+                        "content": SYSTEM_PROMPT
+                    },
+                    {
+                        "role": "user",
+                        "content": user_prompt
+                    }
+                ],
+
+                temperature=TEMPERATURE,
+
+                response_format={
+                    "type": "json_object"
                 }
-            ],
-
-            temperature=TEMPERATURE,
-
-            response_format={
-                "type": "json_object"
-            }
-        )
-
-        raw_response = (
-            response
-            .choices[0]
-            .message
-            .content
-        )
-
-        data = json.loads(
-            raw_response
-        )
-
-        cleaned_data, invalids = (
-            validate_and_clean_prediction(
-                data
             )
-        )
 
-        return (
-            cleaned_data,
-            raw_response,
-            invalids
-        )
+            raw_response = (
+                response
+                .choices[0]
+                .message
+                .content
+            )
 
-    except Exception as e:
+            data = json.loads(
+                raw_response
+            )
 
-        empty_prediction = {
-            key: None
-            for key in EXPECTED_FIELDS
-        }
+            raw_pred, cleaned_pred, invalids = (
+                validate_and_clean_prediction(
+                    data
+                )
+            )
 
-        return (
-            empty_prediction,
-            f"ERROR: {str(e)}",
-            {
-                "api_error": str(e)
-            }
-        )
+            # نجاح
+            return (
+                raw_pred,
+                cleaned_pred,
+                raw_response,
+                invalids,
+                retry_log  # فارغ إذا لم نحتاج لإعادة المحاولة
+            )
+
+        except Exception as e:
+
+            last_error = str(e)
+
+            retry_log.append({
+                "attempt": attempt + 1,
+                "error": last_error,
+                "delay_seconds": base_delay * (2 ** attempt)
+            })
+
+            if attempt < max_retries - 1:
+
+                time.sleep(
+                    base_delay * (2 ** attempt)
+                )
+
+    # فشل بعد كل المحاولات
+    empty_raw = {
+        key: None
+        for key in EXPECTED_FIELDS
+    }
+
+    empty_cleaned = {
+        key: None
+        for key in EXPECTED_FIELDS
+    }
+
+    return (
+        empty_raw,
+        empty_cleaned,
+        f"ERROR: {last_error}",
+        {
+            "api_error": last_error
+        },
+        retry_log
+    )
 
 
 # ============================================================
-# 13. RUN EVALUATION
+# 14. RUN EVALUATION
 # ============================================================
 
 print()
 print("=" * 70)
 print(
     f"🚀 بدء Evaluation"
+)
+print(
+    f"Harness: {HARNESS_VERSION}"
 )
 print(
     f"Model: {MODEL}"
@@ -687,18 +835,17 @@ print(
     f"Dataset: {DATASET_VERSION}"
 )
 print(
-    f"Harness: {HARNESS_VERSION}"
-)
-print(
     f"Records: {len(gold_df)}"
 )
 print("=" * 70)
 print()
 
 
-predictions = []
+raw_predictions = []
+cleaned_predictions = []
 raw_responses = []
 invalid_predictions_log = []
+retry_logs = []
 
 failed_calls = 0
 
@@ -714,13 +861,19 @@ for idx, row in gold_df.iterrows():
         f"{product_id}"
     )
 
-    pred, raw, invalids = (
-        get_ai_prediction(row)
+    raw_pred, cleaned_pred, raw_response, invalids, retry_log = (
+        get_ai_prediction_with_retry(row)
     )
 
-    predictions.append(pred)
+    raw_predictions.append(raw_pred)
+    cleaned_predictions.append(cleaned_pred)
+    raw_responses.append(raw_response)
 
-    raw_responses.append(raw)
+    if retry_log:
+        retry_logs.append({
+            "product_id": product_id,
+            "retry_log": retry_log
+        })
 
     if invalids:
 
@@ -733,10 +886,10 @@ for idx, row in gold_df.iterrows():
                 ensure_ascii=False
             ),
 
-            "raw_response": raw
+            "raw_response": raw_response
         })
 
-    if raw.startswith("ERROR:"):
+    if raw_response.startswith("ERROR:"):
 
         failed_calls += 1
 
@@ -749,24 +902,28 @@ runtime_seconds = (
 
 
 # ============================================================
-# 14. BUILD RESULT DATAFRAME
+# 15. BUILD RESULT DATAFRAME (مع raw و cleaned)
 # ============================================================
 
-pred_df = pd.DataFrame(
-    predictions
-)
+# قوائم الأعمدة
+raw_columns = [f"raw_{col}" for col in EXPECTED_FIELDS]
+cleaned_columns = [f"cleaned_{col}" for col in EXPECTED_FIELDS]
 
-pred_df.columns = [
-    f"ai_{col}"
-    for col in pred_df.columns
-]
+# DataFrame للتوقعات الخام
+raw_pred_df = pd.DataFrame(raw_predictions)
+raw_pred_df.columns = raw_columns
 
-pred_df["raw_response"] = raw_responses
+# DataFrame للتوقعات النظيفة
+cleaned_pred_df = pd.DataFrame(cleaned_predictions)
+cleaned_pred_df.columns = cleaned_columns
 
+# دمج كل شيء
 result_df = pd.concat(
     [
         gold_df.reset_index(drop=True),
-        pred_df.reset_index(drop=True)
+        raw_pred_df,
+        cleaned_pred_df,
+        pd.DataFrame({"raw_response": raw_responses})
     ],
     axis=1
 )
@@ -785,53 +942,53 @@ print(
 
 
 # ============================================================
-# 15. EVALUATION
+# 16. EVALUATION (باستخدام RAW prediction فقط)
 # ============================================================
 
 print()
-print("📊 حساب المقاييس...")
+print("📊 حساب المقاييس (باستخدام RAW prediction)...")
 
 
 fields = [
 
     (
         "silhouette_normalized",
-        "ai_silhouette"
+        "raw_silhouette"
     ),
 
     (
         "opening_type",
-        "ai_opening_type"
+        "raw_opening_type"
     ),
 
     (
         "fabric_family",
-        "ai_fabric_family"
+        "raw_fabric_family"
     ),
 
     (
         "fabric_variant",
-        "ai_fabric_variant"
+        "raw_fabric_variant"
     ),
 
     (
         "color_normalized",
-        "ai_color_normalized"
+        "raw_color_normalized"
     ),
 
     (
         "embroidery_type",
-        "ai_embroidery_type"
+        "raw_embroidery_type"
     ),
 
     (
         "embellishment_type",
-        "ai_embellishment_type"
+        "raw_embellishment_type"
     ),
 
     (
         "embellishment_intensity",
-        "ai_embellishment_intensity"
+        "raw_embellishment_intensity"
     )
 ]
 
@@ -846,7 +1003,7 @@ per_record_status = []
 
 
 # ============================================================
-# 16. RECORD-LEVEL STATUS
+# 17. RECORD-LEVEL STATUS (باستخدام RAW)
 # ============================================================
 
 for idx, row in result_df.iterrows():
@@ -907,7 +1064,7 @@ for idx, row in result_df.iterrows():
 
 
 # ============================================================
-# 17. FIELD METRICS
+# 18. FIELD METRICS (باستخدام RAW)
 # ============================================================
 
 field_fp_rates = {}
@@ -1008,7 +1165,7 @@ for g_col, a_col in fields:
 
 
 # ============================================================
-# 18. KLOSH DETECTION RATE
+# 19. KLOSH DETECTION RATE (باستخدام RAW)
 # ============================================================
 
 klosh_gold = result_df[
@@ -1028,7 +1185,7 @@ if len(klosh_gold) > 0:
 
     ai_values = (
         klosh_gold[
-            "ai_silhouette"
+            "raw_silhouette"
         ]
         .fillna("")
         .astype(str)
@@ -1047,7 +1204,7 @@ if len(klosh_gold) > 0:
 
 
 # ============================================================
-# 19. OVERALL HALLUCINATION
+# 20. OVERALL HALLUCINATION
 # ============================================================
 
 total_fp = sum(
@@ -1073,7 +1230,7 @@ overall_fp_rate = (
 
 
 # ============================================================
-# 20. CRITICAL HALLUCINATION (تشمل الكثافة الآن)
+# 21. CRITICAL HALLUCINATION (تشمل الكثافة)
 # ============================================================
 
 critical_fp_rates = [
@@ -1099,7 +1256,7 @@ critical_hallucination_rate = (
 
 
 # ============================================================
-# 21. MACRO ACCURACY
+# 22. MACRO ACCURACY
 # ============================================================
 
 macro_accuracy = (
@@ -1120,7 +1277,7 @@ macro_accuracy = (
 
 
 # ============================================================
-# 22. ADDITIONAL RUN QUALITY METRICS
+# 23. ADDITIONAL RUN QUALITY METRICS
 # ============================================================
 
 total_records = len(gold_df)
@@ -1156,7 +1313,7 @@ successful_calls = (
 
 
 # ============================================================
-# 23. EXPORT EXCEL REPORT
+# 24. EXPORT EXCEL REPORT
 # ============================================================
 
 print()
@@ -1343,6 +1500,16 @@ with pd.ExcelWriter(
         },
 
         {
+            "Metric": "Input CSV SHA256",
+            "Value": input_sha256
+        },
+
+        {
+            "Metric": "Script SHA256",
+            "Value": script_sha256
+        },
+
+        {
             "Metric": "Dataset Version",
             "Value": DATASET_VERSION
         },
@@ -1383,7 +1550,7 @@ print(
 
 
 # ============================================================
-# 24. ERROR MATRIX
+# 25. ERROR MATRIX
 # ============================================================
 
 error_rows = []
@@ -1419,7 +1586,7 @@ print(
 
 
 # ============================================================
-# 25. INVALID PREDICTIONS
+# 26. INVALID PREDICTIONS
 # ============================================================
 
 if invalid_predictions_log:
@@ -1444,7 +1611,7 @@ else:
 
 
 # ============================================================
-# 26. RUN METADATA
+# 27. RUN METADATA
 # ============================================================
 
 metadata = {
@@ -1473,6 +1640,12 @@ metadata = {
     "gold_sha256":
         gold_sha256,
 
+    "input_csv_sha256":
+        input_sha256,
+
+    "script_sha256":
+        script_sha256,
+
     "gold_transformations_applied":
         gold_transformations,
 
@@ -1481,7 +1654,11 @@ metadata = {
 
     "critical_hallucination_definition":
         "Macro-average FP rate across silhouette_normalized, opening_type, "
-        "embellishment_type, and embellishment_intensity.",
+        "embellishment_type, and embellishment_intensity using RAW predictions.",
+
+    "evaluation_basis":
+        "RAW predictions (before taxonomy validation) are used for all metrics. "
+        "Cleaned predictions are provided for reference and taxonomy adherence.",
 
     "total_records":
         total_records,
@@ -1544,13 +1721,17 @@ print(
 
 
 # ============================================================
-# 27. FINAL SUMMARY
+# 28. FINAL SUMMARY
 # ============================================================
 
 print()
 print("=" * 70)
 print("🎯 اكتمل التشغيل بنجاح")
 print("=" * 70)
+
+print(
+    f"Harness: {HARNESS_VERSION}"
+)
 
 print(
     f"Records: {total_records}"
