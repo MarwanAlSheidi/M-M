@@ -309,50 +309,57 @@ def is_null_value(value):
 # 8. GOLD TAXONOMY NORMALIZATION (مرادفات)
 # ============================================================
 
+# اسم عمود Gold ← مفتاحه في ALLOWED_VALUES (يختلفان في silhouette وحده).
+GOLD_FIELD_TAXONOMY_KEY = {
+    "silhouette_normalized": "silhouette",
+    "opening_type": "opening_type",
+    "fabric_family": "fabric_family",
+    "fabric_variant": "fabric_variant",
+    "color_normalized": "color_normalized",
+    "embroidery_type": "embroidery_type",
+    "embellishment_type": "embellishment_type",
+    "embellishment_intensity": "embellishment_intensity"
+}
+
+# ------------------------------------------------------------
+# المرادفات مفهرسة بالحقل، لا مسطّحة.
+# خريطة واحدة مشتركة تُسرّب معاني بين الحقول: "stone" لوناً
+# حقيقياً في وصف العبايات كان يصير "stone / crystal".
+# ------------------------------------------------------------
 GOLD_SYNONYM_MAP = {
-    # Silhouette
-    "farasha": "butterfly",
-    "klosh cut": "klosh",
-    "klosh": "klosh",
-    # Fabric family
-    "nida": "nida",
-    "crepe": "crepe",
-    "chiffon": "chiffon",
-    "satin": "satin",
-    "linen": "linen",
-    "velvet": "velvet",
-    "viscose": "viscose",
-    "cotton": "cotton",
-    "jacquard": "jacquard",
-    "organza": "organza",
-    "cupro": "cupro",
-    "brocade": "brocade",
-    "wool": "wool",
-    # Color
-    "maroon": "burgundy",
-    "navy blue": "navy",
-    "olive green": "olive",
-    # Embellishment
-    "beadwork": "beadwork",
-    "stone": "stone / crystal",
-    "crystal": "stone / crystal",
-    "stones": "stone / crystal",
-    "crystals": "stone / crystal",
-    "laser cut": "laser cut",
-    "lace": "lace",
-    "piping": "piping",
-    # Embroidery
-    "machine embroidery": "machine embroidery",
-    "hand embroidery": "hand embroidery",
-    # Intensity
-    "minimal": "minimal",
-    "medium": "medium",
-    "heavy": "heavy"
+
+    "silhouette_normalized": {
+        "farasha": "butterfly",
+        "klosh cut": "klosh"
+    },
+
+    "opening_type": {},
+
+    "fabric_family": {},
+
+    "fabric_variant": {},
+
+    "color_normalized": {
+        "maroon": "burgundy",
+        "navy blue": "navy",
+        "olive green": "olive"
+    },
+
+    "embroidery_type": {},
+
+    "embellishment_type": {
+        "stone": "stone / crystal",
+        "stones": "stone / crystal",
+        "crystal": "stone / crystal",
+        "crystals": "stone / crystal"
+    },
+
+    "embellishment_intensity": {}
 }
 
 def normalize_gold_value(value, field_name):
     """
-    تطبق التطبيع على قيمة Gold باستخدام خريطة المرادفات.
+    تطبق التطبيع على قيمة Gold باستخدام مرادفات هذا الحقل وحده.
     إذا كانت القيمة غير معروفة، تُترك كما هي (مع تحويل إلى lowercase).
     """
     if is_null_value(value):
@@ -360,12 +367,15 @@ def normalize_gold_value(value, field_name):
 
     raw_str = str(value).strip().lower()
 
-    # التحقق من المرادفات
-    if raw_str in GOLD_SYNONYM_MAP:
-        return GOLD_SYNONYM_MAP[raw_str]
+    # التحقق من مرادفات هذا الحقل
+    field_synonyms = GOLD_SYNONYM_MAP.get(field_name, {})
+
+    if raw_str in field_synonyms:
+        return field_synonyms[raw_str]
 
     # إذا كانت القيمة ضمن الـ taxonomy مباشرة
-    allowed = ALLOWED_VALUES.get(field_name, [])
+    taxonomy_key = GOLD_FIELD_TAXONOMY_KEY.get(field_name, field_name)
+    allowed = ALLOWED_VALUES.get(taxonomy_key, [])
     if allowed and raw_str in allowed:
         return raw_str
 
@@ -383,7 +393,13 @@ def validate_and_clean_prediction(pred_dict):
 
     if not isinstance(pred_dict, dict):
 
+        # ثلاث قيم لا اثنتان: المستدعي يفكّ raw و cleaned و invalid.
+        # الاثنتان كانتا تُطلقان ValueError داخل try فتُقيَّد كخطأ API.
         return (
+            {
+                key: None
+                for key in EXPECTED_FIELDS
+            },
             {
                 key: None
                 for key in EXPECTED_FIELDS
@@ -608,8 +624,8 @@ else:
                 "changed_count": int(changed_mask.sum()),
                 "examples": [
                     {
-                        "original": str(original_values.iloc[i]),
-                        "normalized": str(gold_df[field].iloc[i])
+                        "original": str(original_values.loc[i]),
+                        "normalized": str(gold_df[field].loc[i])
                     }
                     for i in changed_mask[changed_mask].index[:3]  # أول 3 أمثلة
                 ]
@@ -1677,6 +1693,12 @@ metadata = {
 
     "invalid_prediction_rate":
         invalid_prediction_rate,
+
+    "records_with_retries":
+        len(retry_logs),
+
+    "retry_events":
+        retry_logs,
 
     "runtime_seconds":
         runtime_seconds,
