@@ -16,6 +16,40 @@ Parse.initialize(APP_ID, JS_KEY);
 Parse.serverURL = SERVER_URL;
 
 /**
+ * حدودٌ يفرضها الخادم — **تُقال قبل السقوط لا بعده**.
+ *
+ * كلُّ واحدٍ منها مُنفَّذٌ في `cloud/` ويردّ بالعربية. لكنّ من يقف أمام النموذج
+ * لا يعرفه، فيكتشفه **بالثمن**: قِيس في متصفّح حقيقي أنّ من ملأ التسجيل كلَّه
+ * — اسماً وهاتفاً وصفةً ومحافظةً ومهارات — ثم ضغط، رُدّ بـ«كلمة المرور قصيرة»
+ * ولم يكن في النموذج حرفٌ واحد يقول ذلك ولا `minLength` على الحقل. والصورةُ
+ * أسوأ: تُرفع ستّةُ ميغابايت على شبكة هاتفٍ **ثم** تُردّ.
+ *
+ * **والأرقام تُقابَل بمصدرها** (`tests/limits-parity.test.js`): حدٌّ يُشدّد على
+ * الخادم ويبقى مكتوباً هنا أوسعَ يُعطي وعداً يُخلَف عند أوّل ضغطة.
+ */
+export const LIMITS = {
+  // `PASSWORD_MIN` في `cloud/lib/auth.js`
+  passwordMin: 8,
+  // `MAX_FILE_BYTES` في `cloud/triggers.js`
+  photoBytes: 5 * 1024 * 1024,
+  // `MAX_PHOTOS` في `cloud/functions/requests.js`
+  photoCount: 6,
+};
+
+/** سببُ ردِّ كلمة المرور، أو `null` إن قُبلت — بنصّ الخادم نفسه. */
+export const passwordProblem = (password, username) => {
+  const value = String(password || '');
+  if (value.length < LIMITS.passwordMin) {
+    return `كلمة المرور قصيرة — ${LIMITS.passwordMin} أحرف على الأقل.`;
+  }
+  if (username && value.toLowerCase() === String(username).toLowerCase()) {
+    return 'كلمة المرور لا تكون اسم المستخدم نفسه.';
+  }
+  if (new Set(value).size === 1) return 'كلمة المرور حرفٌ واحد مكرَّر — اخترْ غيرها.';
+  return null;
+};
+
+/**
  * أسماء الأدوار كما تُعرض.
  *
  * كان هذا الجدول يخدم غرضين متناقضين: **قائمةَ اختيارٍ عند التسجيل** — ولا

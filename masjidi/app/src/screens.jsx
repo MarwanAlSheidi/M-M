@@ -43,6 +43,9 @@ const CONTACT_STATUSES = ['assigned', 'in_progress', 'pending_imam_approval'];
  * `overdueAfter = null` تُعطّل الوسم حيث لا وعدَ قُطع: اختيارُ الإمام بين
  * المهتمّين ليس موعوداً بمدّة، وتخويفُ المتطوّع بحدٍّ مخترَع أسوأ من السكوت.
  */
+/** بايت → ميغابايت للعرض، بلا كسورٍ لا تُقرأ. */
+const mb = (bytes) => Math.round(bytes / (1024 * 1024));
+
 const Waited = ({
   since, label = 'قُدّم', overdueAfter = OVERDUE_REVIEW_DAYS,
   overdueNote = ' — وقيل لصاحبه «يُراجَع خلال أيام عمل».',
@@ -232,6 +235,15 @@ export function Auth({ onDone }) {
     setBusy(true);
     setError('');
     try {
+      /*
+       * **ولا يُنفَق نداءٌ على ما نعرف أنه يُردّ.** الباقة ٢٥ ألف طلبٍ شهرياً،
+       * والردُّ من الخادم يُكلّف ذهاباً وإياباً على شبكة هاتف. والنصُّ هو نصُّ
+       * الخادم نفسه (`passwordProblem`) — فلا رسالتان لعطبٍ واحد.
+       */
+      if (mode === 'signup') {
+        const problem = api.passwordProblem(form.password, form.username);
+        if (problem) { setError(problem); return; }
+      }
       if (mode === 'login') await api.logIn(form.username, form.password);
       else await api.signUp({ ...form, skills });
       onDone();
@@ -252,6 +264,17 @@ export function Auth({ onDone }) {
           autoComplete="username" required />
         <Field label="كلمة المرور" type="password" value={form.password}
           onChange={set('password')} autoComplete="current-password" required />
+        {/*
+          **والشرطُ يُقال قبل الضغطة لا بعدها.** الخادم يردّ القصيرة برسالةٍ
+          عربيةٍ صحيحة — لكنّ من يقف أمام النموذج لا يعرف الشرط أصلاً، فيملأ
+          الاسم والهاتف والصفة والمحافظة والمهارات ثم يُردّ. ولا يُعرض عند
+          الدخول: حسابٌ قديم قد تكون كلمتُه أقصر، وتذكيرُه بشرطٍ لا يخصّه إقلاقٌ.
+        */}
+        {mode === 'signup' && (
+          <p className="hint" data-testid="password-rule">
+            {api.LIMITS.passwordMin} أحرف على الأقل، ولا تكون اسم المستخدم نفسه.
+          </p>
+        )}
 
         {mode === 'signup' && (
           <>
@@ -782,10 +805,21 @@ function ReportWork({ request, onDone }) {
     }
   }
 
-  /** اختيارٌ جديد يُبطل ما حُفظ: الملفات غير الملفات. */
+  /**
+   * اختيارٌ جديد يُبطل ما حُفظ: الملفات غير الملفات.
+   *
+   * **والكبيرةُ تُردّ هنا لا بعد الرفع.** `accept="image/*"` تلميحٌ لا حارس،
+   * والخادم يردّ ما جاوز الحدَّ — بعد أن تكون قد صعدت كاملةً من هاتفه.
+   */
   const choose = (event) => {
     uploaded.current = new Map();
-    setFiles(Array.from(event.target.files).slice(0, 6));
+    const picked = Array.from(event.target.files).slice(0, api.LIMITS.photoCount);
+    const big = picked.filter((file) => file.size > api.LIMITS.photoBytes);
+    setFiles(picked.filter((file) => file.size <= api.LIMITS.photoBytes));
+    setError(big.length
+      ? `${big.length === 1 ? 'صورةٌ' : `${big.length} صور`} أكبر من `
+        + `${mb(api.LIMITS.photoBytes)} م.ب — لم تُضَف. صغّرها أو اختر غيرها.`
+      : '');
   };
 
   return (
@@ -797,6 +831,14 @@ function ReportWork({ request, onDone }) {
       <input id={`photos-${request.id}`} type="file" accept="image/*" multiple
         data-testid="photo-input"
         onChange={choose} />
+      {/*
+        **والحدُّ يُقال قبل الرفع لا بعده.** الخادم يردّ ما جاوز خمسة ميغابايت —
+        وكان المنفّذ يرفعها كاملةً على شبكة هاتفٍ **ثم** تُردّ، فيدفع الثمن
+        مرّتين: بياناتِه وانتظارَه.
+      */}
+      <p className="hint" data-testid="photo-rule">
+        حتى {api.LIMITS.photoCount} صور، وكلُّ صورةٍ دون {mb(api.LIMITS.photoBytes)} م.ب.
+      </p>
       {files.length > 0 && (
         <p className="hint">{files.length} صورة مختارة — تُرفع عند الإبلاغ.</p>
       )}
