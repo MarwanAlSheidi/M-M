@@ -1,0 +1,16 @@
+product_id,silhouette_normalized,opening_type,fabric_family,fabric_variant,color_normalized,embroidery_type,embellishment_type,embellishment_intensity
+P001,butterfly,open-front,nida,premium,black,,beadwork,minimal
+P002,klosh,,crepe,crepe,burgundy,hand embroidery,,
+P003,kimono,closed-front,satin,,navy,,stone / crystal,medium
+P004,a-line,,linen,,olive,,,
+P005,cape,,chiffon,soft,white,,laser cut,
+P006,straight,closed-front,viscose,viscose,grey,,,
+P007,butterfly,open-front,crepe,barbie,pink,,lace,
+P008,,,velvet,,green,,piping,
+P009,,closed-front,jacquard,,brown,machine embroidery,,
+P010,,,organza,,beige,,stone / crystal,heavy
+P011,,open-front,nida,japanese,black,,piping,minimal
+P012,straight,closed-front,cotton,cotton,yellow,,,
+P013,cape,,brocade,,purple,,beadwork,
+P014,,,cupro,soft,red,hand embroidery,stone / crystal,
+P015,,,,,black,,,

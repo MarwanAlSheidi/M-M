@@ -1,0 +1,43 @@
+# Field policy: which fields carry the headline metrics, and what each field
+# requires before a prediction is allowed to stand.
+
+# Fields whose errors are reported separately. A wrong silhouette or a
+# hallucinated embellishment misleads a buyer; a wrong fabric_variant is a
+# catalogue nuisance.
+critical_fields:
+  - silhouette
+  - opening_type
+  - embellishment_type
+  - embellishment_intensity
+
+secondary_fields:
+  - fabric_family
+  - fabric_variant
+  - color_normalized
+  - embroidery_type
+
+# Fields where the answer is only meaningful if the text says so. Absent
+# evidence forces an abstention regardless of how confident the model is.
+evidence_required:
+  - silhouette
+  - opening_type
+  - embellishment_type
+  - embellishment_intensity
+  - embroidery_type
+
+# Fields where inference from context is legitimate, so absent evidence still
+# permits a prediction — with confidence capped, because it is an inference.
+#
+# A field in neither list defaults to STRICT (absent evidence -> abstain).
+# The default is deliberately the safe one: adding a field to the taxonomy
+# should not silently grant it permission to guess.
+inference_allowed:
+  - fabric_family
+  - fabric_variant
+  - color_normalized
+
+# Confidence ceilings applied by the Validator per evidence grade.
+confidence_caps:
+  PARTIAL: 0.7
+  UNSUPPORTED: 0.3
+  INFERRED: 0.6

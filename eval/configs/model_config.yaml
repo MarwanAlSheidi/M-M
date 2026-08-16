@@ -1,0 +1,24 @@
+# Model configuration. Hashed into the manifest: changing any value here
+# invalidates comparison with earlier runs, which is the point.
+
+model: gpt-4o-mini
+temperature: 0.0
+max_tokens: 512
+response_format: json_object
+seed: 7
+
+# Retry policy for transient API failures. A record is only recorded as a
+# failed call after all attempts are exhausted.
+max_retries: 3
+retry_base_delay_seconds: 1.0
+request_interval_seconds: 0.3
+
+# USD per 1M tokens. Used by CostTracker to price a run and to express cost
+# per correct record.
+pricing:
+  input_per_1m: 0.15
+  output_per_1m: 0.60
+
+# Which classifier implementation run_benchmark uses by default.
+# "mock" is deterministic and offline; "openai" calls the real API.
+classifier: mock

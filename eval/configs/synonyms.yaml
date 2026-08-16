@@ -1,0 +1,104 @@
+# Synonym maps, keyed by direction and then by field.
+#
+# Two directions because gold and predictions drift differently: gold carries
+# whatever the annotator typed, predictions carry whatever the model emitted.
+# A shared map leaks one vocabulary into the other.
+#
+# Keyed per field because a surface form's meaning depends on its field:
+# "stone" is a colour under color_normalized and an embellishment under
+# embellishment_type. A flat map turns one into the other silently.
+#
+# Identity entries (x -> x) are deliberately absent: a value already in the
+# taxonomy passes through canonicalization unchanged.
+
+ai_synonyms:
+
+  silhouette:
+    farasha: butterfly
+    farashah: butterfly
+    butterfly cut: butterfly
+    klosh cut: klosh
+    kloosh: klosh
+    a line: a-line
+    aline: a-line
+
+  opening_type:
+    open front: open-front
+    openfront: open-front
+    front open: open-front
+    closed front: closed-front
+    closedfront: closed-front
+
+  fabric_family:
+    nidah: nida
+    nada: nida
+    crepe fabric: crepe
+
+  fabric_variant:
+    layan crepe: layan
+    korean nida: korean
+    japanese nida: japanese
+
+  color_normalized:
+    maroon: burgundy
+    wine: burgundy
+    navy blue: navy
+    dark blue: navy
+    olive green: olive
+    gray: grey
+    off white: white
+    ivory: white
+
+  embroidery_type:
+    machine embroidered: machine embroidery
+    hand embroidered: hand embroidery
+    handwork: hand embroidery
+
+  embellishment_type:
+    stone: stone / crystal
+    stones: stone / crystal
+    crystal: stone / crystal
+    crystals: stone / crystal
+    stone/crystal: stone / crystal
+    stone and crystal: stone / crystal
+    lasercut: laser cut
+    laser-cut: laser cut
+    beads: beadwork
+    beading: beadwork
+
+  embellishment_intensity:
+    light: minimal
+    subtle: minimal
+    moderate: medium
+    heavy embellishment: heavy
+
+gold_synonyms:
+
+  silhouette:
+    farasha: butterfly
+    klosh cut: klosh
+    a line: a-line
+
+  opening_type:
+    open front: open-front
+    closed front: closed-front
+
+  fabric_family: {}
+
+  fabric_variant: {}
+
+  color_normalized:
+    maroon: burgundy
+    navy blue: navy
+    olive green: olive
+    gray: grey
+
+  embroidery_type: {}
+
+  embellishment_type:
+    stone: stone / crystal
+    stones: stone / crystal
+    crystal: stone / crystal
+    crystals: stone / crystal
+
+  embellishment_intensity: {}

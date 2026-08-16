@@ -1,0 +1,106 @@
+# UAE abaya classification taxonomy.
+#
+# Every value is stored lowercase; the Validator lowercases on load anyway, but
+# keeping the file canonical means the file hash changes only when the taxonomy
+# actually changes.
+#
+# `null` is a legal answer for every field and is represented by absence from
+# these lists, not by a `null` entry — the Validator handles nulls before it
+# ever consults the taxonomy.
+
+fields:
+
+  silhouette:
+    - butterfly
+    - kimono
+    - cape
+    - straight
+    - a-line
+    - klosh
+
+  opening_type:
+    - open-front
+    - closed-front
+
+  fabric_family:
+    - nida
+    - crepe
+    - chiffon
+    - satin
+    - linen
+    - velvet
+    - viscose
+    - cotton
+    - jacquard
+    - organza
+    - cupro
+    - brocade
+    - wool
+
+  fabric_variant:
+    - layan
+    - nova
+    - barbie
+    - luma
+    - japanese
+    - korean
+    - italian
+    - egyptian
+    - premium
+    - soft
+    - luxury
+    - standard
+    - chiffon
+    - silk
+    - wool
+    - linen
+    - cotton
+    - viscose
+    - crepe
+    - nida
+
+  color_normalized:
+    - black
+    - white
+    - beige
+    - navy
+    - burgundy
+    - green
+    - orange
+    - olive
+    - grey
+    - gold
+    - brown
+    - purple
+    - pink
+    - red
+    - yellow
+
+  embroidery_type:
+    - machine embroidery
+    - hand embroidery
+
+  embellishment_type:
+    - beadwork
+    - stone / crystal
+    - laser cut
+    - lace
+    - piping
+
+  embellishment_intensity:
+    - minimal
+    - medium
+    - heavy
+
+# Gold column name for each taxonomy field. Only `silhouette` differs; the rest
+# are identical. Keeping the mapping explicit stops the two vocabularies from
+# being conflated by accident.
+gold_columns:
+  silhouette: silhouette_normalized
+  opening_type: opening_type
+  fabric_family: fabric_family
+  fabric_variant: fabric_variant
+  color_normalized: color_normalized
+  embroidery_type: embroidery_type
+  embellishment_type: embellishment_type
+  embellishment_intensity: embellishment_intensity

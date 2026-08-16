@@ -5,6 +5,8 @@ dist
 
 # eval harness — generated per run
 __pycache__/
+.pytest_cache/
+eval/runs/
 AI_PREDICTIONS_*.csv
 EVALUATION_REPORT_*.xlsx
 ERROR_MATRIX_*.csv

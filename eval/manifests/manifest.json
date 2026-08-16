@@ -1,0 +1,28 @@
+{
+  "version": "2.0.4",
+  "generated_at": "2026-08-16T21:33:30.976115+00:00",
+  "gold_sha256": "a217c9e34201964efbc627b5178c523be1a6f77676345070a199ce5c28fabdfd",
+  "taxonomy_sha256": "6b52a6a0ccc266e7140410b590df7afb39baa6f9ea004dff89df84ffa18aae6a",
+  "synonyms_sha256": "e38c1293ae41a9e4224bbc7f4773e98ac1959de1ebafce3b9ce989aab6534bf9",
+  "critical_fields_sha256": "79d1104b0620167ca5d7282e4b5008e4397e7a1785ca33748b9dd5108587ba6b",
+  "model_config_sha256": "0f7b41acf641147cd4cd8a99d81108247d956cbccffd9795fda2b903e63f1fe3",
+  "prompt_sha256": "9c5091dee013cf3f8bedc3ac6c10d49f4373f7b1fc3225989b4569611d90acfb",
+  "code_hashes": {
+    "utils.py": "4613d6e87250137907974744f7b9c4019647413b7b0262e899a8aefff9ef566c",
+    "evaluator.py": "d45e816c5eb3e7b2289109c3b3c75b040eec05ea2e67f3fcc0a717c160da6d73",
+    "validator.py": "09f57674c6fb79b88fee095c018573f3af3815d62477d9b2808bed9132e1bf0d",
+    "canonicalizer.py": "14077c318d1a713a2e314ff3e78d540d3963e925e4a10bcca900975771899aeb",
+    "evidence_verifier.py": "41716bf24710c96444c554f118d5358538aae2e30581cc27f012ee3d6adb4248",
+    "leakage_detector.py": "92432224247c68e16b4bc4b5c12b2534ff425631df489df3c5aebfd20f2e1ca0",
+    "pipeline.py": "15adc7c95e54dc73efc402ab8812a24ca7fa942e0959399ce6fe0b9bcc4c23ce",
+    "integrity_gate.py": "c9733b4ff704c3ee60fd125ec99e24768e9caa4319721546e0ce462fc904d932",
+    "auditor.py": "598daf55901d750caa57ffd474992118a5fa4e0183295059ef0e953ca7f72bdd",
+    "run_benchmark.py": "6d1fc3e108cc9e80f5d053398c685c8bb52793fe7139eeaf5d4745ebaf8b414f"
+  },
+  "integrity_policy": {
+    "require_evidence_verification": true,
+    "block_on_leakage": true,
+    "block_on_id_mismatch": true,
+    "block_on_duplicate_ids": true
+  }
+}
