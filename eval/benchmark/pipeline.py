@@ -61,6 +61,12 @@ class Pipeline:
         self.predictions_validated: List[Dict[str, Any]] = []
         self.predictions_final: List[Dict[str, Any]] = []
 
+        # v2.0.5: set by the runner to skip records an interrupted run already
+        # completed. Empty means classify everything.
+        self.completed_ids: set = set()
+        self.on_record_complete = None
+        self.skipped_completed = 0
+
     # ------------------------------------------------------------------
     # loading
     # ------------------------------------------------------------------
@@ -180,20 +186,30 @@ class Pipeline:
             self.leakage_detector.check_ids(self.gold_df["product_id"].tolist(), "gold")
             self.auditor.log_event("leakage_precheck_passed", self.leakage_detector.summary())
 
-        self.predictions_raw = []
-        self.predictions_validated = []
-        self.predictions_final = []
+        # A resumed run keeps the records it already paid for; only the
+        # remainder is reclassified. Restored records are loaded by the runner
+        # into these lists before run_classification is called.
+        already_done = set(self.completed_ids)
+        if not already_done:
+            self.predictions_raw = []
+            self.predictions_validated = []
+            self.predictions_final = []
+        self.skipped_completed = 0
 
         for row in self.dataset_df.to_dict(orient="records"):
             product_id = normalize_id(row.get("product_id"))
             source_text = self._build_source_text(row)
 
-            # Layer 2: per record, every record, no exceptions.
+            # Layer 2: per record, every record, no exceptions. Runs even for
+            # records restored from a checkpoint — a leaked record must not
+            # survive into a resumed run just because it was cheap to keep.
             self.leakage_detector.check_record(product_id, source_text)
 
-            raw_output = self.classifier.classify(
-                source_text=source_text, prompt=prompt, product_id=product_id
-            )
+            if product_id in already_done:
+                self.skipped_completed += 1
+                continue
+
+            raw_output = self._invoke_classifier(row, product_id, source_text, prompt)
             error = raw_output.get("error")
 
             raw_record = {
@@ -204,6 +220,19 @@ class Pipeline:
                 "raw_response": raw_output.get("raw_response"),
                 "retry_log": raw_output.get("retry_log") or [],
                 "error": error,
+                # v2.0.5 operational fields. Absent on legacy classifiers,
+                # which is why they are read with .get and default to None
+                # rather than to a fabricated zero.
+                "error_category": raw_output.get("error_category"),
+                "latency_ms": raw_output.get("latency_ms"),
+                "attempt_count": raw_output.get("attempt_count", 1),
+                "retry_reason": raw_output.get("retry_reason") or [],
+                "final_status": raw_output.get("final_status", "error" if error else "success"),
+                "cost": raw_output.get("cost"),
+                "currency": raw_output.get("currency"),
+                "request_id": raw_output.get("request_id"),
+                "provider": raw_output.get("provider"),
+                "model": raw_output.get("model"),
             }
             self.predictions_raw.append(raw_record)
 
@@ -222,14 +251,21 @@ class Pipeline:
             self.predictions_validated.append(
                 {"product_id": product_id, "fields": validated, "error": error}
             )
-            self.predictions_final.append(
-                self._build_final_record(
-                    product_id=product_id,
-                    raw_prediction=raw_output.get("prediction") or {},
-                    validated=validated,
-                    error=error,
-                )
+            final_record = self._build_final_record(
+                product_id=product_id,
+                raw_prediction=raw_output.get("prediction") or {},
+                validated=validated,
+                error=error,
             )
+            final_record["error_category"] = raw_output.get("error_category")
+            self.predictions_final.append(final_record)
+
+            self._track_call(product_id, raw_record)
+
+            if callable(self.on_record_complete):
+                # Checkpoint after each record so an interruption loses at most
+                # the record in flight.
+                self.on_record_complete(product_id, raw_record)
 
         self.auditor.log_event(
             "classification_complete",
@@ -239,6 +275,96 @@ class Pipeline:
             },
         )
         return self.predictions_final
+
+    def _invoke_classifier(
+        self,
+        row: Dict[str, Any],
+        product_id: str,
+        source_text: str,
+        prompt: str,
+    ) -> Dict[str, Any]:
+        """Call the classifier through whichever interface it declares.
+
+        v2.0.5 providers take the record's fields; v2.0.4 classifiers take the
+        pre-joined source text. Both remain supported so an existing classifier
+        keeps working unchanged.
+        """
+        if getattr(self.classifier, "accepts_record_fields", False):
+            return self.classifier.classify(
+                product_name=row.get("product_name_raw"),
+                description=row.get("description_raw"),
+                system_prompt=prompt,
+                product_id=product_id,
+            )
+
+        return self.classifier.classify(
+            source_text=source_text, prompt=prompt, product_id=product_id
+        )
+
+    def _track_call(self, product_id: str, raw_record: Dict[str, Any]) -> None:
+        """Hand the per-call operational facts to the cost tracker."""
+        usage = raw_record.get("usage") or {}
+        self.cost_tracker.add_call(
+            product_id=product_id,
+            latency_ms=raw_record.get("latency_ms"),
+            cost=raw_record.get("cost"),
+            currency=raw_record.get("currency"),
+            input_tokens=usage.get("input_tokens", usage.get("prompt_tokens")),
+            output_tokens=usage.get("output_tokens", usage.get("completion_tokens")),
+            attempt_count=raw_record.get("attempt_count", 1),
+            final_status=raw_record.get("final_status", "success"),
+        )
+
+    def restore_completed(
+        self,
+        raw_records: List[Dict[str, Any]],
+        source_text_lookup: Optional[Dict[str, str]] = None,
+    ) -> int:
+        """Rebuild prediction layers for records a previous run completed.
+
+        Revalidates rather than trusting the stored validated layer: validation
+        is cheap and local, so a resumed run re-derives it from the raw answer
+        under the *current* configuration. If that configuration had changed,
+        the fingerprint check would already have refused the resume.
+        """
+        restored = 0
+        for raw_record in raw_records:
+            product_id = normalize_id(raw_record.get("product_id"))
+            if not product_id:
+                continue
+
+            source_text = raw_record.get("source_text") or (
+                (source_text_lookup or {}).get(product_id, "")
+            )
+            error = raw_record.get("error")
+
+            self.predictions_raw.append(raw_record)
+
+            if error:
+                validated = self.validator.abstained_prediction(reason="classifier_error")
+            else:
+                validated = self.validator.validate_prediction(
+                    raw_record.get("prediction") or {}, source_text=source_text
+                )
+
+            self.predictions_validated.append(
+                {"product_id": product_id, "fields": validated, "error": error}
+            )
+            final_record = self._build_final_record(
+                product_id=product_id,
+                raw_prediction=raw_record.get("prediction") or {},
+                validated=validated,
+                error=error,
+            )
+            final_record["error_category"] = raw_record.get("error_category")
+            self.predictions_final.append(final_record)
+
+            self._track_call(product_id, raw_record)
+            self.completed_ids.add(product_id)
+            restored += 1
+
+        self.auditor.log_event("resume_restored", {"records": restored})
+        return restored
 
     @staticmethod
     def _build_source_text(row: Dict[str, Any]) -> str:

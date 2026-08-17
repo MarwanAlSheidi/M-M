@@ -35,6 +35,10 @@ CRITICAL_FIELDS_PATH = os.path.join(CONFIGS, "critical_fields.yaml")
 MODEL_CONFIG_PATH = os.path.join(CONFIGS, "model_config.yaml")
 PROMPT_PATH = os.path.join(PROMPTS, "classification_v0.1.txt")
 
+# v2.0.5
+MODELS_PATH = os.path.join(CONFIGS, "models.yaml")
+PRICING_PATH = os.path.join(CONFIGS, "pricing.yaml")
+
 DATASET_COLUMNS = ["product_id", "product_name_raw", "description_raw"]
 GOLD_COLUMNS = [
     "product_id",
@@ -197,6 +201,101 @@ class GateBuilder:
 @pytest.fixture
 def gate_builder(tmp_path) -> GateBuilder:
     return GateBuilder(tmp_path)
+
+
+# ----------------------------------------------------------------------
+# v2.0.5 fixtures
+# ----------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def registry():
+    from benchmark.model_registry import ModelRegistry
+
+    return ModelRegistry.from_yaml(MODELS_PATH)
+
+
+@pytest.fixture(scope="session")
+def pricing():
+    from benchmark.pricing import PricingTable
+
+    return PricingTable.from_yaml(PRICING_PATH)
+
+
+@pytest.fixture
+def no_credentials(monkeypatch):
+    """Guarantee the test environment holds no real provider keys."""
+    for name in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    return True
+
+
+def write_yaml(tmp_path, name: str, payload: Dict[str, Any]) -> str:
+    import yaml as _yaml
+
+    path = os.path.join(str(tmp_path), name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        _yaml.safe_dump(payload, handle, allow_unicode=True)
+    return path
+
+
+class RecordingClient:
+    """A stand-in provider client for unit-testing adapters offline.
+
+    Adapters are tested through this rather than through a live API: a test
+    suite that needs credentials is a test suite that does not run in CI.
+    """
+
+    def __init__(self, responses=None, error=None, error_times: int = 0):
+        self.responses = list(responses or [])
+        self.error = error
+        self.error_times = error_times
+        self.calls = []
+
+    def _next(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error is not None and len(self.calls) <= self.error_times:
+            raise self.error
+        if self.responses:
+            return self.responses.pop(0)
+        raise AssertionError("RecordingClient ran out of responses")
+
+    # OpenAI shape
+    @property
+    def chat(self):
+        outer = self
+
+        class _Completions:
+            def create(self, **kwargs):
+                return outer._next(**kwargs)
+
+        class _Chat:
+            completions = _Completions()
+
+        return _Chat()
+
+    # Anthropic shape
+    @property
+    def messages(self):
+        outer = self
+
+        class _Messages:
+            def create(self, **kwargs):
+                return outer._next(**kwargs)
+
+        return _Messages()
+
+    # Gemini shape
+    @property
+    def models(self):
+        outer = self
+
+        class _Models:
+            def generate_content(self, **kwargs):
+                return outer._next(**kwargs)
+
+        return _Models()
 
 
 def check_named(result: Dict[str, Any], name: str) -> Dict[str, Any]:

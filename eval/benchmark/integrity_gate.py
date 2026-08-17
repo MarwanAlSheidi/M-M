@@ -75,6 +75,10 @@ class IntegrityGate:
         critical_fields_path: Optional[str] = None,
         training_data_path: Optional[str] = None,
         code_dir: Optional[str] = None,
+        validation_data_path: Optional[str] = None,
+        dataset_manifest_path: Optional[str] = None,
+        pricing_path: Optional[str] = None,
+        models_path: Optional[str] = None,
     ) -> None:
         self.manifest_path = manifest_path
         self.gold_path = gold_path
@@ -84,6 +88,13 @@ class IntegrityGate:
         self.critical_fields_path = critical_fields_path
         self.training_data_path = training_data_path
         self.code_dir = code_dir or os.path.dirname(os.path.abspath(__file__))
+
+        # v2.0.5 additions. All optional: a v2.0.4 caller constructs the gate
+        # exactly as before and gets exactly the same checks.
+        self.validation_data_path = validation_data_path
+        self.dataset_manifest_path = dataset_manifest_path
+        self.pricing_path = pricing_path
+        self.models_path = models_path
 
         self.checks: List[Dict[str, Any]] = []
         self.result: Dict[str, Any] = {}
@@ -415,6 +426,132 @@ class IntegrityGate:
         )
 
     # ------------------------------------------------------------------
+    # E2 (v2.0.5). split contamination
+    # ------------------------------------------------------------------
+
+    def check_splits(self):
+        """Training and validation must never touch evaluation.
+
+        Distinct from :meth:`check_leakage`, which asks only about the training
+        file. Tuning on a validation split is legitimate; tuning on anything
+        that later gets scored is not, and it is invisible in the metrics.
+        """
+        from .dataset_manifest import SplitRegistry  # local: avoids a cycle
+
+        if not self.training_data_path and not self.validation_data_path:
+            return self._record(
+                "splits", WARN, "No training or validation split configured"
+            )
+
+        try:
+            splits = SplitRegistry.from_paths(
+                training_path=self.training_data_path,
+                validation_path=self.validation_data_path,
+                evaluation_path=self.dataset_path,
+            )
+        except ConfigError as exc:
+            return self._record("splits", FAIL, f"Split files unreadable: {exc}")
+
+        overlaps = splits.overlaps()
+        fatal = splits.fatal_overlaps()
+
+        if fatal:
+            details = [
+                f"{key}: {len(ids)} shared ({', '.join(ids[:_MAX_REPORTED_IDS])})"
+                for key, ids in fatal.items()
+            ]
+            return self._record(
+                "splits", FAIL, "Split contamination of the evaluation set", details
+            )
+
+        details = [
+            f"training={len(splits.training)} validation={len(splits.validation)} "
+            f"evaluation={len(splits.evaluation)}"
+        ]
+        if overlaps["training_validation"]:
+            # Not fatal: it does not contaminate anything that gets scored.
+            details.append(
+                f"training ∩ validation = {len(overlaps['training_validation'])} "
+                "(permitted, does not touch evaluation)"
+            )
+
+        return self._record("splits", PASS, "Splits are disjoint from evaluation", details)
+
+    # ------------------------------------------------------------------
+    # E3 (v2.0.5). dataset manifest
+    # ------------------------------------------------------------------
+
+    def check_dataset_manifest(self, prompt_hash: Optional[str] = None):
+        """The dataset must still be the dataset the manifest pinned."""
+        from .dataset_manifest import load_manifest, verify_dataset_manifest, read_ids
+        from .dataset_manifest import product_id_hash as compute_product_id_hash
+
+        if not self.dataset_manifest_path:
+            return self._record(
+                "dataset_manifest", WARN, "No dataset manifest configured"
+            )
+
+        if not os.path.exists(self.dataset_manifest_path):
+            return self._record(
+                "dataset_manifest",
+                FAIL,
+                f"Dataset manifest not found: {self.dataset_manifest_path}",
+            )
+
+        expected = load_manifest(self.dataset_manifest_path)
+        if not expected:
+            return self._record("dataset_manifest", FAIL, "Dataset manifest is empty")
+
+        actual = {
+            "dataset_sha256": compute_file_hash(self.dataset_path)
+            if os.path.exists(self.dataset_path)
+            else None,
+            "gold_sha256": compute_file_hash(self.gold_path)
+            if os.path.exists(self.gold_path)
+            else None,
+            "record_count": len(read_ids(self.dataset_path)),
+            "product_id_hash": compute_product_id_hash(read_ids(self.dataset_path)),
+            "taxonomy_sha256": compute_file_hash(self.taxonomy_path)
+            if self.taxonomy_path and os.path.exists(self.taxonomy_path)
+            else None,
+            "synonyms_sha256": compute_file_hash(self.synonyms_path)
+            if self.synonyms_path and os.path.exists(self.synonyms_path)
+            else None,
+            "critical_fields_sha256": compute_file_hash(self.critical_fields_path)
+            if self.critical_fields_path and os.path.exists(self.critical_fields_path)
+            else None,
+            "prompt_sha256": prompt_hash,
+        }
+
+        drift = verify_dataset_manifest(expected, actual)
+
+        if drift:
+            details = [
+                f"{key}: expected {str(expected.get(key))[:16]}…, got {str(actual.get(key))[:16]}…"
+                for key in drift
+            ]
+            # Content hash moved but the id set did not: the file was
+            # regenerated, not re-scoped. Worth saying, because the fix differs.
+            if "dataset_sha256" in drift and "product_id_hash" not in drift:
+                details.append(
+                    "product_id_hash is unchanged: same records, different file bytes "
+                    "(re-quoted, reordered or re-encoded)."
+                )
+            return self._record(
+                "dataset_manifest",
+                FAIL,
+                "Dataset no longer matches its manifest",
+                details,
+            )
+
+        kind = expected.get("dataset_kind", "unknown")
+        return self._record(
+            "dataset_manifest",
+            PASS,
+            f"Dataset matches its manifest ({expected.get('record_count')} records, kind={kind})",
+        )
+
+    # ------------------------------------------------------------------
     # F / G / H / I. config hashes
     # ------------------------------------------------------------------
 
@@ -435,6 +572,14 @@ class IntegrityGate:
             "critical_fields_sha256",
             "Critical fields",
         )
+
+    def check_pricing(self):
+        """Pricing config must be pinned: a price edit changes every cost."""
+        return self._check_hash("pricing", self.pricing_path, "pricing_sha256", "Pricing")
+
+    def check_models(self):
+        """The model registry is pinned so a silent model swap cannot happen."""
+        return self._check_hash("models", self.models_path, "models_sha256", "Model registry")
 
     def check_prompt(self, prompt_hash: Optional[str]):
         expected = self.manifest.get("prompt_sha256")
@@ -636,6 +781,17 @@ class IntegrityGate:
         self.check_code_hashes()
         self.check_model_config(model_config)
         self.check_evidence_verification()
+
+        # v2.0.5 checks. Each is a no-op WARN when its path is unconfigured,
+        # so a v2.0.4 caller sees the same verdict it always did.
+        if self.training_data_path or self.validation_data_path:
+            self.check_splits()
+        if self.dataset_manifest_path:
+            self.check_dataset_manifest(prompt_hash)
+        if self.pricing_path:
+            self.check_pricing()
+        if self.models_path:
+            self.check_models()
 
         passed = sum(1 for check in self.checks if check["status"] == PASS)
         failed = sum(1 for check in self.checks if check["status"] == FAIL)

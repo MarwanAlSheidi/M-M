@@ -1,14 +1,25 @@
-"""Cost tracking, tied to correctness rather than to token counts alone.
+"""Cost and operational tracking, tied to correctness rather than tokens alone.
 
 Tokens spent is a billing number. Cost per *correct record* is the number that
 decides whether a model is worth running, so every usage entry arrives with the
 correctness outcomes for the record it paid for.
+
+v2.0.5 adds per-call accounting on top, without changing the v2.0.4 surface:
+:meth:`add_call` records what one provider call actually cost, how long it
+took, how many attempts it needed and whether it succeeded. Two rules hold
+throughout:
+
+* An unknown price yields ``None``, never ``0.0``. A missing price rendered as
+  free is the most expensive mistake a cost report can make.
+* Token counts are never invented. A provider that returns no usage produces
+  ``None`` tokens and therefore ``None`` cost.
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from .statistics import latency_summary, safe_ratio
 from .utils import normalize_null
 
 
@@ -43,6 +54,10 @@ class CostTracker:
         self.records_critical_exact = 0
         self.fields_correct = 0
         self.fields_total = 0
+
+        # v2.0.5 per-call accounting, keyed by product_id.
+        self.calls: Dict[str, Dict[str, Any]] = {}
+        self.currency: Optional[str] = None
 
     # ------------------------------------------------------------------
 
@@ -103,6 +118,109 @@ class CostTracker:
         return entry
 
     # ------------------------------------------------------------------
+
+    def add_call(
+        self,
+        product_id: Any,
+        latency_ms: Optional[float] = None,
+        cost: Optional[float] = None,
+        currency: Optional[str] = None,
+        input_tokens: Optional[int] = None,
+        output_tokens: Optional[int] = None,
+        attempt_count: int = 1,
+        final_status: str = "success",
+    ) -> Dict[str, Any]:
+        """Record one provider call's operational facts.
+
+        Called once per record by the v2.0.5 pipeline, before correctness is
+        known. ``cost`` of ``None`` means the price or the token counts were
+        unavailable and must stay unknown all the way to the report.
+        """
+        if currency and self.currency is None:
+            self.currency = currency
+
+        entry = {
+            "product_id": str(product_id),
+            "latency_ms": latency_ms,
+            "cost": cost,
+            "currency": currency,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": (
+                None
+                if input_tokens is None and output_tokens is None
+                else int(input_tokens or 0) + int(output_tokens or 0)
+            ),
+            "attempt_count": int(attempt_count),
+            "final_status": final_status,
+            "retried": int(attempt_count) > 1,
+        }
+        self.calls[str(product_id)] = entry
+        return entry
+
+    # ------------------------------------------------------------------
+
+    def operations_summary(self, exact_matches: int = 0, accuracy: Optional[float] = None) -> Dict[str, Any]:
+        """Operational and price-table cost metrics for a v2.0.5 run.
+
+        Failed calls are excluded from accuracy elsewhere, but they stay in
+        these numbers: a model that times out is slow, not absent.
+        """
+        calls = list(self.calls.values())
+        total_calls = len(calls)
+
+        successes = sum(1 for call in calls if call["final_status"] == "success")
+        failures = total_calls - successes
+        retried = sum(1 for call in calls if call["retried"])
+
+        costs = [call["cost"] for call in calls]
+        priced = bool(costs) and all(cost is not None for cost in costs)
+        total_cost = round(sum(cost or 0.0 for cost in costs), 10) if priced else None
+
+        token_values = [call["total_tokens"] for call in calls]
+        tokens_known = bool(token_values) and all(value is not None for value in token_values)
+
+        summary: Dict[str, Any] = {
+            "calls": total_calls,
+            "successes": successes,
+            "failures": failures,
+            "retried_calls": retried,
+            "success_rate": safe_ratio(successes, total_calls),
+            "failure_rate": safe_ratio(failures, total_calls),
+            "retry_rate": safe_ratio(retried, total_calls),
+            "priced": priced,
+            "currency": self.currency,
+            "tokens_available": tokens_known,
+            "total_tokens": (
+                sum(value or 0 for value in token_values) if tokens_known else None
+            ),
+            "total_cost": total_cost,
+        }
+        summary.update(latency_summary([call["latency_ms"] for call in calls]))
+
+        # Every cost-per-X is None when the run is unpriced, and 0.0 only when
+        # the price is genuinely known to be zero.
+        def per(denominator: float) -> Optional[float]:
+            if total_cost is None:
+                return None
+            if not denominator:
+                return None
+            return round(total_cost / denominator, 10)
+
+        summary["cost_per_record"] = per(total_calls)
+        summary["cost_per_correct_record"] = per(self.records_correct)
+        summary["cost_per_critical_correct_record"] = per(self.records_critical_exact)
+        summary["cost_per_exact_match"] = per(exact_matches)
+
+        # Cost to buy one percentage point of accuracy on this dataset. Only
+        # meaningful alongside the accuracy it was computed from.
+        if total_cost is None or not accuracy:
+            summary["cost_per_1_percent_accuracy"] = None
+        else:
+            summary["cost_per_1_percent_accuracy"] = round(total_cost / (accuracy * 100.0), 10)
+        summary["accuracy_used_for_cost"] = accuracy
+
+        return summary
 
     def _price(self, input_tokens: int, output_tokens: int) -> float:
         cost = (

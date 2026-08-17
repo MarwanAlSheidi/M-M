@@ -58,11 +58,21 @@ def sanitize_for_json(obj: Any) -> Any:
 class Auditor:
     """Writes the run's audit trail into ``run_dir``."""
 
-    def __init__(self, run_dir: str) -> None:
+    def __init__(self, run_dir: str, redactor: Any = None) -> None:
         self.run_dir = run_dir
         os.makedirs(run_dir, exist_ok=True)
         self.events_path = os.path.join(run_dir, "audit_events.jsonl")
+        # v2.0.5: `audit.jsonl` is the documented artefact name; the original
+        # path is kept as the same file so existing readers do not break.
+        self.audit_path = os.path.join(run_dir, "audit.jsonl")
         self.events: List[Dict[str, Any]] = []
+
+        # Every write goes through here. A secret that reaches an audit file
+        # has already leaked, so redaction belongs at the boundary rather than
+        # at each call site that might forget.
+        from .redaction import default_redactor
+
+        self.redactor = redactor or default_redactor()
 
     # ------------------------------------------------------------------
 
@@ -75,12 +85,14 @@ class Auditor:
         event = {
             "timestamp": self._now(),
             "kind": kind,
-            "payload": sanitize_for_json(payload or {}),
+            "payload": self.redactor.redact(sanitize_for_json(payload or {})),
         }
         self.events.append(event)
 
-        with open(self.events_path, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(event, ensure_ascii=False, default=_json_default) + "\n")
+        line = json.dumps(event, ensure_ascii=False, default=_json_default) + "\n"
+        for path in (self.events_path, self.audit_path):
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(line)
 
         return event
 
@@ -89,7 +101,7 @@ class Auditor:
         path = os.path.join(self.run_dir, name)
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(
-                sanitize_for_json(payload),
+                self.redactor.redact(sanitize_for_json(payload)),
                 handle,
                 indent=2,
                 ensure_ascii=False,
@@ -105,7 +117,7 @@ class Auditor:
             for row in rows:
                 handle.write(
                     json.dumps(
-                        sanitize_for_json(row),
+                        self.redactor.redact(sanitize_for_json(row)),
                         ensure_ascii=False,
                         default=_json_default,
                         allow_nan=False,

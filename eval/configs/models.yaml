@@ -1,0 +1,85 @@
+# Model registry.
+#
+# Models must differ ONLY in this file. Dataset, gold, taxonomy, synonyms,
+# field policy, prompt and evaluation logic are shared by construction — that
+# is what makes the comparison like-for-like.
+#
+# Model ids below are PLACEHOLDERS except where the project already fixed one.
+# Replace `model:` with the exact id you intend to benchmark, and record it in
+# the run's manifest. Do not benchmark against a guessed id: the report would
+# name a model that was never called.
+#
+# Secrets are never stored here. `api_key_env` names the environment variable
+# the key is read from at run time; the value never enters config, manifest,
+# audit log or report.
+
+defaults:
+  temperature: 0.0
+  max_tokens: 512
+  # Conservative on purpose. A run that saturates a provider limit spends its
+  # time retrying 429s, and its latency numbers then describe the queue.
+  requests_per_minute: 60
+  concurrency: 1
+  max_retries: 3
+  backoff_base: 1.0
+  backoff_max: 30.0
+  enabled: true
+
+models:
+
+  # ------------------------------------------------------------------
+  # Offline. Deterministic, no credentials, used by tests and dry runs.
+  # ------------------------------------------------------------------
+
+  mock:
+    provider: local
+    classifier: mock
+    seed: 0
+    requests_per_minute: null      # no network, no limit
+    notes: >-
+      Deterministic keyword classifier. Produces FIXTURE results only.
+      Never present its numbers as a model benchmark.
+
+  mock_variant:
+    provider: local
+    classifier: mock
+    seed: 1
+    requests_per_minute: null      # no network, no limit
+    # A second offline model so multi-model comparison, agreement and paired
+    # significance are exercisable without any provider credentials.
+    inference_defaults: false
+    notes: >-
+      Second offline model. Abstains where `mock` guesses a market default,
+      so the two disagree on inference-allowed fields.
+
+  # ------------------------------------------------------------------
+  # Real providers. Disabled until an operator sets a model id and a key.
+  # ------------------------------------------------------------------
+
+  openai_gpt4o_mini:
+    provider: openai
+    classifier: openai
+    model: gpt-4o-mini            # already fixed by this project (v1.2.0 onward)
+    seed: 7
+    api_key_env: OPENAI_API_KEY
+    notes: The only real model id this project has previously committed to.
+
+  anthropic_claude:
+    provider: anthropic
+    classifier: anthropic
+    model: SET_ANTHROPIC_MODEL_ID  # PLACEHOLDER — replace before running
+    api_key_env: ANTHROPIC_API_KEY
+    enabled: false
+    notes: >-
+      Disabled until a model id is set. Anthropic exposes no sampling seed,
+      so determinism_supported will report false.
+
+  google_gemini:
+    provider: google
+    classifier: gemini
+    model: SET_GEMINI_MODEL_ID     # PLACEHOLDER — replace before running
+    api_key_env: GOOGLE_API_KEY
+    enabled: false
+    notes: >-
+      Disabled until a model id is set. No sampling seed, so
+      determinism_supported will report false.

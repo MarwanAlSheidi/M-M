@@ -51,11 +51,15 @@ class MockClassifier(BaseClassifier):
         taxonomy: Dict[str, List[str]],
         fail_ids: Optional[Iterable[str]] = None,
         tokens_per_record: int = 220,
+        use_defaults: bool = True,
     ) -> None:
         self.canonicalizer = canonicalizer
         self.taxonomy = taxonomy
         self.fail_ids: Set[str] = {str(value) for value in (fail_ids or [])}
         self.tokens_per_record = tokens_per_record
+        # v2.0.5: switching defaults off yields a second, genuinely different
+        # offline model — it abstains where this one guesses a market default.
+        self.use_defaults = use_defaults
 
     # ------------------------------------------------------------------
 
@@ -82,7 +86,7 @@ class MockClassifier(BaseClassifier):
                     "confidence": 0.9,
                     "evidence": evidence,
                 }
-            elif field in self._DEFAULTS:
+            elif self.use_defaults and field in self._DEFAULTS:
                 prediction[field] = {
                     "value": self._DEFAULTS[field],
                     "confidence": 0.55,
@@ -230,8 +234,15 @@ def build_classifier(
         return MockClassifier(canonicalizer=canonicalizer, taxonomy=taxonomy)
 
     if kind == "openai":
+        model = model_config.get("model")
+        if not model:
+            # No default. A silent fallback would benchmark a model the
+            # operator never named and report it under the id they did.
+            raise ClassifierError(
+                "Classifier 'openai' requires an explicit 'model' in configuration"
+            )
         return OpenAIClassifier(
-            model=model_config.get("model", "gpt-4o-mini"),
+            model=model,
             temperature=model_config.get("temperature", 0.0),
             max_retries=model_config.get("max_retries", 3),
             base_delay=model_config.get("retry_base_delay_seconds", 1.0),

@@ -23,7 +23,10 @@ def test_end_to_end_smoke_run(run_dir):
 
     assert results["total_records"] == 15
     assert results["run"]["integrity"]["overall"] == "PASS"
-    assert results["run"]["version"] == "2.0.4"
+    # Changed from "2.0.4" by the v2.0.5 release. This is the only assertion in
+    # the v2.0.4 suite that v2.0.5 alters, and it changed because the version
+    # was deliberately bumped — not because behaviour moved under it.
+    assert results["run"]["version"] == "2.0.5"
 
     # Every metric block is present and populated.
     for block in ("levels", "selective", "evidence", "critical", "cost", "headline"):

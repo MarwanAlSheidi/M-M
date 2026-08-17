@@ -1,0 +1,19 @@
+{
+  "dataset_kind": "fixture",
+  "dataset_path": "data/dataset.csv",
+  "dataset_sha256": "ff3e0f425244351d79e989543eb663ba118d6e2f48eceec630fb0d1c438b3145",
+  "gold_sha256": "a217c9e34201964efbc627b5178c523be1a6f77676345070a199ce5c28fabdfd",
+  "record_count": 15,
+  "product_id_hash": "3f96826492d85b2fee5eedb85cfd9d0abe378f3bd324ffc68eaaedb03f3d9a43",
+  "taxonomy_sha256": "6b52a6a0ccc266e7140410b590df7afb39baa6f9ea004dff89df84ffa18aae6a",
+  "synonyms_sha256": "e38c1293ae41a9e4224bbc7f4773e98ac1959de1ebafce3b9ce989aab6534bf9",
+  "critical_fields_sha256": "79d1104b0620167ca5d7282e4b5008e4397e7a1785ca33748b9dd5108587ba6b",
+  "prompt_sha256": "9c5091dee013cf3f8bedc3ac6c10d49f4373f7b1fc3225989b4569611d90acfb",
+  "prompt_name": "classification",
+  "prompt_version": "v0.1",
+  "splits": {
+    "training": 5,
+    "validation": 3,
+    "evaluation": 15
+  }
+}
