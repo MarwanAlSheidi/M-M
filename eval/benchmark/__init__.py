@@ -13,7 +13,7 @@ Public surface, in the order a run uses it:
 
 from __future__ import annotations
 
-__version__ = "2.0.4"
+from .version import __version__
 
 from .auditor import Auditor
 from .canonicalizer import AI_SYNONYMS, GOLD_SYNONYMS, Canonicalizer

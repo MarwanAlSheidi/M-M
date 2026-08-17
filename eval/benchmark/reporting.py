@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from .comparison import COMPARISON_COLUMNS
 from .dataset_manifest import FIXTURE, PRODUCTION
+from .version import VERSION
 
 FIXTURE_BANNER = (
     "TEST FIXTURE RESULTS — synthetic data and/or offline mock models. "
@@ -32,19 +33,28 @@ PRODUCTION_BANNER = (
 )
 
 
-def result_label(dataset_kind: str, providers: Sequence[str]) -> Dict[str, Any]:
+def result_label(
+    dataset_kind: str,
+    providers: Sequence[str],
+    integrity_passed: bool = True,
+) -> Dict[str, Any]:
     """Classify a set of results as fixture or real, and say why.
 
-    Real means both halves: a production dataset *and* at least one live
-    provider. A real dataset scored by the mock is still a fixture result, and
-    a real model run over the synthetic dataset is too.
+    Real requires all three: a production dataset, at least one live provider,
+    and an integrity gate that passed. A real dataset scored by the mock is a
+    fixture result; a live model over the synthetic dataset is too; and a run
+    that only completed because the gate was bypassed (``--no-strict``) can
+    never claim to be a benchmark of anything, because nothing verified what it
+    measured.
     """
     live_providers = sorted({p for p in providers if p and p != "local"})
     is_production_data = dataset_kind == PRODUCTION
-    is_real = is_production_data and bool(live_providers)
+    is_real = is_production_data and bool(live_providers) and integrity_passed
 
     if is_real:
         reason = f"production dataset, live providers: {', '.join(live_providers)}"
+    elif is_production_data and live_providers and not integrity_passed:
+        reason = "integrity gate did not pass; results cannot be attributed to a known artefact"
     elif not is_production_data and not live_providers:
         reason = "fixture dataset and offline mock models"
     elif not is_production_data:
@@ -57,6 +67,7 @@ def result_label(dataset_kind: str, providers: Sequence[str]) -> Dict[str, Any]:
         "banner": PRODUCTION_BANNER if is_real else FIXTURE_BANNER,
         "dataset_kind": dataset_kind,
         "live_providers": live_providers,
+        "integrity_passed": bool(integrity_passed),
         "reason": reason,
     }
 
@@ -72,17 +83,23 @@ def build_report(
     providers = [
         result.get("run", {}).get("provider") for result in results_by_model.values()
     ]
-    label = result_label(dataset_kind, providers)
+    # A batch is only "real" if every run in it passed its gate.
+    integrity_passed = all(
+        (result.get("run", {}).get("integrity", {}) or {}).get("overall") == "PASS"
+        for result in results_by_model.values()
+    )
+    label = result_label(dataset_kind, providers, integrity_passed=integrity_passed)
 
     rows = (comparison or {}).get("rows") or []
 
     return {
-        "benchmark_version": "2.0.5",
+        "benchmark_version": VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "result_class": label["result_class"],
         "banner": label["banner"],
         "classification_reason": label["reason"],
         "dataset_kind": dataset_kind,
+        "integrity_passed": label["integrity_passed"],
         "models": sorted(results_by_model),
         "skipped_models": dict(skipped_models or {}),
         "summary_table": rows,

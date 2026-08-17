@@ -33,8 +33,8 @@ from benchmark.integrity_gate import CODE_FILES  # noqa: E402
 from benchmark.prompt_renderer import PromptRenderer  # noqa: E402
 from benchmark.utils import compute_file_hash  # noqa: E402
 from benchmark.validator import Validator  # noqa: E402
+from benchmark.version import VERSION  # noqa: E402
 
-VERSION = "2.0.5"
 PROMPT_NAME = "classification"
 PROMPT_VERSION = "v0.1"
 

@@ -1,6 +1,6 @@
 {
   "version": "2.0.5",
-  "generated_at": "2026-08-17T03:33:12.483433+00:00",
+  "generated_at": "2026-08-17T08:33:18.987581+00:00",
   "gold_sha256": "a217c9e34201964efbc627b5178c523be1a6f77676345070a199ce5c28fabdfd",
   "dataset_sha256": "ff3e0f425244351d79e989543eb663ba118d6e2f48eceec630fb0d1c438b3145",
   "taxonomy_sha256": "6b52a6a0ccc266e7140410b590df7afb39baa6f9ea004dff89df84ffa18aae6a",
@@ -20,7 +20,7 @@
     "pipeline.py": "c2f79f0b072582658c6e98908ac352f1053f78567a68dee4718f94e4736ce87e",
     "integrity_gate.py": "00fc4ebc36eeb94c27948d036ebe5dca2300534ce74ca9696d4766ab339a0883",
     "auditor.py": "dca15da28e432250f2cddad2c63320ab686c234d2c32ff21d2d40d80b6f970e8",
-    "run_benchmark.py": "ab594eae6eca6e22e7e7404735a1ed2051e3e1cf5cc4cc5660771dcec5429e4f"
+    "run_benchmark.py": "abcb130a0869bbbb2d8afb283aa97810eaa2983ba1c0cd2050a1086e29b9b5a3"
   },
   "integrity_policy": {
     "require_evidence_verification": true,

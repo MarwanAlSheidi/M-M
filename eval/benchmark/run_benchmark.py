@@ -57,8 +57,7 @@ from .run_context import (
 from .statistics import DEFAULT_CONFIDENCE, wilson_interval
 from .utils import compute_dict_hash, compute_file_hash, print_check_status
 from .validator import Validator
-
-VERSION = "2.0.5"
+from .version import VERSION
 
 PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(PACKAGE_DIR)
@@ -306,6 +305,22 @@ def run_model(
         raise ConfigError(f"Model registry not found: {paths['models']}")
 
     model = registry.get(model_key)
+
+    # Refuse before anything is constructed. run_batch skips these models; the
+    # single-model path used to fall through to building a provider, so a
+    # disabled model with a placeholder id would have been instantiated — and
+    # called — on any machine where the provider SDK happened to be installed.
+    if not model.enabled:
+        raise ConfigError(
+            f"Model {model_key!r} is disabled in the registry and must not be run. "
+            "Set enabled: true in configs/models.yaml once it has a real model id."
+        )
+    if not model.credentials_available():
+        raise ConfigError(
+            f"Model {model_key!r} has no credentials"
+            + (f"; set ${model.api_key_env}" if model.api_key_env else " configured")
+        )
+
     prompt_hash = prompt_hash_override or prompt_renderer.prompt_hash
 
     # Every model in a batch must see the identical prompt. If a caller passed
@@ -460,7 +475,11 @@ def run_model(
         pipeline.predictions_final, validator.fields
     )
 
-    label = result_label(dataset_kind, [model.provider])
+    label = result_label(
+        dataset_kind,
+        [model.provider],
+        integrity_passed=gate_result["overall"] != FAIL,
+    )
 
     results["run"] = {
         "version": VERSION,
@@ -646,7 +665,11 @@ def run_batch(
     # "never silently evaluate two models using different prompts".
     prompt_hash = components["prompt_renderer"].prompt_hash
 
+    # Honour runs_root for the per-model runs too, not just the batch report.
+    # Without this a caller directing a batch at one location got the reports
+    # there and the model runs somewhere else entirely.
     runs_root = runs_root or paths["runs"]
+    paths = {**paths, "runs": runs_root}
     batch_id = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_batch"
     batch_dir = os.path.join(runs_root, batch_id)
     os.makedirs(batch_dir, exist_ok=True)
