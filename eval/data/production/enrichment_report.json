@@ -1,0 +1,46 @@
+{
+  "stage": "REAL_RAW_PRODUCTION_DATA — ENRICHMENT",
+  "gold_status": "LOCKED — no annotation performed, no gold.csv created",
+  "generated_at": "2026-08-21T20:34:48.085522+00:00",
+  "total_records": 78,
+  "records_with_original_description": 1,
+  "records_without_original_description": 77,
+  "records_successfully_enriched": 0,
+  "records_failed": 77,
+  "records_skipped_already_adequate": 1,
+  "records_with_product_page": 2,
+  "records_without_product_page": 76,
+  "description_coverage_before": 0.0128,
+  "description_coverage_after": 0.0128,
+  "fabric_coverage": 0.3077,
+  "color_coverage": 0.7821,
+  "variant_coverage": 0.0256,
+  "materials_coverage": 0.0,
+  "source_breakdown": {
+    "cas_basics": {
+      "records": 35,
+      "enriched": 0,
+      "failed": 35,
+      "product_urls": 0
+    },
+    "abay": {
+      "records": 33,
+      "enriched": 0,
+      "failed": 32,
+      "product_urls": 2
+    },
+    "zadina": {
+      "records": 10,
+      "enriched": 0,
+      "failed": 10,
+      "product_urls": 0
+    }
+  },
+  "failure_reasons": {
+    "NO_PRODUCT_URL": 76,
+    "NETWORK_BLOCKED:Tunnel connection failed: 403 Forbidden": 1
+  },
+  "min_description_chars": 30,
+  "quality_gate_target": 0.8,
+  "quality_gate_met": false
+}

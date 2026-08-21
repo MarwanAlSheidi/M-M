@@ -308,12 +308,33 @@ def test_manifest_builder_computes_hashes_rather_than_accepting_them():
     assert "compute_file_hash" in content
 
 
-def test_production_directory_exists_and_is_empty_of_data():
-    """The repository ships no real catalogue data."""
+def test_production_data_is_not_tracked_by_git():
+    """No real catalogue data may be TRACKED BY GIT.
+
+    This originally asserted the directory was empty on disk, which held while
+    the repository shipped no data. Once a real catalogue is ingested the file
+    legitimately exists locally, so disk-emptiness stopped measuring anything.
+    The risk was never a file on disk — it is a file in a commit — so the check
+    now asks git directly, which is strictly stronger than what it replaced.
+    """
+    import subprocess
+
     production = os.path.join(PROJECT_ROOT, "data", "production")
     assert os.path.isdir(production)
 
-    data_files = [
-        name for name in os.listdir(production) if name.endswith((".csv", ".jsonl"))
-    ]
-    assert not data_files, f"production data committed: {data_files}"
+    tracked = subprocess.run(
+        ["git", "ls-files", "data/production"],
+        cwd=PROJECT_ROOT, capture_output=True, text=True,
+    ).stdout.split()
+    committed_data = [p for p in tracked if p.endswith((".csv", ".jsonl", ".parquet"))]
+    assert not committed_data, f"production data is committed: {committed_data}"
+
+    # And anything that is present locally must be ignored, not merely absent
+    # from the index by accident.
+    for name in os.listdir(production):
+        if name.endswith((".csv", ".jsonl", ".parquet")):
+            ignored = subprocess.run(
+                ["git", "check-ignore", "-q", f"data/production/{name}"],
+                cwd=PROJECT_ROOT,
+            ).returncode == 0
+            assert ignored, f"data/production/{name} is not gitignored"
