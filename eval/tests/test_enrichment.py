@@ -273,3 +273,276 @@ def test_gold_is_not_created_by_enrichment(enrich):
     write_raw(enrich, [row("UAE-S-aaa")])
     enrich.main([])
     assert not os.path.exists(os.path.join(enrich.PRODUCTION, "gold.csv"))
+
+
+# ----------------------------------------------------------------------
+# canonical URL, deduplication, and the full import field set
+# ----------------------------------------------------------------------
+
+
+IMPORT_HEADER = ["product_id", "product_url", "product_title_page", "description_page",
+                 "category_page", "fabric_page", "color_page", "variant_page",
+                 "materials_raw", "features_raw", "price_page", "currency_page",
+                 "store_page", "retrieved_at_source"]
+
+LONG_DESC = "A long black nida abaya with hand embroidery running along both cuffs."
+
+
+def write_import(tmp_path, rows, header=IMPORT_HEADER, name="pages.csv"):
+    path = os.path.join(str(tmp_path), name)
+    with open(path, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=header)
+        writer.writeheader()
+        for entry in rows:
+            writer.writerow({c: entry.get(c, "") for c in header})
+    return path
+
+
+def enriched_rows(module):
+    with open(module.ENRICHED, encoding="utf-8") as handle:
+        return {r["product_id"]: r for r in csv.DictReader(handle)}
+
+
+def test_import_carries_every_declared_field(enrich, tmp_path):
+    """Each column the import contract declares must land in the enriched layer.
+
+    The failure this guards against is silent: a field the collector filled in
+    is dropped on merge, and the loss is invisible because the row still says
+    ENRICHED.
+    """
+    write_raw(enrich, [row("UAE-S-aaa")])
+    supplied = {
+        "product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+        "product_title_page": "Amira Abaya", "description_page": LONG_DESC,
+        "category_page": "abaya", "fabric_page": "nida", "color_page": "black",
+        "variant_page": "S / M / L", "materials_raw": "100% polyester",
+        "features_raw": "hand embroidery", "price_page": "450.00",
+        "currency_page": "AED", "store_page": "casbasics",
+        "retrieved_at_source": "2026-08-20T09:00:00Z",
+    }
+    enrich.main(["--import", write_import(tmp_path, [supplied])])
+
+    merged = enriched_rows(enrich)["UAE-S-aaa"]
+    assert merged["enrichment_status"] == "ENRICHED"
+
+    # Named literally, not read back from the module: a test that iterates the
+    # code's own list agrees with it by construction and cannot notice a field
+    # being quietly removed from the contract.
+    expected = ["product_title_page", "description_page", "category_page",
+                "fabric_page", "color_page", "variant_page", "materials_raw",
+                "features_raw", "price_page", "currency_page", "store_page",
+                "retrieved_at_source"]
+    assert enrich.IMPORT_PASSTHROUGH == expected, "the import contract changed"
+    for column in expected:
+        assert merged[column] == supplied[column], f"{column} was dropped on merge"
+
+
+def test_import_records_the_canonical_product_url(enrich, tmp_path):
+    write_raw(enrich, [row("UAE-S-aaa")])
+    enrich.main(["--import", write_import(tmp_path, [{
+        "product_id": "UAE-S-aaa",
+        "product_url": "https://X.Test/products/aaa/?variant=42#reviews",
+        "description_page": LONG_DESC,
+    }])])
+
+    merged = enriched_rows(enrich)["UAE-S-aaa"]
+    # Provenance keeps the URL exactly as supplied; the canonical form is a
+    # derived key for comparison, never a replacement for the original.
+    assert merged["provenance_url"] == "https://X.Test/products/aaa/?variant=42#reviews"
+    assert merged["product_url_canonical"] == "https://x.test/products/aaa"
+
+
+@pytest.mark.parametrize("variant", [
+    "https://x.test/products/aaa",
+    "https://x.test/products/aaa/",
+    "https://X.TEST/products/aaa",
+    "HTTPS://x.test/products/aaa?variant=9",
+    "https://x.test/products/aaa#tab-details",
+])
+def test_canonical_url_folds_the_forms_of_one_page(enrich, variant):
+    assert enrich.canonical_url(variant) == "https://x.test/products/aaa"
+
+
+def test_canonical_url_keeps_distinct_pages_distinct(enrich):
+    """Folding must not go so far that two products become one."""
+    forms = [
+        "https://x.test/products/aaa",
+        "https://x.test/products/bbb",
+        "https://y.test/products/aaa",
+        "https://x.test/collections/all/products/aaa",
+    ]
+    assert len({enrich.canonical_url(f) for f in forms}) == len(forms)
+
+
+def test_two_records_may_not_be_enriched_from_one_page(enrich, tmp_path):
+    """One product page cannot be the evidence for two products.
+
+    Allowing it would give two records identical text, and every field scored
+    against that text would agree by construction — a duplicate dressed up as a
+    corroboration.
+    """
+    write_raw(enrich, [row("UAE-S-aaa"), row("UAE-S-bbb")])
+    path = write_import(tmp_path, [
+        {"product_id": "UAE-S-aaa", "product_url": "https://x.test/products/shared",
+         "description_page": LONG_DESC},
+        {"product_id": "UAE-S-bbb", "product_url": "https://x.test/products/shared?variant=2",
+         "description_page": LONG_DESC},
+    ])
+    enrich.main(["--import", path])
+
+    rows = enriched_rows(enrich)
+    assert rows["UAE-S-aaa"]["enrichment_status"] == "ENRICHED"
+    assert rows["UAE-S-bbb"]["enrichment_status"] == "FAILED"
+    assert rows["UAE-S-bbb"]["enrichment_reason"] == "DUPLICATE_PRODUCT_URL"
+    # The rejected record keeps no borrowed text.
+    assert rows["UAE-S-bbb"]["description_page"] == ""
+
+
+def test_duplicate_claim_is_resolved_by_catalogue_order_not_import_order(enrich, tmp_path):
+    """The winner must not depend on how the import file happens to be sorted."""
+    write_raw(enrich, [row("UAE-S-aaa"), row("UAE-S-bbb")])
+    reversed_import = write_import(tmp_path, [
+        {"product_id": "UAE-S-bbb", "product_url": "https://x.test/products/shared",
+         "description_page": LONG_DESC},
+        {"product_id": "UAE-S-aaa", "product_url": "https://x.test/products/shared",
+         "description_page": LONG_DESC},
+    ])
+    enrich.main(["--import", reversed_import])
+
+    rows = enriched_rows(enrich)
+    assert rows["UAE-S-aaa"]["enrichment_status"] == "ENRICHED"
+    assert rows["UAE-S-bbb"]["enrichment_reason"] == "DUPLICATE_PRODUCT_URL"
+
+
+def test_identical_repeated_import_rows_collapse(enrich, tmp_path):
+    """Two rows asserting exactly the same thing are one assertion."""
+    write_raw(enrich, [row("UAE-S-aaa")])
+    entry = {"product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+             "description_page": LONG_DESC, "fabric_page": "nida"}
+    enrich.main(["--import", write_import(tmp_path, [entry, dict(entry)])])
+
+    merged = enriched_rows(enrich)["UAE-S-aaa"]
+    assert merged["enrichment_status"] == "ENRICHED"
+    assert merged["fabric_page"] == "nida"
+
+
+def test_conflicting_import_rows_are_refused_outright(enrich, tmp_path):
+    """Two rows disagreeing about one product: the import is wrong, not the data.
+
+    Keeping the first would silently decide which claim is true. The import is
+    rejected so the conflict is fixed at source.
+    """
+    path = write_import(tmp_path, [
+        {"product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+         "description_page": LONG_DESC, "fabric_page": "nida"},
+        {"product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+         "description_page": LONG_DESC, "fabric_page": "crepe"},
+    ])
+    write_raw(enrich, [row("UAE-S-aaa")])
+
+    with pytest.raises(ValueError) as raised:
+        enrich.main(["--import", path])
+
+    assert "UAE-S-aaa" in str(raised.value)
+    # Nothing may be written from an import that was refused.
+    assert not os.path.exists(enrich.ENRICHED)
+
+
+def test_import_row_without_any_url_fails_with_its_own_reason(enrich, tmp_path):
+    write_raw(enrich, [row("UAE-S-aaa")])
+    enrich.main(["--import", write_import(tmp_path, [
+        {"product_id": "UAE-S-aaa", "description_page": LONG_DESC},
+    ])])
+
+    merged = enriched_rows(enrich)["UAE-S-aaa"]
+    assert merged["enrichment_reason"] == "NO_URL"
+    assert merged["description_page"] == ""
+
+
+def test_report_counts_missing_urls_duplicates_and_failures(enrich, tmp_path):
+    write_raw(enrich, [
+        row("UAE-S-aaa"),
+        row("UAE-S-bbb"),
+        row("UAE-S-ccc", url=""),
+    ])
+    enrich.main(["--import", write_import(tmp_path, [
+        {"product_id": "UAE-S-aaa", "product_url": "https://x.test/products/shared",
+         "description_page": LONG_DESC},
+        {"product_id": "UAE-S-bbb", "product_url": "https://x.test/products/shared/",
+         "description_page": LONG_DESC},
+    ])])
+
+    with open(enrich.REPORT, encoding="utf-8") as handle:
+        report = json.load(handle)
+
+    assert report["missing_url_count"] == 1
+    assert report["duplicate_count"] == 1
+    reasons = {entry["product_id"]: entry["reason"] for entry in report["failed_urls"]}
+    assert reasons == {"UAE-S-bbb": "DUPLICATE_PRODUCT_URL", "UAE-S-ccc": "NOT_IN_IMPORT"}
+
+
+def test_report_counts_distinct_pages_not_records(enrich):
+    """Records sharing one collection page must not read as per-record evidence."""
+    write_raw(enrich, [
+        row("UAE-S-aaa", url="https://x.test/collections/all"),
+        row("UAE-S-bbb", url="https://x.test/collections/all/"),
+        row("UAE-S-ccc", url="https://x.test/products/ccc"),
+    ])
+    enrich.main([])
+
+    with open(enrich.REPORT, encoding="utf-8") as handle:
+        report = json.load(handle)
+
+    assert report["total_records"] == 3
+    assert report["distinct_canonical_urls"] == 2
+    assert report["distinct_canonical_product_urls"] == 1
+
+
+# ----------------------------------------------------------------------
+# import template
+# ----------------------------------------------------------------------
+
+
+def test_import_template_is_headers_only(enrich, tmp_path):
+    """A template must carry no example rows — invented examples become data."""
+    target = os.path.join(str(tmp_path), "template.csv")
+    assert enrich.main(["--write-import-template", target]) == 0
+
+    with open(target, encoding="utf-8", newline="") as handle:
+        rows = list(csv.reader(handle))
+
+    assert len(rows) == 1, f"template contains {len(rows) - 1} data rows"
+    assert rows[0] == enrich.IMPORT_TEMPLATE_COLUMNS
+    assert rows[0][:2] == ["product_id", "product_url"]
+
+
+def test_import_template_round_trips_through_the_importer(enrich, tmp_path):
+    """The template's columns must be exactly what the importer reads."""
+    target = os.path.join(str(tmp_path), "template.csv")
+    enrich.main(["--write-import-template", target])
+
+    with open(target, encoding="utf-8", newline="") as handle:
+        columns = next(csv.reader(handle))
+
+    write_raw(enrich, [row("UAE-S-aaa")])
+    filled = os.path.join(str(tmp_path), "filled.csv")
+    with open(filled, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        writer.writerow({c: "" for c in columns} | {
+            "product_id": "UAE-S-aaa",
+            "product_url": "https://x.test/products/aaa",
+            "description_page": LONG_DESC,
+        })
+
+    enrich.main(["--import", filled])
+    assert enriched_rows(enrich)["UAE-S-aaa"]["enrichment_status"] == "ENRICHED"
+
+
+def test_writing_a_template_touches_nothing_else(enrich, tmp_path):
+    """The template flag exits before any enrichment output is produced."""
+    write_raw(enrich, [row("UAE-S-aaa")])
+    enrich.main(["--write-import-template", os.path.join(str(tmp_path), "t.csv")])
+
+    assert not os.path.exists(enrich.ENRICHED)
+    assert not os.path.exists(enrich.REPORT)

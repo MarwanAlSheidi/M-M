@@ -1,7 +1,7 @@
 {
   "stage": "REAL_RAW_PRODUCTION_DATA — ENRICHMENT",
   "gold_status": "LOCKED — no annotation performed, no gold.csv created",
-  "generated_at": "2026-08-21T20:34:48.085522+00:00",
+  "generated_at": "2026-08-21T20:47:56.397791+00:00",
   "total_records": 78,
   "records_with_original_description": 1,
   "records_without_original_description": 77,
@@ -16,6 +16,10 @@
   "color_coverage": 0.7821,
   "variant_coverage": 0.0256,
   "materials_coverage": 0.0,
+  "missing_url_count": 0,
+  "duplicate_count": 0,
+  "distinct_canonical_urls": 5,
+  "distinct_canonical_product_urls": 2,
   "source_breakdown": {
     "cas_basics": {
       "records": 35,
@@ -40,6 +44,393 @@
     "NO_PRODUCT_URL": 76,
     "NETWORK_BLOCKED:Tunnel connection failed: 403 Forbidden": 1
   },
+  "failed_urls": [
+    {
+      "product_id": "UAE-CAS-28e973a1550a",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-aa634c588179",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-2455c9fe2271",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-fd81cac8d316",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-95a165126b97",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-f2e95f6f3eda",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-ca193e469c72",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-ff1a231bb0f6",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-1d77e23220a0",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-66fe7172e927",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-c00224798d9a",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-2bd85901fd80",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-80834f6810d5",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-6003ec01a93b",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-068b165bf6d3",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-8c34e1f9246b",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-faac02f04f8d",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-68edbc2166a7",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-a474b69abc57",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-7ee99d3f873a",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-bf3acf7b5a18",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-76b1f9485987",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-1b03c1d4c612",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-2a987bd574aa",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-e00c85fed800",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-fe4246aad658",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-7e35d6bc92f0",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-796e741b96ce",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-f3e914786116",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-4a67ecc502fe",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-8c81ea3d4936",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-d3b56b8b7d1a",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-8106ca3e843f",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-d0d6eeba0f23",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-CAS-d76687fc89b6",
+      "url": "https://casbasics.com/collections/all",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-59768326e704",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-f80d75923692",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-e0fb825ac4b6",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-d0370453cfce",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-231a9ae0bf54",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-94f38b7f72fe",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-eab85f8d59a4",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-382c62043386",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-201591ccf163",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-ed9318dc846b",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-e32b8c81a07d",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-d8c2d4444d8c",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-ecb04645136d",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-4d7dc931d967",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-386068c1f171",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-f97f88c1a726",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-c9115ec7dfe5",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-0f43df43393e",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-d3fc2b0d9861",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-bba4f3d86f61",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-08bad6d8f9f7",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-31217ce1a9b5",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-499ddbce7f9d",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-132f9caba43c",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-18fcd92a540f",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-f932531e4bfd",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-07b3b0f99d6c",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-5ba1105f1082",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-417ae16b89e5",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-1d801abfa534",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-eee39361b0ee",
+      "url": "https://abay.com/collections/abaya",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ZADINA-d0ac6b81d9c0",
+      "url": "https://www.zadinaabayas.com/uae/abayas",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ZADINA-8e1f735b7e3c",
+      "url": "https://www.zadinaabayas.com/uae/abayas",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ZADINA-96bddbb93269",
+      "url": "https://www.zadinaabayas.com/uae/abayas",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ZADINA-4619225db0bf",
+      "url": "https://www.zadinaabayas.com/uae/abayas",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ZADINA-17df0f789af7",
+      "url": "https://www.zadinaabayas.com/uae/abayas",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ZADINA-ce566127ad98",
+      "url": "https://www.zadinaabayas.com/uae/abayas",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ZADINA-99b2b613fb3e",
+      "url": "https://www.zadinaabayas.com/uae/abayas",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ZADINA-2ad33acc45de",
+      "url": "https://www.zadinaabayas.com/uae/abayas",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ZADINA-8f26f24c34de",
+      "url": "https://www.zadinaabayas.com/uae/abayas",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ZADINA-3bf5e9930338",
+      "url": "https://www.zadinaabayas.com/uae/abayas",
+      "reason": "NO_PRODUCT_URL"
+    },
+    {
+      "product_id": "UAE-ABAY-d2ef168c5cf2",
+      "url": "https://abay.com/products/maizah-abaya",
+      "reason": "NETWORK_BLOCKED:Tunnel connection failed: 403 Forbidden"
+    }
+  ],
   "min_description_chars": 30,
   "quality_gate_target": 0.8,
   "quality_gate_met": false
