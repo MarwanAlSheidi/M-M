@@ -200,3 +200,53 @@ A `REAL_BENCHMARK` label additionally requires: the model enabled in
 `configs/models.yaml`, its credentials present, its provider not `local`, and
 the integrity gate at `PASS`. If any of those is missing the report is labelled
 `TEST_FIXTURE` and says which condition failed.
+
+---
+
+## 12. حالة الاستحواذ — REAL_RAW_PRODUCTION_DATA
+
+**هذه بيانات خام حقيقية، وليست معياراً.** لا يوجد `gold.csv`، فلا يمكن تقييم أي
+نموذج عليها، ولا يجوز وسمها `REAL_BENCHMARK` بأي حال.
+
+### الملفّات
+
+| الملف | المحتوى |
+|---|---|
+| `raw_catalog.csv` | 78 سجلاً خاماً + `legacy_product_id` |
+| `annotation_queue.csv` | 78 صفّاً، جميعها `UNANNOTATED` |
+| `validation_ids.csv` | 13 معرّفاً، شريحة تحقّق **مثبّتة قبل التعليق** |
+| `../../manifests/raw_catalog_production.json` | بصمات المرحلة |
+
+### إصلاح محاذاة موثّق
+
+تسعة صفوف وصلت بعدد حقول خاطئ (15 أو 17 بدل 16)، فانزاحت القيم: `available`
+حلّت في `variant_raw` والتاريخ في `image_url`. أُعيدت محاذاتها بقاعدة **مُعرَّفة
+بالمحتوى** لا بالتخمين: قيمة التوفّر تنتمي إلى مجموعة مغلقة
+(`available`/`sold_out`)، والتاريخ يطابق `YYYY-MM-DD`. المعرّفات المُصلَحة:
+
+- `UAE-CAS-C-1707-02-Amira-Abaya` — realigned:15->16
+- `UAE-CAS-C-1279-02-Moonlight-Tie-Dye-Abaya` — realigned:17->16
+- `UAE-ABAY-Pleated-Sleeve-Cadillac` — realigned:15->16
+- `UAE-ABAY-Adventure-Print` — realigned:15->16
+- `UAE-ABAY-Embossed-Petal` — realigned:15->16
+- `UAE-ABAY-Contrast-Panel-Insets` — realigned:15->16
+- `UAE-ABAY-Botanical-Print` — realigned:15->16
+- `UAE-ABAY-Deep-Embossed` — realigned:15->16
+- `UAE-ABAY-Skyline-Tailored` — realigned:15->16
+
+`legacy_product_id` يحفظ المعرّف الأصلي لكل سجلّ، فالإصلاح قابل للمراجعة والعكس.
+
+### ما لم يُلمَس
+
+ستّة سجلّات Zadina تحمل `+5 variants` داخل عمود `image_url` — خطأ حقول من
+المصدر نفسه، والملفّ الوارد كان سليم البنية فيها. **لم أنقلها إلى
+`variant_raw`**: النقل تفسير لا إصلاح.
+
+### القيود المعروفة
+
+- **78 من 1,400 سجلاً (5.6%)**، ومن ثلاثة مصادر من ستّة. `infinite_vibes` و
+  `noorai` و `effa` غائبة كلياً.
+- **`description_raw` فارغ في 98.7%** — وهذا يشلّ مُتحقّق الدليل: 94.6% من
+  الحقول الصارمة ستمتنع حتماً مهما كان النموذج جيّداً.
+- **66 من 78 سجلاً يحمل عنوان تجميعة لا عنوان منتج** — لا يمكن تدقيق سجلّ
+  بالرجوع إلى صفحته.
