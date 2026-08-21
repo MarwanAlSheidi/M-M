@@ -1,7 +1,7 @@
 {
   "stage": "REAL_RAW_PRODUCTION_DATA — ENRICHMENT",
   "gold_status": "LOCKED — no annotation performed, no gold.csv created",
-  "generated_at": "2026-08-21T20:47:56.397791+00:00",
+  "generated_at": "2026-08-21T21:19:12.073966+00:00",
   "total_records": 78,
   "records_with_original_description": 1,
   "records_without_original_description": 77,
@@ -16,6 +16,8 @@
   "color_coverage": 0.7821,
   "variant_coverage": 0.0256,
   "materials_coverage": 0.0,
+  "usable_records": 1,
+  "unusable_records": 77,
   "missing_url_count": 0,
   "duplicate_count": 0,
   "distinct_canonical_urls": 5,

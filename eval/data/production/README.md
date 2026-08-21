@@ -320,3 +320,36 @@ python scripts/enrich_catalog.py --import <ملفّك>.csv
 
 `import_template.csv` يُولَّد محلياً وهو ضمن `.gitignore` كبقيّة ملفّات CSV هنا،
 فأعمدته موثّقة أعلاه ليبقى العقد مقروءاً من المستودع.
+
+### أسماء الأعمدة المقبولة (aliases)
+
+جولة الجمع تسمّي أعمدتها باسم الاستحواذ (`description_raw`, `price`,
+`color_raw`)، وهذه الطبقة تسمّيها باسم الصفحة (`description_page`,
+`price_page`, `color_page`). كلاهما معقول، فالمستورد يقبل الاثنين.
+
+| الحقل في العقد | الأسماء المقبولة (بالأولويّة) |
+|---|---|
+| `product_url` | `product_url`, `source_url`, `provenance_url` |
+| `product_title_page` | `product_title_page`, `product_name_raw`, `product_name`, `title` |
+| `description_page` | `description_page`, `description_raw`, `description`, `body_html` |
+| `category_page` | `category_page`, `category_raw`, `category`, `product_type` |
+| `fabric_page` | `fabric_page`, `fabric_raw`, `fabric`, `material` |
+| `color_page` | `color_page`, `color_raw`, `color`, `colour_raw`, `colour` |
+| `variant_page` | `variant_page`, `variants_raw`, `variant_raw`, `variants`, `variant` |
+| `materials_raw` | `materials_raw`, `materials` |
+| `features_raw` | `features_raw`, `features` |
+| `price_page` | `price_page`, `price` |
+| `currency_page` | `currency_page`, `currency` |
+| `store_page` | `store_page`, `store`, `source` |
+| `retrieved_at_source` | `retrieved_at_source`, `retrieved_at` |
+| `set_page` | `set_page`, `set_raw`, `set` |
+| `availability_page` | `availability_page`, `availability`, `available` |
+| `image_url_page` | `image_url_page`, `image_url`, `image` |
+
+**الاسم المستعار يعيد التسمية فقط.** لا ينقل قيمة من حقل إلى آخر، ولا يغذّي أيّ
+اسمٍ للعنوان حقلَ الوصف: اسم المنتج ليس نصّ المنتج. الاسم الأصلي له الأولويّة،
+فإن حمل الصفّ `description_page` و`description_raw` معاً فُضّل ما قُرئ من الصفحة.
+
+الحقول الثلاثة `set_page` و`availability_page` و`image_url_page` أُضيفت بلاحقة
+`_page` تحديداً لأنّ `raw_catalog.csv` يحمل `image_url` و`available` أصلاً —
+واللاحقة تمنع أن يحلّ أحدهما محلّ الآخر.

@@ -283,7 +283,8 @@ def test_gold_is_not_created_by_enrichment(enrich):
 IMPORT_HEADER = ["product_id", "product_url", "product_title_page", "description_page",
                  "category_page", "fabric_page", "color_page", "variant_page",
                  "materials_raw", "features_raw", "price_page", "currency_page",
-                 "store_page", "retrieved_at_source"]
+                 "store_page", "retrieved_at_source", "set_page",
+                 "availability_page", "image_url_page", "embellishment_page"]
 
 LONG_DESC = "A long black nida abaya with hand embroidery running along both cuffs."
 
@@ -319,6 +320,9 @@ def test_import_carries_every_declared_field(enrich, tmp_path):
         "features_raw": "hand embroidery", "price_page": "450.00",
         "currency_page": "AED", "store_page": "casbasics",
         "retrieved_at_source": "2026-08-20T09:00:00Z",
+        "set_page": "two-piece", "availability_page": "available",
+        "image_url_page": "https://x.test/img/aaa.jpg",
+        "embellishment_page": "crystal stones",
     }
     enrich.main(["--import", write_import(tmp_path, [supplied])])
 
@@ -331,7 +335,8 @@ def test_import_carries_every_declared_field(enrich, tmp_path):
     expected = ["product_title_page", "description_page", "category_page",
                 "fabric_page", "color_page", "variant_page", "materials_raw",
                 "features_raw", "price_page", "currency_page", "store_page",
-                "retrieved_at_source"]
+                "retrieved_at_source", "set_page", "availability_page",
+                "image_url_page", "embellishment_page"]
     assert enrich.IMPORT_PASSTHROUGH == expected, "the import contract changed"
     for column in expected:
         assert merged[column] == supplied[column], f"{column} was dropped on merge"
@@ -546,3 +551,204 @@ def test_writing_a_template_touches_nothing_else(enrich, tmp_path):
 
     assert not os.path.exists(enrich.ENRICHED)
     assert not os.path.exists(enrich.REPORT)
+
+
+# ----------------------------------------------------------------------
+# column aliases — the acquisition schema and the page schema must both import
+# ----------------------------------------------------------------------
+
+
+ACQUISITION_HEADER = ["product_id", "source", "product_url", "product_name_raw",
+                      "description_raw", "price", "currency", "color_raw",
+                      "fabric_raw", "category_raw", "variants_raw", "set_raw",
+                      "availability", "image_url", "retrieved_at"]
+
+
+def test_import_accepts_the_acquisition_schema(enrich, tmp_path):
+    """A row named after the acquisition must import, not fail as empty.
+
+    This is a regression. The importer read `description_page` while a
+    collection run supplies `description_raw`, so a complete and correct product
+    row was recorded as IMPORT_NO_DESCRIPTION with every field dropped — a
+    naming mismatch that reported itself as a data-quality problem.
+    """
+    write_raw(enrich, [row("UAE-CAS-1")])
+    supplied = {
+        "product_id": "UAE-CAS-1", "source": "casbasics",
+        "product_url": "https://casbasics.com/products/amira-abaya",
+        "product_name_raw": "Amira Abaya",
+        "description_raw": LONG_DESC,
+        "price": "450", "currency": "AED", "color_raw": "black",
+        "fabric_raw": "nida", "category_raw": "abaya", "variants_raw": "S / M / L",
+        "set_raw": "two-piece", "availability": "available",
+        "image_url": "https://casbasics.com/img/1.jpg",
+        "retrieved_at": "2026-08-21T10:00:00Z",
+    }
+    enrich.main(["--import", write_import(tmp_path, [supplied], header=ACQUISITION_HEADER)])
+
+    merged = enriched_rows(enrich)["UAE-CAS-1"]
+    assert merged["enrichment_status"] == "ENRICHED"
+    assert merged["description_page"] == LONG_DESC
+    assert merged["product_title_page"] == "Amira Abaya"
+    assert merged["fabric_page"] == "nida"
+    assert merged["color_page"] == "black"
+    assert merged["category_page"] == "abaya"
+    assert merged["variant_page"] == "S / M / L"
+    assert merged["price_page"] == "450"
+    assert merged["currency_page"] == "AED"
+    assert merged["store_page"] == "casbasics"
+    assert merged["set_page"] == "two-piece"
+    assert merged["availability_page"] == "available"
+    assert merged["image_url_page"] == "https://casbasics.com/img/1.jpg"
+    assert merged["retrieved_at_source"] == "2026-08-21T10:00:00Z"
+
+
+def test_every_contract_field_has_an_alias_entry(enrich):
+    """A field with no alias entry silently reads nothing from an alias-named file."""
+    missing = [f for f in enrich.IMPORT_PASSTHROUGH if f not in enrich.IMPORT_ALIASES]
+    assert not missing, f"fields with no alias entry: {missing}"
+
+
+def test_an_alias_never_moves_a_value_between_fields(enrich):
+    """Aliases rename. They must not let one field's names feed another."""
+    seen = {}
+    for field, names in enrich.IMPORT_ALIASES.items():
+        assert names[0] == field, f"{field}: canonical name must have priority"
+        for name in names:
+            assert name not in seen, f"'{name}' feeds both {seen.get(name)} and {field}"
+            seen[name] = field
+
+
+def test_the_page_name_wins_over_the_acquisition_name(enrich, tmp_path):
+    """When a row carries both, the value read off the page is the page's."""
+    write_raw(enrich, [row("UAE-S-aaa")])
+    header = ["product_id", "product_url", "description_page", "description_raw",
+              "fabric_page", "fabric_raw"]
+    enrich.main(["--import", write_import(tmp_path, [{
+        "product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+        "description_page": LONG_DESC, "description_raw": "stale acquisition text",
+        "fabric_page": "nida", "fabric_raw": "crepe",
+    }], header=header)])
+
+    merged = enriched_rows(enrich)["UAE-S-aaa"]
+    assert merged["description_page"] == LONG_DESC
+    assert merged["fabric_page"] == "nida"
+
+
+def test_a_title_alias_never_becomes_a_description(enrich, tmp_path):
+    """A product name is not product text, under any column name."""
+    write_raw(enrich, [row("UAE-S-aaa")])
+    enrich.main(["--import", write_import(tmp_path, [{
+        "product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+        "product_name_raw": "Amira Abaya Black Nida Hand Embroidered Full Length",
+    }], header=["product_id", "product_url", "product_name_raw"])])
+
+    merged = enriched_rows(enrich)["UAE-S-aaa"]
+    assert merged["enrichment_status"] == "FAILED"
+    assert merged["enrichment_reason"] == "IMPORT_NO_DESCRIPTION"
+    assert merged["description_page"] == ""
+
+
+def test_conflict_detection_sees_through_aliases(enrich, tmp_path):
+    """Two rows disagreeing under different column names still conflict."""
+    write_raw(enrich, [row("UAE-S-aaa")])
+    header = ["product_id", "product_url", "description_page", "description_raw"]
+    path = write_import(tmp_path, [
+        {"product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+         "description_page": LONG_DESC},
+        {"product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+         "description_raw": "a completely different description of this product"},
+    ], header=header)
+
+    with pytest.raises(ValueError):
+        enrich.main(["--import", path])
+
+
+def test_report_counts_usable_records(enrich, tmp_path):
+    """Usable means enough text to annotate, not merely a successful fetch."""
+    write_raw(enrich, [row("UAE-S-aaa"), row("UAE-S-bbb")])
+    enrich.main(["--import", write_import(tmp_path, [
+        {"product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+         "description_page": LONG_DESC},
+        {"product_id": "UAE-S-bbb", "product_url": "https://x.test/products/bbb",
+         "description_page": "tiny"},
+    ])])
+
+    with open(enrich.REPORT, encoding="utf-8") as handle:
+        report = json.load(handle)
+
+    # Both fetched; only one carries annotatable text.
+    assert report["records_successfully_enriched"] == 2
+    assert report["usable_records"] == 1
+    assert report["unusable_records"] == 1
+
+
+# ----------------------------------------------------------------------
+# no supplied field is discarded
+# ----------------------------------------------------------------------
+
+
+def test_columns_the_contract_has_no_home_for_are_preserved(enrich, tmp_path):
+    """A collector's extra columns are evidence, not noise.
+
+    Dropping them would lose real observations because the schema was written
+    before the field existed — and the loss would be invisible, since the row
+    still reports ENRICHED.
+    """
+    write_raw(enrich, [row("UAE-S-aaa")])
+    header = ["product_id", "product_url", "description_page",
+              "price_raw", "color_variants_raw", "seller_note"]
+    enrich.main(["--import", write_import(tmp_path, [{
+        "product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+        "description_page": LONG_DESC,
+        "price_raw": "AED 450.00", "color_variants_raw": "black; navy; beige",
+        "seller_note": "ships in 3 days",
+    }], header=header)])
+
+    merged = enriched_rows(enrich)["UAE-S-aaa"]
+    extras = json.loads(merged["extra_fields_json"])
+    assert extras == {"price_raw": "AED 450.00",
+                      "color_variants_raw": "black; navy; beige",
+                      "seller_note": "ships in 3 days"}
+
+
+def test_consumed_columns_are_not_duplicated_into_the_extras(enrich, tmp_path):
+    """A field with a home belongs in that home only, not in both places."""
+    write_raw(enrich, [row("UAE-S-aaa")])
+    enrich.main(["--import", write_import(tmp_path, [{
+        "product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+        "description_page": LONG_DESC, "fabric_page": "nida",
+    }])])
+
+    merged = enriched_rows(enrich)["UAE-S-aaa"]
+    assert merged["fabric_page"] == "nida"
+    assert merged["extra_fields_json"] == ""
+
+
+def test_embellishment_has_its_own_column(enrich, tmp_path):
+    """Embellishment feeds three scored gold fields, so it gets a column."""
+    write_raw(enrich, [row("UAE-S-aaa")])
+    enrich.main(["--import", write_import(tmp_path, [{
+        "product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+        "description_page": LONG_DESC, "embellishment_raw": "crystal stones on the cuffs",
+    }], header=["product_id", "product_url", "description_page", "embellishment_raw"])])
+
+    merged = enriched_rows(enrich)["UAE-S-aaa"]
+    assert merged["embellishment_page"] == "crystal stones on the cuffs"
+    assert merged["extra_fields_json"] == ""
+
+
+def test_a_conflict_in_an_unmapped_column_still_fails_the_import(enrich, tmp_path):
+    """Preserved-but-unmapped fields count towards identity, or they are a
+    silent channel for two rows to disagree and still collapse."""
+    write_raw(enrich, [row("UAE-S-aaa")])
+    header = ["product_id", "product_url", "description_page", "seller_note"]
+    path = write_import(tmp_path, [
+        {"product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+         "description_page": LONG_DESC, "seller_note": "ships in 3 days"},
+        {"product_id": "UAE-S-aaa", "product_url": "https://x.test/products/aaa",
+         "description_page": LONG_DESC, "seller_note": "ships in 10 days"},
+    ], header=header)
+
+    with pytest.raises(ValueError):
+        enrich.main(["--import", path])

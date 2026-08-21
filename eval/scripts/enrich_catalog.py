@@ -57,6 +57,11 @@ ENRICHMENT_COLUMNS = [
     "currency_page",
     "store_page",
     "retrieved_at_source",
+    "set_page",
+    "availability_page",
+    "image_url_page",
+    "embellishment_page",
+    "extra_fields_json",
     "enrichment_status",
     "enrichment_method",
     "enrichment_reason",
@@ -71,7 +76,47 @@ IMPORT_PASSTHROUGH = [
     "product_title_page", "description_page", "category_page", "fabric_page",
     "color_page", "variant_page", "materials_raw", "features_raw",
     "price_page", "currency_page", "store_page", "retrieved_at_source",
+    "set_page", "availability_page", "image_url_page", "embellishment_page",
 ]
+
+# Column names an import may use for each contract field, in priority order.
+#
+# An acquisition run names its columns after the acquisition (`description_raw`,
+# `price`, `color_raw`); this layer names them after the page (`description_page`,
+# `price_page`, `color_page`). Both are reasonable and neither is going to win,
+# so the importer accepts either rather than silently reading nothing — which is
+# what it did before: a complete, correct product row arrived and was recorded
+# as IMPORT_NO_DESCRIPTION, blaming the data for a naming mismatch.
+#
+# Aliases only rename. No alias moves a value between fields, and in particular
+# no title alias feeds a description: a product name is not product text.
+IMPORT_ALIASES = {
+    "product_title_page":  ["product_title_page", "product_name_raw", "product_name", "title"],
+    "description_page":    ["description_page", "description_raw", "description", "body_html"],
+    "category_page":       ["category_page", "category_raw", "category", "product_type"],
+    "fabric_page":         ["fabric_page", "fabric_raw", "fabric", "material"],
+    "color_page":          ["color_page", "color_raw", "color", "colour_raw", "colour"],
+    "variant_page":        ["variant_page", "variants_raw", "variant_raw", "variants", "variant",
+                            "size_options_raw", "size_options"],
+    "materials_raw":       ["materials_raw", "materials"],
+    "features_raw":        ["features_raw", "features"],
+    "price_page":          ["price_page", "price"],
+    "currency_page":       ["currency_page", "currency"],
+    "store_page":          ["store_page", "store", "source"],
+    "retrieved_at_source": ["retrieved_at_source", "retrieved_at"],
+    "set_page":            ["set_page", "set_raw", "set", "includes_raw", "includes"],
+    "availability_page":   ["availability_page", "availability", "available"],
+    "image_url_page":      ["image_url_page", "image_url", "image"],
+    "embellishment_page":  ["embellishment_page", "embellishment_raw", "embellishment"],
+}
+
+# Columns the importer consumes by name. Anything else in an import row is
+# preserved verbatim in `extra_fields_json` rather than dropped: a collector
+# who captured a field this contract has no column for (a display price string,
+# a colour-variant list) supplied evidence, and evidence is not discarded
+# because the schema was written before it existed.
+CONSUMED_COLUMNS = ({"product_id", "product_url", "source_url", "provenance_url"}
+                    | {name for names in IMPORT_ALIASES.values() for name in names})
 
 # The import file's contract. `product_id` ties a row back to the acquisition;
 # `product_url` is the page the content was read from. Everything else is
@@ -297,10 +342,31 @@ def import_url(row: Dict[str, str]) -> str:
     return ""
 
 
+def import_value(row: Dict[str, str], field: str) -> str:
+    """Read one contract field from an import row, under any accepted name.
+
+    The first alias that carries a non-empty value wins, so an explicit
+    `description_page` beats a fallback `description_raw` when both are present.
+    """
+    for name in IMPORT_ALIASES.get(field, [field]):
+        value = normalized(row.get(name))
+        if value:
+            return value
+    return ""
+
+
+def extra_fields(row: Dict[str, str]) -> str:
+    """Import columns this contract has no home for, kept verbatim as JSON."""
+    extras = {k: normalized(v) for k, v in row.items()
+              if k and k not in CONSUMED_COLUMNS and normalized(v)}
+    return json.dumps(extras, ensure_ascii=False, sort_keys=True) if extras else ""
+
+
 def import_payload(row: Dict[str, str]) -> Tuple[str, ...]:
     """Everything an import row asserts. Two rows with equal payloads are the
     same statement about the same product, so collapsing them loses nothing."""
-    return tuple([import_url(row)] + [normalized(row.get(k)) for k in IMPORT_PASSTHROUGH])
+    return tuple([import_url(row), extra_fields(row)]
+                 + [import_value(row, k) for k in IMPORT_PASSTHROUGH])
 
 
 def read_import(path: str) -> Dict[str, Dict[str, str]]:
@@ -388,14 +454,15 @@ def enrich_from_import(records: List[Dict[str, str]], path: str) -> List[Dict[st
             results.append(failed("DUPLICATE_PRODUCT_URL"))
             continue
 
-        description = normalized(incoming.get("description_page"))
+        description = import_value(incoming, "description_page")
         if not description:
             results.append(failed("IMPORT_NO_DESCRIPTION"))
             continue
 
         row = blank_enrichment(ENRICHED_OK, "import", "OK")
         for key in IMPORT_PASSTHROUGH:
-            row[key] = normalized(incoming.get(key))
+            row[key] = import_value(incoming, key)
+        row["extra_fields_json"] = extra_fields(incoming)
         row["description_page"] = description
         row["product_url_canonical"] = canonical
         row["provenance_url"] = url
@@ -483,6 +550,8 @@ def build_report(records, enrichment, merged) -> Dict[str, Any]:
         "color_coverage": coverage(merged, "color_raw", "color_page"),
         "variant_coverage": coverage(merged, "variant_raw", "variant_page"),
         "materials_coverage": coverage(merged, "materials_raw"),
+        "usable_records": after,
+        "unusable_records": total - after,
         "missing_url_count": missing_url,
         "duplicate_count": duplicate_count,
         "distinct_canonical_urls": len({c for c in canonical_urls if c}),
