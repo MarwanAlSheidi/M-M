@@ -5,10 +5,10 @@
 
 | | |
 |---|---|
-| Benchmark | `v2.0.5` |
+| Benchmark | `v2.0.6` |
 | Prompt | `classification v0.1` |
 | Dataset | `v1.2` fixture · `data/production/` فارغ |
-| Tests | 344 |
+| Tests | 372 |
 
 > ### ⚠️ نتائج الـ Fixture ليست نتائج نموذج
 > البيانات المشحونة **اصطناعية** (15 سجلاً) والمصنّف الافتراضي **وهمي بلا شبكة**.
@@ -30,7 +30,7 @@ cd eval
 python -m benchmark.run_benchmark --model mock            # نموذج واحد
 python -m benchmark.run_benchmark --all-models            # كل نموذج مؤهّل
 python -m benchmark.run_benchmark --model mock --dry-run  # تحقّق بلا أي نداء
-python -m pytest                                          # 344 اختباراً
+python -m pytest                                          # 372 اختباراً
 python scripts/build_manifest.py --check                  # هل البصمات محدّثة؟
 ```
 
@@ -41,6 +41,8 @@ python scripts/build_manifest.py --check                  # هل البصمات 
 | `--model KEY` | نموذج من `configs/models.yaml` (يتكرّر) |
 | `--all-models` | كل نموذج مُفعَّل تتوفّر بيانات اعتماده |
 | `--dataset` · `--gold` · `--prompt` | تجاوز مسارات الإدخال |
+| `--training` · `--validation` | شريحتا التدريب والتحقّق |
+| `--manifest` · `--dataset-manifest` | تجاوز الـ manifest؛ يُشتقّان من `dataset_kind` تلقائياً |
 | `--run-id` · `--run-dir` | تثبيت هوية التشغيلة أو مجلدها |
 | `--resume` | إكمال تشغيلة متوقّفة، مع الرفض عند أي انزياح |
 | `--review-sample N` | إخراج N سجلاً للمراجعة البشرية |
@@ -140,10 +142,11 @@ benchmark/
     comparison.py         مقارنة النماذج والتوافق
     review_sample.py      عيّنة المراجعة البشرية
     reporting.py          التقارير ووسم Fixture/Real
+    version.py            المصدر الوحيد للإصدار
 configs/    taxonomy · synonyms · critical_fields · model_config · models · pricing
 data/       dataset · gold · training_ids · validation_ids · production/
-manifests/  manifest.json · dataset_manifest.json
-tests/      344 اختباراً
+manifests/  manifest.json · dataset_manifest.json (+ نسختا الإنتاج)
+tests/      372 اختباراً
 ```
 
 ---
@@ -332,6 +335,38 @@ critical_fields · model config · pricing · code — مع `run_id` يحمل ث
 
 الإصدار يُقرأ من `benchmark/version.py` وحده. كان مكتوباً في أربعة مواضع فتخلّف
 أحدها، فصار الحزمة تعلن إصداراً والتشغيلات تعلن آخر — واختبار يمنع تكرار ذلك.
+
+---
+
+## 15. RC-001 — توجيه manifest الإنتاج
+
+**اكتُشف في تدقيق v2.0.5، وأُصلح في v2.0.6.**
+
+`build_manifest.py --production` كان يكتب `dataset_manifest_production.json`
+و **لا يقرؤه شيء**: كل تشغيلة تحلّ manifest الـ fixture، فمجموعة الإنتاج تُفحص
+مقابل تثبيت الـ fixture ولا تنجح إلا بالكتابة فوقه — أي بتدمير التثبيت الذي
+يقوم عليه تدقيق الـ fixture نفسه. ولم تكن هناك نسخة إنتاجية من manifest النزاهة
+أصلاً، فـ `check_gold` يقارن gold الإنتاج بـ gold الـ fixture. ولا علم
+`--validation` لتوجيه شريحة التحقّق.
+
+النتيجة: **الخطوة 7 من الإدخال (تشغيل بوّابة النزاهة) كانت مستحيلة.**
+
+الإصلاح، بلا تغيير معماري:
+
+| # | التغيير |
+|---|---|
+| 1 | `route_manifests()` تشتقّ مسارَي الـ manifest من `dataset_kind` |
+| 2 | `manifest_production.json` يُبنى الآن فعلاً ويُقرأ |
+| 3 | `--dataset-manifest` |
+| 4 | `--validation` |
+| 5 | `--production` يكتب ملفات الإنتاج **وحدها**؛ كان يعيد كتابة manifest الـ fixture مروراً |
+
+**ما مُرّر صراحةً يفوز دائماً** على الاشتقاق، فتبقى الأعلام مرجعاً نهائياً.
+
+`manifests/dataset_manifest.json` **مطابق بايت ببايت لـ v2.0.5** — لا يحمل
+بصمات كود فلا يتحرّك. أما `manifest.json` فيحمل `code_hashes`، ودلتاه مقصورة
+على: `version` و `generated_at` و `dataset_kind` وبصمة `run_benchmark.py`
+وحدها؛ تسع وحدات من عشر لم تتغيّر.
 
 ---
 

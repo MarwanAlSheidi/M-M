@@ -9,6 +9,7 @@ __pycache__/
 eval/runs/
 eval/data/production/*.csv
 eval/manifests/dataset_manifest_production.json
+eval/manifests/manifest_production.json
 AI_PREDICTIONS_*.csv
 EVALUATION_REPORT_*.xlsx
 ERROR_MATRIX_*.csv

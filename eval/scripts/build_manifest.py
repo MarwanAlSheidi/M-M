@@ -67,6 +67,7 @@ PRODUCTION_PATHS = {
     "dataset_manifest": os.path.join(
         PROJECT_ROOT, "manifests", "dataset_manifest_production.json"
     ),
+    "manifest": os.path.join(PROJECT_ROOT, "manifests", "manifest_production.json"),
 }
 
 
@@ -80,9 +81,25 @@ def _renderer() -> PromptRenderer:
     return PromptRenderer(PATHS["prompt"], validator.taxonomy)
 
 
-def build_integrity_manifest() -> Dict[str, Any]:
-    """Hashes for every artefact the integrity gate verifies."""
+def build_integrity_manifest(production: bool = False) -> Dict[str, Any]:
+    """Hashes for every artefact the integrity gate verifies.
+
+    RC-001: the production variant pins the production dataset and gold while
+    sharing the config, prompt and code hashes. Without it a production run was
+    checked against the fixture's gold_sha256 and could never pass.
+    """
     renderer = _renderer()
+    paths = {**PATHS, **(PRODUCTION_PATHS if production else {})}
+
+    # Same guard and wording as build_data_manifest, so an operator onboarding
+    # production data gets one clear message rather than a raw hashing error
+    # from whichever builder happened to run first.
+    missing = [name for name in ("dataset", "gold") if not os.path.exists(paths[name])]
+    if missing:
+        raise FileNotFoundError(
+            f"Cannot build a {'production' if production else 'fixture'} integrity manifest; "
+            f"missing: {', '.join(paths[name] for name in missing)}"
+        )
 
     code_hashes = {}
     for filename in CODE_FILES:
@@ -93,8 +110,9 @@ def build_integrity_manifest() -> Dict[str, Any]:
     manifest = {
         "version": VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "gold_sha256": compute_file_hash(PATHS["gold"]),
-        "dataset_sha256": compute_file_hash(PATHS["dataset"]),
+        "dataset_kind": PRODUCTION if production else FIXTURE,
+        "gold_sha256": compute_file_hash(paths["gold"]),
+        "dataset_sha256": compute_file_hash(paths["dataset"]),
         "taxonomy_sha256": compute_file_hash(PATHS["taxonomy"]),
         "synonyms_sha256": compute_file_hash(PATHS["synonyms"]),
         "critical_fields_sha256": compute_file_hash(PATHS["critical_fields"]),
@@ -160,49 +178,78 @@ def _write(path: str, payload: Dict[str, Any]) -> None:
         handle.write("\n")
 
 
+def _verify(pairs) -> int:
+    failures = []
+    for label, path, fresh in pairs:
+        if not os.path.exists(path):
+            failures.append(f"{label}: no manifest at {path}")
+            continue
+        with open(path, "r", encoding="utf-8") as handle:
+            stored = json.load(handle)
+        drift = [
+            key for key in fresh
+            if key not in ("generated_at",) and stored.get(key) != fresh[key]
+        ]
+        if drift:
+            failures.append(f"{label}: drifted keys — {', '.join(drift)}")
+
+    if failures:
+        for failure in failures:
+            print(f"❌ {failure}")
+        return 1
+
+    print("✅ Manifests match the current files.")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Build or verify the manifests")
     parser.add_argument("--check", action="store_true",
                         help="Compare current files against the stored manifests")
     parser.add_argument("--production", action="store_true",
-                        help="Also build the production dataset manifest from data/production/")
+                        help="Build the PRODUCTION manifests from data/production/ "
+                             "instead of the fixture manifests")
     args = parser.parse_args(argv)
 
-    integrity = build_integrity_manifest()
-    dataset = build_data_manifest(production=False)
-
-    if args.check:
-        failures = []
-
-        for label, path, fresh in (
-            ("integrity", PATHS["manifest"], integrity),
-            ("dataset", PATHS["dataset_manifest"], dataset),
-        ):
-            if not os.path.exists(path):
-                failures.append(f"{label}: no manifest at {path}")
-                continue
-
-            with open(path, "r", encoding="utf-8") as handle:
-                stored = json.load(handle)
-
-            drift = [
-                key
-                for key in fresh
-                if key not in ("generated_at",) and stored.get(key) != fresh[key]
-            ]
-            if drift:
-                failures.append(f"{label}: drifted keys — {', '.join(drift)}")
-
-        if failures:
-            for failure in failures:
-                print(f"❌ {failure}")
+    # RC-001: --production writes production manifests ONLY. It previously
+    # rebuilt and rewrote the fixture manifests on the way past, which would
+    # have silently re-pinned the fixture during a production onboarding.
+    if args.production:
+        try:
+            integrity = build_integrity_manifest(production=True)
+            dataset = build_data_manifest(production=True)
+        except FileNotFoundError as exc:
+            print(f"⚠️  {exc}")
             return 1
 
-        print("✅ Manifests match the current files.")
+        targets = (
+            ("integrity", PRODUCTION_PATHS["manifest"], integrity),
+            ("dataset", PRODUCTION_PATHS["dataset_manifest"], dataset),
+        )
+        if args.check:
+            return _verify(targets)
+
+        for label, path, payload in targets:
+            _write(path, payload)
+            print(f"✅ Wrote {path}")
+        print(f"   dataset_kind: {dataset['dataset_kind']}")
+        print(f"   record_count: {dataset['record_count']}")
+        print(f"   product_id_hash: {dataset['product_id_hash']}")
+        print("   fixture manifests untouched")
         return 0
 
-    _write(PATHS["manifest"], integrity)
-    _write(PATHS["dataset_manifest"], dataset)
+    integrity = build_integrity_manifest(production=False)
+    dataset = build_data_manifest(production=False)
+
+    targets = (
+        ("integrity", PATHS["manifest"], integrity),
+        ("dataset", PATHS["dataset_manifest"], dataset),
+    )
+    if args.check:
+        return _verify(targets)
+
+    for _, path, payload in targets:
+        _write(path, payload)
 
     print(f"✅ Wrote {PATHS['manifest']}")
     for key, value in integrity.items():
@@ -214,16 +261,6 @@ def main(argv=None) -> int:
     print(f"   dataset_kind: {dataset['dataset_kind']}")
     print(f"   record_count: {dataset['record_count']}")
     print(f"   product_id_hash: {dataset['product_id_hash']}")
-
-    if args.production:
-        try:
-            production = build_data_manifest(production=True)
-        except FileNotFoundError as exc:
-            print(f"⚠️  {exc}")
-            return 0
-        _write(PRODUCTION_PATHS["dataset_manifest"], production)
-        print(f"✅ Wrote {PRODUCTION_PATHS['dataset_manifest']}")
-        print(f"   record_count: {production['record_count']}")
 
     return 0
 

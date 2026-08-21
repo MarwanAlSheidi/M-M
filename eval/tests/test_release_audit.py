@@ -41,7 +41,7 @@ def test_every_version_surface_agrees():
         "reporting.VERSION": reporting.VERSION,
     }
     assert len(set(surfaces.values())) == 1, f"version drift: {surfaces}"
-    assert benchmark.__version__ == "2.0.5"
+    assert benchmark.__version__ == "2.0.6"
 
 
 def test_run_and_report_carry_the_package_version(tmp_path):

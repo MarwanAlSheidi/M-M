@@ -87,6 +87,34 @@ DEFAULTS = {
 # operator has to remember to set.
 PRODUCTION_DIR = os.path.join(PROJECT_ROOT, "data", "production")
 
+# RC-001: the production manifests. Before v2.0.6 these were written by
+# scripts/build_manifest.py --production and then read by nothing, so a
+# production dataset was always checked against the fixture's pin and could
+# only "pass" by overwriting it — destroying the fixture's own verification.
+PRODUCTION_MANIFEST = os.path.join(PROJECT_ROOT, "manifests", "manifest_production.json")
+PRODUCTION_DATASET_MANIFEST = os.path.join(
+    PROJECT_ROOT, "manifests", "dataset_manifest_production.json"
+)
+
+
+def route_manifests(paths: Dict[str, str]) -> Dict[str, str]:
+    """Point a production dataset at the production manifests.
+
+    Only paths still sitting at their fixture default are upgraded: anything
+    the caller set explicitly wins, so --manifest / --dataset-manifest remain
+    authoritative. A fixture run is returned untouched, which is what keeps the
+    fixture pin reachable and unmodified while production runs alongside it.
+    """
+    if classify_dataset_kind(paths.get("dataset", "")) != PRODUCTION:
+        return paths
+
+    routed = dict(paths)
+    if routed.get("manifest") == DEFAULTS["manifest"]:
+        routed["manifest"] = PRODUCTION_MANIFEST
+    if routed.get("dataset_manifest") == DEFAULTS["dataset_manifest"]:
+        routed["dataset_manifest"] = PRODUCTION_DATASET_MANIFEST
+    return routed
+
 
 def load_yaml_mapping(path: str, label: str) -> Dict[str, Any]:
     if not os.path.exists(path):
@@ -202,7 +230,7 @@ def dry_run(
     availability. The API call count is asserted to be zero by construction:
     no classifier is built and no provider is instantiated.
     """
-    paths = {**DEFAULTS, **(paths or {})}
+    paths = route_manifests({**DEFAULTS, **(paths or {})})
     components = build_components(paths)
     validator = components["validator"]
     registry = components["registry"]
@@ -292,7 +320,7 @@ def run_model(
     quiet: bool = False,
 ) -> Dict[str, Any]:
     """Run one model end to end and return its evaluation document."""
-    paths = {**DEFAULTS, **(paths or {})}
+    paths = route_manifests({**DEFAULTS, **(paths or {})})
     components = components or build_components(paths)
 
     validator = components["validator"]
@@ -654,7 +682,7 @@ def run_batch(
     quiet: bool = False,
 ) -> Dict[str, Any]:
     """Run several models against identical inputs and compare them."""
-    paths = {**DEFAULTS, **(paths or {})}
+    paths = route_manifests({**DEFAULTS, **(paths or {})})
     components = build_components(paths)
     registry: Optional[ModelRegistry] = components["registry"]
 
@@ -898,7 +926,13 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("--gold", default=DEFAULTS["gold"])
     parser.add_argument("--prompt", default=DEFAULTS["prompt"])
     parser.add_argument("--training", default=DEFAULTS["training"])
-    parser.add_argument("--manifest", default=DEFAULTS["manifest"])
+    parser.add_argument("--validation", default=DEFAULTS["validation"],
+                        help="Validation split ids, excluded from evaluation")
+    parser.add_argument("--manifest", default=DEFAULTS["manifest"],
+                        help="Integrity manifest; defaults to the production one for a production dataset")
+    parser.add_argument("--dataset-manifest", dest="dataset_manifest",
+                        default=DEFAULTS["dataset_manifest"],
+                        help="Dataset manifest; defaults to the production one for a production dataset")
     parser.add_argument("--models-config", dest="models", default=DEFAULTS["models"])
     parser.add_argument("--pricing", default=DEFAULTS["pricing"])
     parser.add_argument("--model-config", dest="model_config", default=DEFAULTS["model_config"])
@@ -921,7 +955,9 @@ def main(argv: Optional[list] = None) -> int:
         "gold": args.gold,
         "prompt": args.prompt,
         "training": args.training,
+        "validation": args.validation,
         "manifest": args.manifest,
+        "dataset_manifest": args.dataset_manifest,
         "models": args.models,
         "pricing": args.pricing,
         "model_config": args.model_config,
