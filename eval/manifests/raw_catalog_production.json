@@ -1,0 +1,46 @@
+{
+  "stage": "REAL_RAW_PRODUCTION_DATA",
+  "not_a_benchmark": "Raw catalogue only. No human-annotated gold exists, so this cannot be evaluated and must never be labelled REAL_BENCHMARK.",
+  "generated_at": "2026-08-21T20:29:17.826315+00:00",
+  "raw_catalog_sha256": "3438adf2fa1cddbeb89a9f04a52f5aeb4e751f26f84f8e05d18ebd56bebbd6d5",
+  "annotation_queue_sha256": "90ed5aea75321215b6974a4a7d919fe39e070303943ae0dbf7b25f942f9e0ab5",
+  "validation_ids_sha256": "1dfa255cabb95e53a90bd097f072ae97f64257f91ac8784a3ba789a8ed178178",
+  "record_count": 78,
+  "product_id_hash": "c4d389f41497c08aaa7bc4544df9e212bc1f0d088d95300724753b5aff44ff9e",
+  "product_id_scheme": "UAE-{SOURCE}-{sha256(source|source_product_id|name|variant)[:12]}",
+  "records_per_source": {
+    "cas_basics": 35,
+    "abay": 33,
+    "zadina": 10
+  },
+  "sources_present": [
+    "abay",
+    "cas_basics",
+    "zadina"
+  ],
+  "sources_expected_absent": [
+    "infinite_vibes",
+    "noorai",
+    "effa"
+  ],
+  "source_urls": [
+    "https://abay.com/collections/abaya",
+    "https://abay.com/products/classic-white-abaya",
+    "https://abay.com/products/maizah-abaya",
+    "https://casbasics.com/collections/all",
+    "https://www.zadinaabayas.com/uae/abayas"
+  ],
+  "gold_sha256": null,
+  "gold_status": "ABSENT — awaiting human annotation. Not fabricated.",
+  "missing_field_rates": {
+    "description_raw": 0.9872,
+    "image_url": 0.9231,
+    "color_raw": 0.2179,
+    "fabric_raw": 0.6923,
+    "variant_raw": 0.9744,
+    "price_raw": 0.0
+  },
+  "validation_split_size": 13,
+  "validation_split_policy": "Deterministic sha256(product_id)%100<15, fixed BEFORE annotation so the split cannot be chosen after seeing labels.",
+  "manifest_sha256": "430e0ce3805584f32f8774bd6b2c27ab273ab22f744eabe16987fa1bf85694b3"
+}

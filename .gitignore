@@ -2,3 +2,16 @@ node_modules
 dist
 .DS_Store
 *.log
+
+# eval harness — generated per run
+__pycache__/
+.pytest_cache/
+eval/runs/
+eval/data/production/*.csv
+eval/manifests/dataset_manifest_production.json
+eval/manifests/manifest_production.json
+AI_PREDICTIONS_*.csv
+EVALUATION_REPORT_*.xlsx
+ERROR_MATRIX_*.csv
+INVALID_PREDICTIONS.csv
+RUN_METADATA.json

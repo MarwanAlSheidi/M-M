@@ -1,0 +1,133 @@
+# UAE abaya classification taxonomy — PRODUCTION.
+#
+# Separate from configs/taxonomy.yaml, which the v2.0.5/v2.0.6 fixtures are
+# labelled against. Overwriting that file would invalidate 28 fixture gold
+# cells across 6 fields, so production carries its own vocabulary and the
+# release artefacts stay reproducible.
+#
+# Every value here was chosen against measured frequency in the 632-record
+# abaya catalogue, not by preference. Values that never appear in the source
+# text were dropped; marketing adjectives that appeared often but describe no
+# fabric ("premium" 215, "soft" 153, "luxury" 62) were dropped for the opposite
+# reason — frequency is not evidence of a category.
+#
+# `null` is a legal answer for every field and is represented by absence from
+# these lists, not by a `null` entry.
+
+fields:
+
+  # Measured: coat 111, bisht 88, kloosh 51, a-line 35, layered 13, kimono 11,
+  # farasha 10.
+  #
+  # `klosh` and `a-line` are here because the catalogue names them 86 times
+  # between them. `klosh` looked absent under the previous vocabulary only
+  # because that file spelled it with one "o" while every retailer writes
+  # "kloosh" — a spelling mismatch reported as a zero, not a real absence.
+  #
+  # `straight` is deliberately NOT here: it occurs 112 times and almost always
+  # as "straight sleeves", which describes a sleeve, not a silhouette.
+  #
+  # `other` is a real classification — "the text states a silhouette not on
+  # this list" — and is NOT the same as an empty cell, which means "the text
+  # states no silhouette".
+  silhouette:
+    - coat
+    - bisht
+    - farasha
+    - kimono
+    - layered
+    - klosh
+    - a-line
+    - other
+
+  opening_type:
+    - open-front
+    - closed-front
+
+  # Dropped viscose (0 occurrences). Kept tweed (14), silk (15), mesh (2).
+  fabric_family:
+    - nida
+    - crepe
+    - jacquard
+    - linen
+    - chiffon
+    - organza
+    - satin
+    - cotton
+    - velvet
+    - wool
+    - tweed
+    - mesh
+    - silk
+
+  # Real fabric names as UAE retailers write them, not size or quality tiers.
+  fabric_variant:
+    - nada
+    - barbie
+    - fukuro
+    - japanese_cotton
+    - monalisa
+    - linen_mesh
+    - burnout_velvet
+    - crepe_twill
+    - cey
+    - cobra
+    - dantil
+    - fusus
+    - korean_marina
+    - bogatti
+    - other
+
+  color_normalized:
+    - black
+    - white
+    - beige
+    - brown
+    - grey
+    - navy
+    - blue
+    - green
+    - pink
+    - purple
+    - red
+    - yellow
+    - maroon
+    - gold
+    - multi_color
+
+  embroidery_type:
+    - hand embroidery
+    - machine embroidery
+
+  # `no_embellishment` is a positive claim — "the text says the garment has no
+  # embellishment" — and must stay distinguishable from an empty cell, which
+  # says only that the text is silent. A value spelled `none` would canonicalize
+  # to null and collapse the two.
+  embellishment_type:
+    - beads
+    - pearls
+    - sequins
+    - crystals
+    - lace
+    - piping
+    - no_embellishment
+
+  embellishment_intensity:
+    - heavy
+    - medium
+    - subtle
+
+# The gold CSV's column name for each field. Two namespaces, deliberately:
+# `fields` above are the internal names the pipeline uses, these are the
+# headers an annotator sees. They differ for exactly one field, and omitting
+# this block silently renames that column — a gold file headed
+# `silhouette_normalized` would then supply nothing the scorer reads.
+gold_columns:
+  silhouette: silhouette_normalized
+  opening_type: opening_type
+  fabric_family: fabric_family
+  fabric_variant: fabric_variant
+  color_normalized: color_normalized
+  embroidery_type: embroidery_type
+  embellishment_type: embellishment_type
+  embellishment_intensity: embellishment_intensity

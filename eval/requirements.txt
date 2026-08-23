@@ -1,0 +1,11 @@
+# Benchmark runtime
+pandas>=2.0
+PyYAML>=6.0
+openpyxl>=3.1
+
+# Only needed for the OpenAI classifier; the mock classifier runs without it.
+openai>=1.30
+
+# Development
+pytest>=8.0
+pyflakes>=3.0

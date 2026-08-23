@@ -1,0 +1,191 @@
+{
+  "dataset_identity": "PRODUCTION_RAW",
+  "dataset_version": "v1.0-candidate",
+  "gold_status": "LOCKED — no gold.csv exists, none created",
+  "generated_at": "2026-08-21T21:19:49.688186+00:00",
+  "source_file": "data/production/raw_catalog.csv",
+  "source_file_sha256": "3438adf2fa1cddbeb89a9f04a52f5aeb4e751f26f84f8e05d18ebd56bebbd6d5",
+  "total_records": 78,
+  "duplicate_product_ids": 0,
+  "distinct_canonical_urls": 5,
+  "distinct_canonical_product_urls": 2,
+  "identity_conflicts": 0,
+  "url_status": {
+    "COLLECTION_URL": 66,
+    "INVALID_URL": 10,
+    "VALID_PRODUCT_URL": 2
+  },
+  "coverage": {
+    "description": {
+      "present": 1,
+      "total": 78,
+      "ratio": 0.0128
+    },
+    "price": {
+      "present": 78,
+      "total": 78,
+      "ratio": 1.0
+    },
+    "currency": {
+      "present": 78,
+      "total": 78,
+      "ratio": 1.0
+    },
+    "color": {
+      "present": 61,
+      "total": 78,
+      "ratio": 0.7821
+    },
+    "fabric": {
+      "present": 24,
+      "total": 78,
+      "ratio": 0.3077
+    },
+    "variant": {
+      "present": 2,
+      "total": 78,
+      "ratio": 0.0256
+    },
+    "image": {
+      "present": 6,
+      "total": 78,
+      "ratio": 0.0769
+    },
+    "category": {
+      "present": 78,
+      "total": 78,
+      "ratio": 1.0
+    },
+    "availability": {
+      "present": 78,
+      "total": 78,
+      "ratio": 1.0
+    },
+    "brand": {
+      "present": 78,
+      "total": 78,
+      "ratio": 1.0
+    },
+    "description_annotatable": {
+      "present": 1,
+      "total": 78,
+      "ratio": 0.0128,
+      "note": "description of at least 30 characters"
+    },
+    "embellishment": {
+      "present": 0,
+      "total": 78,
+      "ratio": 0.0,
+      "note": "no source column exists in raw_catalog.csv"
+    },
+    "includes_set": {
+      "present": 0,
+      "total": 78,
+      "ratio": 0.0,
+      "note": "no source column exists in raw_catalog.csv"
+    },
+    "size_options": {
+      "present": 0,
+      "total": 78,
+      "ratio": 0.0,
+      "note": "no source column exists in raw_catalog.csv"
+    },
+    "color_variants": {
+      "present": 0,
+      "total": 78,
+      "ratio": 0.0,
+      "note": "no source column exists in raw_catalog.csv"
+    }
+  },
+  "source_distribution": {
+    "abay": {
+      "loaded": 33,
+      "valid_product_url": 2,
+      "collection_url": 31,
+      "invalid_url": 0,
+      "missing_url": 0,
+      "duplicate_url": 0,
+      "description_present": 1,
+      "price_present": 33,
+      "color_present": 21,
+      "fabric_present": 10,
+      "variant_present": 0,
+      "image_present": 0
+    },
+    "cas_basics": {
+      "loaded": 35,
+      "valid_product_url": 0,
+      "collection_url": 35,
+      "invalid_url": 0,
+      "missing_url": 0,
+      "duplicate_url": 0,
+      "description_present": 0,
+      "price_present": 35,
+      "color_present": 30,
+      "fabric_present": 10,
+      "variant_present": 2,
+      "image_present": 0
+    },
+    "zadina": {
+      "loaded": 10,
+      "valid_product_url": 0,
+      "collection_url": 0,
+      "invalid_url": 10,
+      "missing_url": 0,
+      "duplicate_url": 0,
+      "description_present": 0,
+      "price_present": 10,
+      "color_present": 10,
+      "fabric_present": 4,
+      "variant_present": 0,
+      "image_present": 6
+    }
+  },
+  "gold_readiness": {
+    "verdict": "NOT_READY",
+    "checks": [
+      {
+        "criterion": "valid unique product pages",
+        "actual": 2,
+        "threshold": 300,
+        "operator": ">=",
+        "met": false
+      },
+      {
+        "criterion": "valid product URL ratio",
+        "actual": 0.0256,
+        "threshold": 0.8,
+        "operator": ">=",
+        "met": false
+      },
+      {
+        "criterion": "description coverage",
+        "actual": 0.0128,
+        "threshold": 0.7,
+        "operator": ">=",
+        "met": false
+      },
+      {
+        "criterion": "independent sources",
+        "actual": 3,
+        "threshold": 5,
+        "operator": ">=",
+        "met": false
+      },
+      {
+        "criterion": "unresolved identity conflicts",
+        "actual": 0,
+        "threshold": 0,
+        "operator": "==",
+        "met": true
+      }
+    ]
+  },
+  "expected_files_from_brief": {
+    "abaya_production_products.csv": false,
+    "abaya_production_variants.csv": false,
+    "abaya_production_images.csv": false,
+    "abaya_production_failed.csv": false,
+    "acquisition_report.json": false
+  }
+}

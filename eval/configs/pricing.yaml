@@ -1,0 +1,45 @@
+# Token pricing, per provider and model.
+#
+# Prices are NOT hard-coded anywhere in Python. If a model is absent from this
+# file, its cost is reported as `null` — never as zero, and never estimated
+# from a similar model. A fabricated price is worse than a missing one: it
+# looks authoritative in a comparison table.
+#
+# Units: USD per 1,000,000 tokens. `currency` is recorded per entry so a
+# non-USD price cannot be silently summed with USD ones.
+#
+# Verify these against the provider's current price list before quoting any
+# cost figure. Prices change; this file does not update itself.
+
+currency: USD
+
+pricing:
+
+  - provider: openai
+    model: gpt-4o-mini
+    input_cost_per_1m: 0.15
+    output_cost_per_1m: 0.60
+    currency: USD
+    verified_on: "2026-08-17"
+    source: operator-entered
+
+  # Offline models cost nothing to call. Stated explicitly so a zero cost is a
+  # recorded fact rather than a missing lookup that happened to render as 0.
+  - provider: local
+    model: mock
+    input_cost_per_1m: 0.0
+    output_cost_per_1m: 0.0
+    currency: USD
+    verified_on: "2026-08-17"
+    source: no-network-model
+
+  - provider: local
+    model: mock_variant
+    input_cost_per_1m: 0.0
+    output_cost_per_1m: 0.0
+    currency: USD
+    verified_on: "2026-08-17"
+    source: no-network-model
+
+  # Anthropic and Google entries are intentionally absent. Adding a price for
+  # a model whose id is still a placeholder would invent both.

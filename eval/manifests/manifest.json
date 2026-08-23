@@ -1,0 +1,36 @@
+{
+  "version": "2.0.6",
+  "generated_at": "2026-08-22T19:41:41.109156+00:00",
+  "dataset_kind": "fixture",
+  "gold_sha256": "a217c9e34201964efbc627b5178c523be1a6f77676345070a199ce5c28fabdfd",
+  "dataset_sha256": "ff3e0f425244351d79e989543eb663ba118d6e2f48eceec630fb0d1c438b3145",
+  "taxonomy_sha256": "6b52a6a0ccc266e7140410b590df7afb39baa6f9ea004dff89df84ffa18aae6a",
+  "synonyms_sha256": "e38c1293ae41a9e4224bbc7f4773e98ac1959de1ebafce3b9ce989aab6534bf9",
+  "critical_fields_sha256": "79d1104b0620167ca5d7282e4b5008e4397e7a1785ca33748b9dd5108587ba6b",
+  "model_config_sha256": "0f7b41acf641147cd4cd8a99d81108247d956cbccffd9795fda2b903e63f1fe3",
+  "prompt_sha256": "9c5091dee013cf3f8bedc3ac6c10d49f4373f7b1fc3225989b4569611d90acfb",
+  "prompt_name": "classification",
+  "prompt_version": "v0.1",
+  "code_hashes": {
+    "utils.py": "4613d6e87250137907974744f7b9c4019647413b7b0262e899a8aefff9ef566c",
+    "evaluator.py": "d45e816c5eb3e7b2289109c3b3c75b040eec05ea2e67f3fcc0a717c160da6d73",
+    "validator.py": "09f57674c6fb79b88fee095c018573f3af3815d62477d9b2808bed9132e1bf0d",
+    "canonicalizer.py": "14077c318d1a713a2e314ff3e78d540d3963e925e4a10bcca900975771899aeb",
+    "evidence_verifier.py": "41716bf24710c96444c554f118d5358538aae2e30581cc27f012ee3d6adb4248",
+    "leakage_detector.py": "92432224247c68e16b4bc4b5c12b2534ff425631df489df3c5aebfd20f2e1ca0",
+    "pipeline.py": "c2f79f0b072582658c6e98908ac352f1053f78567a68dee4718f94e4736ce87e",
+    "integrity_gate.py": "00fc4ebc36eeb94c27948d036ebe5dca2300534ce74ca9696d4766ab339a0883",
+    "auditor.py": "dca15da28e432250f2cddad2c63320ab686c234d2c32ff21d2d40d80b6f970e8",
+    "run_benchmark.py": "1c0f0a2d9015e4d9dc70c1cf6022c676ee77c5dd0859db9cdd62349d62dc8fd4"
+  },
+  "integrity_policy": {
+    "require_evidence_verification": true,
+    "block_on_leakage": true,
+    "block_on_id_mismatch": true,
+    "block_on_duplicate_ids": true,
+    "block_on_split_contamination": true,
+    "block_on_dataset_manifest_drift": true
+  },
+  "models_sha256": "5afcc7854a339c924d76903b1f87325309d768b20d244d877dd7f89112d7017a",
+  "pricing_sha256": "925ab4540e636ebf883d859213375bd895ed0db3856cb521a005951fef191c57"
+}
