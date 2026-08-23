@@ -1,0 +1,192 @@
+# Synonym maps for the PRODUCTION taxonomy, keyed by direction then by field.
+#
+# Two directions because gold and predictions drift differently: gold carries
+# what an annotator typed, predictions carry what a model emitted. A shared map
+# leaks one vocabulary into the other.
+#
+# Keyed per field because a surface form's meaning depends on its field:
+# "stone" is a colour under color_normalized and an embellishment under
+# embellishment_type. A flat map turns one into the other silently.
+#
+# Identity entries (x -> x) are deliberately absent: a value already in the
+# taxonomy passes through canonicalization unchanged.
+#
+# Every left-hand side below was observed in the 632-record catalogue or is a
+# spelling the previous vocabulary used. Nothing was invented.
+#
+# `none` is deliberately absent as a synonym. It is a reserved null token —
+# normalize_null() folds "none", "null", "nan", "n/a" and "" to null BEFORE
+# canonicalization runs, so a mapping from it could never fire. An annotator
+# who writes `none` for embellishment_type produces "the text is silent", not
+# "the text says there is no embellishment". They must write
+# `no_embellishment`, and validate_gold_vocabulary() reports any cell that
+# says otherwise.
+
+ai_synonyms:
+
+  silhouette:
+    coat style: coat
+    coat-style: coat
+    bisht style: bisht
+    farashah: farasha
+    farasha cut: farasha
+    layered abaya: layered
+    # The catalogue spells it "kloosh"; the taxonomy value is "klosh".
+    kloosh: klosh
+    kloosh style: klosh
+    klosh cut: klosh
+    a line: a-line
+    aline: a-line
+    alined: a-line
+    # Stated silhouettes that this vocabulary does not enumerate. Mapping them
+    # to `other` records "the text named a silhouette we do not list", which is
+    # what happened — it is not the same as the text being silent.
+    butterfly: other
+    cape: other
+
+  opening_type:
+    open front: open-front
+    openfront: open-front
+    front open: open-front
+    front_open: open-front
+    open_front: open-front
+    closed front: closed-front
+    closedfront: closed-front
+    front closed: closed-front
+    front_closed: closed-front
+    closed_front: closed-front
+
+  fabric_family:
+    nida fabric: nida
+    linen blend: linen
+    cotton blend: cotton
+    silk blend: silk
+
+  fabric_variant:
+    japanese cotton: japanese_cotton
+    korean marina: korean_marina
+    korean: korean_marina
+    linen mesh: linen_mesh
+    burnout velvet: burnout_velvet
+    crepe twill: crepe_twill
+    mona lisa: monalisa
+
+  color_normalized:
+    gray: grey
+    navy blue: navy
+    multi color: multi_color
+    multi colour: multi_color
+    multi-color: multi_color
+    multicolor: multi_color
+    multicolour: multi_color
+    burgundy: maroon
+    olive: green
+    golden: gold
+    rose: pink
+    light blue: blue
+    dark blue: blue
+
+  embroidery_type:
+    hand_embroidery: hand embroidery
+    machine_embroidery: machine embroidery
+    hand-embroidery: hand embroidery
+    machine-embroidery: machine embroidery
+    hand embroidered: hand embroidery
+    machine embroidered: machine embroidery
+
+  embellishment_type:
+    bead: beads
+    beading: beads
+    beaded: beads
+    beadwork: beads
+    pearl: pearls
+    sequin: sequins
+    sequined: sequins
+    crystal: crystals
+    stone: crystals
+    stones: crystals
+    stone / crystal: crystals
+    no embellishment: no_embellishment
+    plain: no_embellishment
+
+  embellishment_intensity:
+    minimal: subtle
+    light: subtle
+    low: subtle
+    light embellishment: subtle
+    understated: subtle
+    moderate: medium
+    bold: heavy
+    rich: heavy
+
+gold_synonyms:
+
+  silhouette:
+    coat style: coat
+    coat-style: coat
+    bisht style: bisht
+    farashah: farasha
+    kloosh: klosh
+    kloosh style: klosh
+    a line: a-line
+    aline: a-line
+    alined: a-line
+    butterfly: other
+    cape: other
+
+  opening_type:
+    open front: open-front
+    front open: open-front
+    front_open: open-front
+    open_front: open-front
+    closed front: closed-front
+    front closed: closed-front
+    front_closed: closed-front
+    closed_front: closed-front
+
+  fabric_family:
+    nida fabric: nida
+
+  fabric_variant:
+    japanese cotton: japanese_cotton
+    korean marina: korean_marina
+    linen mesh: linen_mesh
+    burnout velvet: burnout_velvet
+    crepe twill: crepe_twill
+    mona lisa: monalisa
+
+  color_normalized:
+    gray: grey
+    navy blue: navy
+    multi color: multi_color
+    multi colour: multi_color
+    multicolor: multi_color
+    multicolour: multi_color
+    burgundy: maroon
+    olive: green
+    rose: pink
+    light blue: blue
+    dark blue: blue
+
+  embroidery_type:
+    hand_embroidery: hand embroidery
+    machine_embroidery: machine embroidery
+    hand-embroidery: hand embroidery
+    machine-embroidery: machine embroidery
+
+  embellishment_type:
+    beadwork: beads
+    bead: beads
+    pearl: pearls
+    sequin: sequins
+    crystal: crystals
+    stone: crystals
+    stone / crystal: crystals
+    no embellishment: no_embellishment
+
+  embellishment_intensity:
+    minimal: subtle
+    light: subtle
+    low: subtle
+    light embellishment: subtle
+    moderate: medium

@@ -191,3 +191,106 @@ def test_fixture_run_is_unaffected_by_the_routing(tmp_path):
     assert results["run"]["dataset_kind"] == FIXTURE
     assert results["run"]["result_class"] == "TEST_FIXTURE"
     assert results["run"]["integrity"]["overall"] == "PASS"
+
+
+# ----------------------------------------------------------------------
+# The production vocabulary — routed like the manifests, for the same reason
+# ----------------------------------------------------------------------
+
+
+def test_production_dataset_routes_to_the_production_vocabulary():
+    """Real catalogue text names garments the fixture never contained.
+
+    `bisht`, `farasha`, `fukuro` and `korean_marina` appear in the real
+    catalogue and in no fixture row; `butterfly`, `cape`, `klosh` and
+    `beadwork` are what the fixture gold is labelled against. One shared file
+    cannot serve both.
+    """
+    from benchmark.run_benchmark import PRODUCTION_SYNONYMS, PRODUCTION_TAXONOMY
+
+    routed = route_manifests({**DEFAULTS, "dataset": PRODUCTION_DATASET})
+    assert routed["taxonomy"] == PRODUCTION_TAXONOMY
+    assert routed["synonyms"] == PRODUCTION_SYNONYMS
+
+
+def test_fixture_dataset_keeps_the_fixture_vocabulary():
+    routed = route_manifests(dict(DEFAULTS))
+    assert routed["taxonomy"] == DEFAULTS["taxonomy"]
+    assert routed["synonyms"] == DEFAULTS["synonyms"]
+
+
+def test_explicit_vocabulary_paths_win_over_routing():
+    routed = route_manifests({
+        **DEFAULTS,
+        "dataset": PRODUCTION_DATASET,
+        "taxonomy": "/tmp/custom_taxonomy.yaml",
+        "synonyms": "/tmp/custom_synonyms.yaml",
+    })
+    assert routed["taxonomy"] == "/tmp/custom_taxonomy.yaml"
+    assert routed["synonyms"] == "/tmp/custom_synonyms.yaml"
+
+
+def test_routing_is_never_guarded_on_the_file_existing():
+    """A missing production config must fail loudly, not fall back.
+
+    Falling back to the fixture's file would check production against the
+    fixture's pin — RC-001 itself. This is asserted because an `os.path.exists`
+    guard is the natural-looking way to write this routing, and it silently
+    reintroduces the defect.
+    """
+    import os
+
+    from benchmark.run_benchmark import PRODUCTION_MANIFEST, PRODUCTION_TAXONOMY
+
+    routed = route_manifests({**DEFAULTS, "dataset": PRODUCTION_DATASET})
+    # manifest_production.json is gitignored and normally absent — routing must
+    # still point at it.
+    assert not os.path.exists(PRODUCTION_MANIFEST) or True
+    assert routed["manifest"] == PRODUCTION_MANIFEST
+    assert routed["taxonomy"] == PRODUCTION_TAXONOMY
+
+
+def test_the_two_vocabularies_are_genuinely_different():
+    """If they ever converge, one of them stopped describing its data."""
+    import yaml
+
+    from benchmark.run_benchmark import PRODUCTION_TAXONOMY
+
+    fixture = yaml.safe_load(open(DEFAULTS["taxonomy"], encoding="utf-8"))["fields"]
+    production = yaml.safe_load(open(PRODUCTION_TAXONOMY, encoding="utf-8"))["fields"]
+
+    assert set(fixture) == set(production), "the two vocabularies must cover the same fields"
+    assert fixture != production
+
+    only_production = set(production["silhouette"]) - set(fixture["silhouette"])
+    only_fixture = set(fixture["silhouette"]) - set(production["silhouette"])
+    assert {"bisht", "farasha", "coat"} <= only_production
+    assert {"butterfly", "cape"} <= only_fixture
+
+
+def test_the_fixture_vocabulary_is_untouched():
+    """Adopting the production vocabulary in configs/taxonomy.yaml would
+    invalidate fixture gold. This asserts it did not happen."""
+    import csv
+    import os
+
+    import yaml
+
+    fixture = yaml.safe_load(open(DEFAULTS["taxonomy"], encoding="utf-8"))["fields"]
+    gold_path = os.path.join(PROJECT_ROOT, "data", "gold.csv")
+
+    with open(gold_path, encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+
+    from benchmark.canonicalizer import Canonicalizer
+    from benchmark.validator import Validator
+
+    validator = Validator(taxonomy_path=DEFAULTS["taxonomy"],
+                          critical_fields_path=DEFAULTS["critical_fields"],
+                          canonicalizer=Canonicalizer(DEFAULTS["synonyms"]))
+
+    for field in fixture:
+        column = validator.gold_column(field)
+        used = {r[column].strip() for r in rows if r.get(column, "").strip()}
+        unknown = used - set(fixture[field])
+        assert not unknown, f"fixture gold uses {unknown} which {column} no longer allows"

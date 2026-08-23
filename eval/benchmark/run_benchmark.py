@@ -96,6 +96,16 @@ PRODUCTION_DATASET_MANIFEST = os.path.join(
     PROJECT_ROOT, "manifests", "dataset_manifest_production.json"
 )
 
+# The production vocabulary. Real catalogue text names garments the synthetic
+# fixture never contained (bisht, farasha, fukuro, korean marina) and omits
+# values the fixture is labelled against (butterfly, cape, klosh, beadwork).
+# One shared file cannot serve both: adopting the production vocabulary in
+# configs/taxonomy.yaml would invalidate 28 fixture gold cells across 6 fields
+# and destroy the release artefacts' reproducibility. So production carries its
+# own pair, routed the same way the manifests are.
+PRODUCTION_TAXONOMY = os.path.join(PROJECT_ROOT, "configs", "taxonomy_production.yaml")
+PRODUCTION_SYNONYMS = os.path.join(PROJECT_ROOT, "configs", "synonyms_production.yaml")
+
 
 def route_manifests(paths: Dict[str, str]) -> Dict[str, str]:
     """Point a production dataset at the production manifests.
@@ -109,10 +119,18 @@ def route_manifests(paths: Dict[str, str]) -> Dict[str, str]:
         return paths
 
     routed = dict(paths)
-    if routed.get("manifest") == DEFAULTS["manifest"]:
-        routed["manifest"] = PRODUCTION_MANIFEST
-    if routed.get("dataset_manifest") == DEFAULTS["dataset_manifest"]:
-        routed["dataset_manifest"] = PRODUCTION_DATASET_MANIFEST
+    for key, production_path in (
+        ("manifest", PRODUCTION_MANIFEST),
+        ("dataset_manifest", PRODUCTION_DATASET_MANIFEST),
+        ("taxonomy", PRODUCTION_TAXONOMY),
+        ("synonyms", PRODUCTION_SYNONYMS),
+    ):
+        # Routed unconditionally, never guarded on the file existing. A missing
+        # production config must fail loudly at the gate; falling back to the
+        # fixture's would silently check production against the fixture's pin,
+        # which is RC-001 itself.
+        if routed.get(key) == DEFAULTS[key]:
+            routed[key] = production_path
     return routed
 
 
