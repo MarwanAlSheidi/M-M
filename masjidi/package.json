@@ -17,7 +17,8 @@
     "preflight": "node scripts/preflight.js",
     "export": "node scripts/export_records.js",
     "verify": "node scripts/verify.js",
-    "deploy": "node scripts/deploy.js"
+    "deploy": "node scripts/deploy.js",
+    "demo": "node scripts/build_demo_page.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

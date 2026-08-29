@@ -104,6 +104,22 @@ function buildApp(serverURL, appId, jsKey) {
   });
 }
 
+/**
+ * بناءُ نسخة العرض — الصفحةُ التي يُجرّبها المشتري بيده.
+ *
+ * وتُبنى في الحارس ولا يُقرأ ناتجٌ مخزَّن: حارسٌ يفحص حزمةً بُنيت قبل شهر
+ * يشهد لما لم يعد قائماً. والبناءُ **بلا شبكة**: العرض يحمل خادمه في جوفه،
+ * فلا `VITE_PARSE_SERVER_URL` ولا مفاتيح.
+ *
+ * @returns {string} مسارُ ملفّ `index.html` الناتج
+ */
+function buildDemo() {
+  // eslint-disable-next-line global-require
+  const { build, PAGE } = require('../../scripts/build_demo_page');
+  build();
+  return PAGE;
+}
+
 /** خادم ساكن لمجلّد `dist`، بارتداد إلى `index.html` كما تفعل الاستضافة. */
 async function serveDist() {
   const port = await freePort();
@@ -164,4 +180,6 @@ async function openBrowser() {
   return { browser, newUserPage, close: () => browser.close() };
 }
 
-module.exports = { unavailableReason, buildApp, serveDist, openBrowser, APP_DIR, DIST };
+module.exports = {
+  unavailableReason, buildApp, buildDemo, serveDist, openBrowser, APP_DIR, DIST,
+};

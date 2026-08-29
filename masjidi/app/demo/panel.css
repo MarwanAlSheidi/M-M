@@ -1,0 +1,37 @@
+
+/* ————— لوحةُ حسابات العرض — خارج شجرة التطبيق ————— */
+:root{ direction: rtl; }
+.demo-panel{
+  position: fixed; inset-block-start: 0; inset-inline-start: 0; z-index: 9999;
+  font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif; direction: rtl;
+  max-width: min(340px, 92vw);
+}
+.demo-toggle{
+  display: flex; align-items: center; gap: 8px; margin: 10px;
+  padding: 8px 14px; border: 1px solid rgba(255,255,255,.28); border-radius: 999px;
+  background: #0b3d26; color: #fff; font: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.25);
+}
+.demo-toggle:hover{ background: #0f5132; }
+.demo-caret{ font-size: 10px; opacity: .8; transition: transform .18s; }
+.demo-panel.open .demo-caret{ transform: rotate(180deg); }
+.demo-body{
+  margin: 0 10px 10px; padding: 16px; border-radius: 14px;
+  background: #fff; border: 1px solid #dfe5e1; box-shadow: 0 10px 34px rgba(0,0,0,.22);
+}
+.demo-note{ margin: 0 0 12px; font-size: 12.5px; line-height: 1.85; color: #5c6a63; }
+.demo-note b{ color: #14563a; font-weight: 600; }
+.demo-creds{ margin: 12px 0 0; }
+.demo-creds code{
+  font-family: ui-monospace, monospace; font-size: 12px; direction: ltr;
+  display: inline-block; padding: 1px 6px; border-radius: 5px; background: #eef2ef;
+}
+.demo-body ul{ list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.demo-body li button{
+  width: 100%; display: flex; flex-direction: column; gap: 2px; text-align: start;
+  padding: 10px 12px; border: 1px solid #dfe5e1; border-radius: 10px;
+  background: #f7faf8; color: #1b1b1b; font: inherit; cursor: pointer;
+}
+.demo-body li button:hover{ border-color: #0f5132; background: #eef4f0; }
+.demo-body li b{ font-size: 14px; font-weight: 600; color: #0f5132; }
+.demo-body li span{ font-size: 12px; color: #6b7a72; }

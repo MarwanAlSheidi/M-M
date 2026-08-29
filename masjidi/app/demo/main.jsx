@@ -15,6 +15,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../src/styles.css';
+import './panel.css';
 import App from '../src/App.jsx';
 import { installDemoServer, DEMO_ACCOUNTS, DEMO_PASSWORD, DEMO_POINT } from './server.js';
 
