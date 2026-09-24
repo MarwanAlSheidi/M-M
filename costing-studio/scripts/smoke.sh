@@ -31,6 +31,12 @@ print(jwt.encode({'sub':'22222222-2222-2222-2222-222222222222',
 " | tr -d '\r')
 AUTH="Authorization: Bearer $TOKEN"
 
+echo "==> login"
+LOGIN=$(curl -sf -X POST "$API/api/v1/auth/login" -H "Content-Type: application/json" \
+  -d '{"email":"ops@example.om","password":"'"${SEED_ADMIN_PASSWORD:-dev-password}"'"}') || fail "login"
+[ -n "$(echo "$LOGIN" | jq -r '.access_token // empty')" ] || fail "login returned no token"
+curl -sf "$API/api/v1/auth/me" -H "Authorization: Bearer $(echo "$LOGIN" | jq -r .access_token)" >/dev/null || fail "/auth/me"
+
 echo "==> import 25-row CSV"
 RESP=$(curl -sf -X POST "$API/api/v1/imports" -H "$AUTH" -F "kind=deals" -F "file=@$CSV") || fail "upload"
 BATCH=$(echo "$RESP" | jq -r .batch_id)
@@ -70,6 +76,14 @@ QUOTE=$(curl -sf -X POST "$API/api/v1/quote" -H "$AUTH" -H "Content-Type: applic
 echo "$QUOTE" | jq '{landed_cost, sell_above_threshold, buy_below_threshold, ml_skipped_reason}'
 [ -n "$(echo "$QUOTE" | jq -r '.landed_cost.amount_major // empty')" ] || fail "no landed_cost"
 [ "$(echo "$QUOTE" | jq -r .landed_cost.amount_minor)" = "26720146" ] || fail "landed_cost != tripwire 26720146"
+
+echo "==> deals + thresholds + predict"
+DEAL=$(curl -sf "$API/api/v1/deals?golden=true" -H "$AUTH" | jq -r '.items | length') || fail "deals"
+[ "$DEAL" = "20" ] || fail "expected 20 golden deals, got $DEAL"
+DEAL_ID=$(curl -sf "$API/api/v1/deals?limit=1" -H "$AUTH" | jq -r '.items[0].id')
+curl -sf "$API/api/v1/deals/$DEAL_ID" -H "$AUTH" | jq -e '.lines | length == 11' >/dev/null || fail "deal detail"
+curl -sf "$API/api/v1/deals/$DEAL_ID/thresholds" -H "$AUTH" | jq -e '.curve | length == 21' >/dev/null || fail "thresholds"
+curl -sf "$API/api/v1/predict?product_sku=TUNA-YF-WR" -H "$AUTH" | jq -e '.available == false' >/dev/null || fail "predict"
 
 echo "==> jobs"
 for job in stats_recompute golden_regression retrain; do

@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from .db import SessionLocal
-from .routers import admin, deals, imports, market_prices, parties, predict, products, quote
+from .routers import admin, auth, deals, imports, market_prices, parties, predict, products, quote
 from .settings import settings
 
 log = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Costing Studio API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
-for r in (deals, products, parties, quote, predict, imports, admin, market_prices):
+for r in (auth, deals, products, parties, quote, predict, imports, admin, market_prices):
     app.include_router(r.router)
 
 

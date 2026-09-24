@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 LineSource = Literal["formula", "manual", "ml", "ml_derived"]
 
@@ -92,3 +92,58 @@ class QuoteResponse(BaseModel):
     ml_skipped_reason: Optional[str] = None
     explanation: str
     locale: Literal["en", "ar"]
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class UserOut(BaseModel):
+    id: str
+    tenant_id: str
+    email: str
+    role: str
+    locale: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    expires_in: int
+    user: UserOut
+
+
+class ForecastOut(BaseModel):
+    """Champion forward purchase price (per target_unit, in target_currency). Advisory only."""
+    model_config = ConfigDict(protected_namespaces=())
+    available: bool
+    reason: Optional[str] = None
+    product_sku: str
+    deal_date: date
+    target: str
+    model_version: Optional[str] = None
+    target_currency: Optional[str] = None
+    target_unit: Optional[str] = None
+    p10: Optional[str] = None
+    p50: Optional[str] = None
+    p90: Optional[str] = None
+    shap_top5: list[SHAPFeature] = []
+
+
+class ThresholdPoint(BaseModel):
+    purchase_unit_price_major: str
+    landed_per_sellable_minor: int
+
+
+class DealThresholdsOut(BaseModel):
+    currency: str                       # purchase currency (x axis)
+    base_currency: str                  # landed / sell currency (y axis)
+    purchase_unit_price_major: str
+    landed_per_sellable: MoneyOut
+    break_even_per_sellable: MoneyOut
+    sell_above_threshold: MoneyOut
+    actual_sell_per_sellable: Optional[MoneyOut] = None
+    target_margin: str
+    buy_below_threshold: Optional[MoneyOut] = None
+    curve: list[ThresholdPoint]

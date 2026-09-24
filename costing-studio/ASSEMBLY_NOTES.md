@@ -39,7 +39,7 @@ jobs, `test_backtest_walk_forward.py`, the web app. `make smoke` is the first ru
 15. The quote anomaly check always runs when a quote is given and a champion exists (as designed).
 
 ## Not delivered in the transcript (left out or minimal)
-- Web: Login, Deals list, DealDetail, ThresholdChart pages were never written. Quote + Import exist.
-- `predict` router is a placeholder; products/parties/deals routers are read-only lists.
-- No login endpoint yet (auth lookup functions exist; smoke uses a dev JWT).
+- ~~Web: Login, Deals list, DealDetail, ThresholdChart pages~~ — added after the first run (see FIXES.md).
+- ~~`predict` router placeholder~~ — now serves the champion forecast. products/parties stay read-only lists.
+- ~~No login endpoint~~ — `POST /api/v1/auth/login` added; smoke still also uses a dev JWT.
 - LLM narrative (Claude API) is a stub.

@@ -17,11 +17,11 @@ export default function Quote() {
     product_sku: "TUNA-YF-WR", quantity: "18000", base_unit: "kg", currency: "USD", incoterm: "CFR",
     purchase_unit_price_major: "3.20", target_margin: "0.20", market_sell_per_sellable_major: "3.40",
     yield_pct: "0.55", freight_total_major: "", freight_currency: "USD", use_ml: false,
-    locale: i18n.language as "en" | "ar",
   });
   const set = (k: string, v: unknown) => setReq((r) => ({ ...r, [k]: v }));
   const mut = useMutation({
-    mutationFn: () => postQuote({ ...req, freight_total_major: req.freight_total_major || null }),
+    mutationFn: () => postQuote({ ...req, freight_total_major: req.freight_total_major || null,
+                                  locale: i18n.language === "ar" ? "ar" : "en" }),
   });
   const q: QuoteT | undefined = mut.data;
 
@@ -44,14 +44,7 @@ export default function Quote() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-semibold">{t("newQuote")}</h1>
-        <select className="border rounded p-1" value={i18n.language}
-          onChange={(e) => { i18n.changeLanguage(e.target.value); set("locale", e.target.value); }}>
-          <option value="en">EN</option>
-          <option value="ar">AR</option>
-        </select>
-      </div>
+      <h1 className="text-2xl font-semibold">{t("newQuote")}</h1>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {text("product_sku", "sku")}

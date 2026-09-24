@@ -1,7 +1,9 @@
 """Seed one Oman tuna tenant (dev). Idempotent. Runs as costing_migrator."""
 from __future__ import annotations
+import os
 from datetime import date, timedelta
 
+import bcrypt
 from sqlalchemy import text
 
 from _db import MigratorSessionLocal
@@ -21,6 +23,10 @@ def main() -> None:
           INSERT INTO users (id, tenant_id, email, role, locale_pref)
           VALUES (:id, :t, 'ops@example.om', 'admin', 'en') ON CONFLICT DO NOTHING
         """), {"id": USER_ID, "t": TENANT_ID})
+        # Dev login (POST /api/v1/auth/login). Only sets a password if none exists yet.
+        s.execute(text("UPDATE users SET password_hash = :h WHERE id = :id AND password_hash IS NULL"),
+                  {"id": USER_ID, "h": bcrypt.hashpw(os.environ.get("SEED_ADMIN_PASSWORD", "dev-password").encode(),
+                                             bcrypt.gensalt()).decode()})
         s.execute(text("""
           INSERT INTO tenant_cost_config (tenant_id, valid_from, base_currency, dest_country, vat_rate,
             vat_recoverable, insurance_rate, wacc, overhead_pct, customer_days, supplier_terms_days, default_storage_days)

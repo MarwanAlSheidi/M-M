@@ -2,7 +2,6 @@
 from __future__ import annotations
 from decimal import Decimal
 
-import pandas as pd
 from fastapi import HTTPException
 
 from costing.engine import InfeasibleTarget, compute_landed, solve_max_purchase_price_per_input_unit
@@ -12,14 +11,12 @@ from costing.units import convert_mass
 from ml.integrate import apply_ml_predictions
 
 from ..i18n import narrative
-from ..repos import market_repo, model_repo, product_repo, stats_repo
+from ..repos import market_repo, product_repo, stats_repo
 from ..schemas import (CostLineOut, GuardOut, MLInputOut, MoneyOut, QuoteResponse,
                        QuoteVsForecastOut, SHAPFeature)
-from .features import build_features
+from .forecast import champion_forecast
 from .inputs import build_inputs
 from .pricing_mode import PricingMode
-
-TARGET = "forward_purchase_price_per_kg"
 
 
 def _money(m: Money) -> MoneyOut:
@@ -29,12 +26,6 @@ def _money(m: Money) -> MoneyOut:
 def _line(l) -> CostLineOut:
     return CostLineOut(type=l.type, amount_minor=l.amount.amount_minor, amount_major=str(l.amount.major),
                        currency=l.amount.currency, source=l.source, note=l.note)
-
-
-def _shap_top5(model, feats: pd.DataFrame) -> list[SHAPFeature]:
-    row = model.explain(feats).iloc[0].drop(labels=["__bias__"], errors="ignore")
-    top = row.abs().sort_values(ascending=False).head(5).index
-    return [SHAPFeature(feature=f, contribution=float(row[f])) for f in top]
 
 
 def _rate(session, frm: str, to: str, as_of) -> Decimal | None:
@@ -62,19 +53,15 @@ def build_quote(session, tenant: dict, req, mode: PricingMode) -> QuoteResponse:
     ml_skipped_reason = None
 
     if mode in (PricingMode.ML_FILLS_PRICE, PricingMode.QUOTE_GIVEN_ANOMALY_CHECK):
-        model = model_repo.get_champion(session, tid, TARGET)
-        feats, skip = (None, "no champion model") if model is None else \
-            build_features(session, tid, product, req.deal_date, req.currency)
+        fc, skip = champion_forecast(session, tid, product, req.deal_date, req.currency)
         if skip:
             if mode is PricingMode.ML_FILLS_PRICE:
                 raise HTTPException(422, f"ML requested but unavailable: {skip}")
             ml_skipped_reason = skip
         else:
-            preds = model.predict(feats)
-            shap_top5 = _shap_top5(model, feats)
-            p10, p50, p90 = (Decimal(str(preds[c].iloc[0])) for c in ("p10", "p50", "p90"))
-            target_ccy = model.target_currency or "USD"
-            target_unit = model.target_unit or "kg"
+            shap_top5 = fc.shap_top5
+            p10, p50, p90 = fc.p10, fc.p50, fc.p90
+            target_ccy, target_unit = fc.target_currency, fc.target_unit
 
             if mode is PricingMode.QUOTE_GIVEN_ANOMALY_CHECK:
                 # ML never overrides a supplier quote; it only flags anomalies.
