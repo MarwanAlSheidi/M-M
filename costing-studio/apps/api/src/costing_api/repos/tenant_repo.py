@@ -12,6 +12,7 @@ class TenantCostConfig:
     dest_country: str
     vat_rate: Decimal
     vat_recoverable: bool
+    insurance_rate: Decimal
     wacc: Decimal
     overhead_pct: Decimal
     customer_days: int
@@ -22,7 +23,7 @@ class TenantCostConfig:
 
 def get_cost_config(session, tenant_id, as_of: date) -> TenantCostConfig:
     row = session.execute(text("""
-      SELECT base_currency, dest_country, vat_rate, vat_recoverable, wacc, overhead_pct,
+      SELECT base_currency, dest_country, vat_rate, vat_recoverable, insurance_rate, wacc, overhead_pct,
              customer_days, supplier_terms_days, default_storage_days, landed_scope
         FROM tenant_cost_config
        WHERE tenant_id = :t AND valid_from <= :d AND (valid_to IS NULL OR valid_to > :d)
@@ -33,6 +34,7 @@ def get_cost_config(session, tenant_id, as_of: date) -> TenantCostConfig:
     return TenantCostConfig(
         base_currency=row["base_currency"], dest_country=row["dest_country"],
         vat_rate=Decimal(str(row["vat_rate"])), vat_recoverable=row["vat_recoverable"],
+        insurance_rate=Decimal(str(row["insurance_rate"])),
         wacc=Decimal(str(row["wacc"])), overhead_pct=Decimal(str(row["overhead_pct"])),
         customer_days=row["customer_days"], supplier_terms_days=row["supplier_terms_days"],
         default_storage_days=row["default_storage_days"], landed_scope=list(row["landed_scope"]),

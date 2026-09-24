@@ -1,1 +1,0 @@
-{"root":["./src/i18n.ts","./src/main.tsx","./src/api/client.ts","./src/components/CostWaterfall.tsx","./src/components/GuardBadge.tsx","./src/components/ProvenanceBadge.tsx","./src/components/SHAPTop5.tsx","./src/pages/ImportWizard.tsx","./src/pages/Quote.tsx"],"version":"5.6.2"}

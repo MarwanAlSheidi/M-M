@@ -9,6 +9,7 @@ PSQL = $(DC) exec -T db psql -U $(POSTGRES_SUPERUSER) -d costing
 unit:            ## DB-free tests on the host (run before Docker)
 	uv sync --all-packages --extra dev
 	uv run pytest packages/costing/tests packages/ml/tests -q
+	uv run python scripts/gen_sample_csv.py --check || (echo 'sample_data CSV is stale: run scripts/gen_sample_csv.py' && exit 1)
 
 up:
 	$(DC) up -d --build

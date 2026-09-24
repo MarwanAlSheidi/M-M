@@ -29,12 +29,12 @@ CANONICAL_FIELDS = [
     "origin_country", "dest_country", "deal_date", "currency", "purchase_unit_price_major",
     "freight_total_major", "freight_currency", "actual_landed_cost_major",
     "actual_sell_price_major", "recorded_currency", "yield_pct", "hs_code",
-    "overhead_pct", "wacc", "supplier_terms_days", "days_to_customer_payment", "storage_days",
+    "overhead_pct", "wacc", "insurance_rate", "supplier_terms_days", "days_to_customer_payment", "storage_days",
     "recorded_freight_major", "recorded_duty_major",
 ]
 NUMERIC_FIELDS = {
     "quantity", "purchase_unit_price_major", "freight_total_major", "actual_landed_cost_major",
-    "actual_sell_price_major", "yield_pct", "overhead_pct", "wacc", "supplier_terms_days",
+    "actual_sell_price_major", "yield_pct", "overhead_pct", "wacc", "insurance_rate", "supplier_terms_days",
     "days_to_customer_payment", "storage_days", "recorded_freight_major", "recorded_duty_major",
 }
 INT_FIELDS = {"supplier_terms_days", "days_to_customer_payment", "storage_days"}
@@ -128,7 +128,7 @@ def to_quote_request(n: dict) -> QuoteRequest:
         purchase_unit_price_major=Decimal(n["purchase_unit_price_major"]),
         freight_total_major=n.get("freight_total_major"), use_ml=False,
     )
-    for k in ("overhead_pct", "wacc"):
+    for k in ("overhead_pct", "wacc", "insurance_rate"):
         if n.get(k) is not None:
             kw[k] = Decimal(n[k])
     for k in ("supplier_terms_days", "days_to_customer_payment", "storage_days"):

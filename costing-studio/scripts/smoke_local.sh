@@ -101,6 +101,7 @@ QUOTE=$(curl -sf -X POST "$API/api/v1/quote" -H "$AUTH" -H "Content-Type: applic
   "purchase_unit_price_major":"3.20","target_margin":"0.20","market_sell_per_sellable_major":"3.40"}') || fail "quote"
 echo "$QUOTE" | jq '{landed_cost, sell_above_threshold, buy_below_threshold, ml_skipped_reason}'
 [ -n "$(echo "$QUOTE" | jq -r '.landed_cost.amount_major // empty')" ] || fail "no landed_cost"
+[ "$(echo "$QUOTE" | jq -r .landed_cost.amount_minor)" = "26720146" ] || fail "landed_cost != tripwire 26720146"
 
 echo "==> jobs"
 for job in stats_recompute golden_regression retrain; do

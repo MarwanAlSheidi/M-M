@@ -70,6 +70,7 @@ class QuoteRequest(BaseModel):
     locale: Literal["en", "ar"] = "en"
     # Optional per-deal overrides (win over tenant config)
     overhead_pct: Optional[Decimal] = Field(default=None, ge=0, lt=1)
+    insurance_rate: Optional[Decimal] = Field(default=None, ge=0, lt=1)
     wacc: Optional[Decimal] = Field(default=None, ge=0, lt=1)
     supplier_terms_days: Optional[int] = Field(default=None, ge=0)
     days_to_customer_payment: Optional[int] = Field(default=None, ge=0)

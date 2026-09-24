@@ -57,6 +57,7 @@ def build_inputs(session, tenant_id, req) -> DealInputs:
         currency=req.currency,
         incoterm=req.incoterm,
         freight_total=freight,
+        insurance_rate=pick(req.insurance_rate, tenant_cfg.insurance_rate),
         hs_code=product.hs_code,
         duty_rate=duty_rate,
         vat_rate=tenant_cfg.vat_rate,

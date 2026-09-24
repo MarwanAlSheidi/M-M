@@ -1,5 +1,5 @@
 {
-  "deal_ref": "IMP-60646af4-10",
+  "deal_ref": "IMP-61cd1388-13",
   "inputs": {
     "product_sku": "TUNA-YF-WR",
     "quantity": {
@@ -10,7 +10,7 @@
       "__dec__": "0.5500"
     },
     "purchase_unit_price_major": {
-      "__dec__": "2.85"
+      "__dec__": "2.98"
     },
     "currency": "USD",
     "incoterm": "CFR",
@@ -27,7 +27,7 @@
       ]
     },
     "insurance_rate": {
-      "__dec__": "0"
+      "__dec__": "0.0040"
     },
     "hs_code": "0303.42",
     "duty_rate": {
@@ -80,18 +80,18 @@
       "__set__": []
     },
     "deal_date": {
-      "__date__": "2024-09-08"
+      "__date__": "2024-11-04"
     }
   },
   "expected": {
     "landed_cost": {
-      "amount_minor": 20031412,
+      "amount_minor": 20927015,
       "currency": "OMR"
     },
     "lines": [
       {
         "type": "purchase",
-        "amount_minor": 16437375
+        "amount_minor": 17187150
       },
       {
         "type": "origin",
@@ -103,11 +103,11 @@
       },
       {
         "type": "insurance",
-        "amount_minor": 0
+        "amount_minor": 75623
       },
       {
         "type": "duty",
-        "amount_minor": 821869
+        "amount_minor": 863139
       },
       {
         "type": "vat",
@@ -127,11 +127,11 @@
       },
       {
         "type": "capital",
-        "amount_minor": 63729
+        "amount_minor": 66578
       },
       {
         "type": "overhead",
-        "amount_minor": 583439
+        "amount_minor": 609525
       }
     ]
   }

@@ -6,3 +6,4 @@ dist/
 .smoke/
 .pytest_cache/
 *.tsbuildinfo
+dump.rdb

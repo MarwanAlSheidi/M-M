@@ -23,8 +23,8 @@ def main() -> None:
         """), {"id": USER_ID, "t": TENANT_ID})
         s.execute(text("""
           INSERT INTO tenant_cost_config (tenant_id, valid_from, base_currency, dest_country, vat_rate,
-            vat_recoverable, wacc, overhead_pct, customer_days, supplier_terms_days, default_storage_days)
-          VALUES (:t, DATE '2020-01-01', 'OMR', 'OM', 0.05, true, 0.08, 0.03, 45, 30, 15)
+            vat_recoverable, insurance_rate, wacc, overhead_pct, customer_days, supplier_terms_days, default_storage_days)
+          VALUES (:t, DATE '2020-01-01', 'OMR', 'OM', 0.05, true, 0.004, 0.08, 0.03, 45, 30, 15)
           ON CONFLICT (tenant_id, valid_from) DO NOTHING
         """), {"t": TENANT_ID})
         s.execute(text("""
