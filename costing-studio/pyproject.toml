@@ -1,0 +1,16 @@
+[project]
+name = "costing-studio"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["apps/api", "packages/costing", "packages/ml"]
+
+[tool.uv.sources]
+costing = { workspace = true }
+ml = { workspace = true }
+costing-api = { workspace = true }
