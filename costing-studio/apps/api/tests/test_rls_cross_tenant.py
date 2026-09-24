@@ -21,16 +21,16 @@ def seeded():
             c.execute(text("INSERT INTO tenants (id, name, base_currency) VALUES (:i, :n, 'OMR') "
                            "ON CONFLICT (id) DO NOTHING"), {"i": tid, "n": name})
             c.execute(text("INSERT INTO users (tenant_id, email, role) "
-                           "VALUES (:t, CAST(:t AS text) || '@rls.test', 'admin') ON CONFLICT DO NOTHING"),
-                      {"t": tid})
+                           "VALUES (:t, CAST(:tt AS text) || '@rls.test', 'admin') ON CONFLICT DO NOTHING"),
+                      {"t": tid, "tt": tid})
             c.execute(text("INSERT INTO products (tenant_id, sku, name_en, name_ar, category, base_unit, "
-                           "hs_code, market_key) VALUES (:t, 'SKU-' || CAST(:t AS text), 'p', 'p', 'seafood', "
-                           "'kg', '0303.42', 'MK') ON CONFLICT DO NOTHING"), {"t": tid})
+                           "hs_code, market_key) VALUES (:t, 'SKU-' || CAST(:tt AS text), 'p', 'p', 'seafood', "
+                           "'kg', '0303.42', 'MK') ON CONFLICT DO NOTHING"), {"t": tid, "tt": tid})
             c.execute(text("INSERT INTO deals (tenant_id, deal_ref, product_id, quantity, base_unit, incoterm, "
                            "origin_country, dest_country, deal_date, currency, base_currency) "
-                           "SELECT :t, 'D-' || CAST(:t AS text), id, 1, 'kg', 'CFR', 'TH', 'OM', "
+                           "SELECT :t, 'D-' || CAST(:tt AS text), id, 1, 'kg', 'CFR', 'TH', 'OM', "
                            "DATE '2024-01-01', 'USD', 'OMR' FROM products WHERE tenant_id = :t LIMIT 1 "
-                           "ON CONFLICT DO NOTHING"), {"t": tid})
+                           "ON CONFLICT DO NOTHING"), {"t": tid, "tt": tid})
     eng.dispose()
     yield
     eng = create_engine(ADMIN_URL)

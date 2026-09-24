@@ -1,0 +1,138 @@
+{
+  "deal_ref": "IMP-60646af4-16",
+  "inputs": {
+    "product_sku": "TUNA-YF-WR",
+    "quantity": {
+      "__dec__": "9000"
+    },
+    "base_unit": "kg",
+    "yield_pct": {
+      "__dec__": "0.5500"
+    },
+    "purchase_unit_price_major": {
+      "__dec__": "3.43"
+    },
+    "currency": "USD",
+    "incoterm": "CFR",
+    "origin_charges": {
+      "__money__": [
+        0,
+        "USD"
+      ]
+    },
+    "freight_total": {
+      "__money__": [
+        0,
+        "USD"
+      ]
+    },
+    "insurance_rate": {
+      "__dec__": "0"
+    },
+    "hs_code": "0303.42",
+    "duty_rate": {
+      "__dec__": "0.0500"
+    },
+    "vat_rate": {
+      "__dec__": "0.0500"
+    },
+    "vat_recoverable": true,
+    "clearing_fixed": {
+      "__money__": [
+        250000,
+        "OMR"
+      ]
+    },
+    "processing_rate_per_unit": {
+      "__money__": [
+        80,
+        "OMR"
+      ]
+    },
+    "storage_days": 15,
+    "storage_rate_per_unit_day": {
+      "__money__": [
+        3,
+        "OMR"
+      ]
+    },
+    "days_to_customer_payment": 45,
+    "supplier_terms_days": 30,
+    "wacc": {
+      "__dec__": "0.0800"
+    },
+    "overhead_pct": {
+      "__dec__": "0.0300"
+    },
+    "min_margin": {
+      "__dec__": "0.05"
+    },
+    "locked_rates": {
+      "OMR": {
+        "__dec__": "1"
+      },
+      "USD": {
+        "__dec__": "0.3845"
+      }
+    },
+    "base_currency": "OMR",
+    "ml_fields": {
+      "__set__": []
+    },
+    "deal_date": {
+      "__date__": "2025-01-10"
+    }
+  },
+  "expected": {
+    "landed_cost": {
+      "amount_minor": 14299991,
+      "currency": "OMR"
+    },
+    "lines": [
+      {
+        "type": "purchase",
+        "amount_minor": 11869515
+      },
+      {
+        "type": "origin",
+        "amount_minor": 0
+      },
+      {
+        "type": "freight",
+        "amount_minor": 0
+      },
+      {
+        "type": "insurance",
+        "amount_minor": 0
+      },
+      {
+        "type": "duty",
+        "amount_minor": 593476
+      },
+      {
+        "type": "vat",
+        "amount_minor": 0
+      },
+      {
+        "type": "clearing",
+        "amount_minor": 250000
+      },
+      {
+        "type": "processing",
+        "amount_minor": 720000
+      },
+      {
+        "type": "storage",
+        "amount_minor": 405000
+      },
+      {
+        "type": "capital",
+        "amount_minor": 45495
+      },
+      {
+        "type": "overhead",
+        "amount_minor": 416505
+      }
+    ]
+  }
+}
