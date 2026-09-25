@@ -39,6 +39,8 @@ const en = {
   noRecommendation: "None: no included channel clears the floor comfortably",
   recommendationRule: "Highest headroom among included channels that clear the floor by at least 10%.",
   v_sellable_comfortable: "Comfortable", v_sellable_marginal: "Marginal", v_not_sellable: "Not sellable",
+  ct_trade: "trade", ct_retail: "retail", ct_export: "export", ct_import: "import",
+  defaultExclusionHint: "Retail and import channels start unticked by default; tick them to include.",
   simAsOf: "Market prices as of {{as_of}}", maxMarginFromProduct: "ceiling uses the product's max margin ({{pct}}%)",
 };
 const ar = {
@@ -80,6 +82,8 @@ const ar = {
   noRecommendation: "لا شيء: لا توجد قناة مشمولة تتجاوز الحد الأدنى بهامش مريح",
   recommendationRule: "أعلى فرق بين القنوات المشمولة التي تتجاوز الحد الأدنى بـ 10% على الأقل.",
   v_sellable_comfortable: "مريح", v_sellable_marginal: "هامشي", v_not_sellable: "غير قابل للبيع",
+  ct_trade: "تجارة", ct_retail: "تجزئة", ct_export: "تصدير", ct_import: "استيراد",
+  defaultExclusionHint: "قنوات التجزئة والاستيراد غير محددة افتراضياً؛ حدّدها لتضمينها.",
   simAsOf: "أسعار السوق بتاريخ {{as_of}}", maxMarginFromProduct: "السقف يستخدم الهامش الأقصى للمنتج ({{pct}}%)",
 };
 

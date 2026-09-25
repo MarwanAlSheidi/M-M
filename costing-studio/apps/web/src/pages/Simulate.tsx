@@ -47,12 +47,15 @@ export default function Simulate() {
   const [floorPct, setFloorPct] = useState("15");
   const [targetPct, setTargetPct] = useState("30");
   const [asOf, setAsOf] = useState(today());
-  const [excluded, setExcluded] = useState<string[]>([]);
-  useEffect(() => setExcluded([]), [productId]);
+  // null = let the server apply its defaults (retail + import channels excluded by type); the first
+  // toggle turns the ticks the user is looking at into an explicit list, which then wins as given.
+  const [excluded, setExcluded] = useState<string[] | null>(null);
+  useEffect(() => setExcluded(null), [productId]);
 
   const req: SimRequest | null = productId ? {
     product_id: productId, skipjack_usd: hasSkipjack && skipjack.trim() ? skipjack : null,
-    margin_floor_pct: floorPct, margin_target_pct: targetPct, as_of: asOf, exclude_channels: excluded,
+    margin_floor_pct: floorPct, margin_target_pct: targetPct, as_of: asOf,
+    ...(excluded !== null ? { exclude_channels: excluded } : {}),
   } : null;
   const debounced = useDebounced(req, 300);
   const result = useQuery({
@@ -96,12 +99,18 @@ export default function Simulate() {
               <legend className="text-slate-600">{t("channelsIncluded")}</legend>
               {r.channels.map((c) => (
                 <label key={c.channel} className="flex items-center gap-2">
-                  <input type="checkbox" checked={!excluded.includes(c.channel)}
-                    onChange={(e) => setExcluded((x) => e.target.checked ? x.filter((y) => y !== c.channel)
-                                                                            : [...x, c.channel])} />
-                  {c.channel}
+                  {/* local state once the user has toggled (instant feedback); server defaults before that */}
+                  <input type="checkbox" checked={excluded === null ? !c.excluded : !excluded.includes(c.channel)}
+                    onChange={(e) => {
+                      const current = excluded ?? r.channels.filter((x) => x.excluded).map((x) => x.channel);
+                      setExcluded(e.target.checked ? current.filter((y) => y !== c.channel) : [...current, c.channel]);
+                    }} />
+                  {c.channel} <span className="text-xs text-slate-500">({t(`ct_${c.channel_type}`)})</span>
                 </label>
               ))}
+              {r.inputs.exclusion === "default_by_type" && (
+                <p className="text-xs text-slate-500 mt-1">{t("defaultExclusionHint")}</p>
+              )}
             </fieldset>
           )}
         </form>

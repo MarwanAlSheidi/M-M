@@ -112,8 +112,8 @@ rm -f "$TUNA_CSV"
 TUNA_ID=$(curl -sf "$API/api/v1/products" -H "$AUTH" | jq -r '.items[] | select(.name=="Canned Light Tuna in Sunflower Oil") | .id')
 SNAPS_BEFORE=$(psqlq "SELECT count(*) FROM pricing_snapshots")
 SIM=$(curl -s -w '\n%{http_code}' -X POST "$API/api/v1/simulate" -H "$AUTH" -H "Content-Type: application/json" \
-  -d "{\"product_id\":\"$TUNA_ID\",\"skipjack_usd\":\"1.40\",\"margin_floor_pct\":\"15\",\"margin_target_pct\":\"30\",\"exclude_channels\":[\"oman-retail\"]}")
+  -d "{\"product_id\":\"$TUNA_ID\",\"skipjack_usd\":\"1.40\",\"margin_floor_pct\":\"15\",\"margin_target_pct\":\"30\"}")    # no exclude list: page defaults (retail + import excluded by type)
 [ "$(echo "$SIM" | tail -1)" = "200" ] || fail "simulate returned $(echo "$SIM" | tail -1): $(echo "$SIM" | head -1)"
-echo "$SIM" | head -1 | jq -c '{recommendation, floor: .envelope.floor_minor, channels: [.channels[] | {channel, headroom_pct, verdict}]}'
+echo "$SIM" | head -1 | jq -c '{recommendation, floor: .envelope.floor_minor, channels: [.channels[] | {channel, channel_type, headroom_pct, verdict, excluded}]}'
 [ "$(echo "$SIM" | head -1 | jq -r .recommendation)" = "uae-export" ] || fail "simulate recommendation != uae-export"
 [ "$(psqlq "SELECT count(*) FROM pricing_snapshots")" = "$SNAPS_BEFORE" ] || fail "simulate wrote a snapshot"

@@ -72,11 +72,12 @@ def main() -> None:
         """), {"t": TENANT_ID, "p": PRODUCT_ID, "vf": VALID_FROM})
 
         # Manual sources (no parser): prices arrive by CSV / API ingest.
-        for source, freq, stale in (("retail-survey", "weekly", 14), ("distributor-list", "monthly", 45)):
+        for source, freq, stale, ctype in (("retail-survey", "weekly", 14, "retail"),
+                                           ("distributor-list", "monthly", 45, "trade")):
             s.execute(text("""
-              INSERT INTO market_sources (tenant_id, product_id, source, frequency, staleness_days)
-              VALUES (:t, :p, :s, :f, :d) ON CONFLICT ON CONSTRAINT uq_market_sources DO NOTHING
-            """), {"t": TENANT_ID, "p": PRODUCT_ID, "s": source, "f": freq, "d": stale})
+              INSERT INTO market_sources (tenant_id, product_id, source, frequency, staleness_days, channel_type)
+              VALUES (:t, :p, :s, :f, :d, :c) ON CONFLICT ON CONSTRAINT uq_market_sources DO NOTHING
+            """), {"t": TENANT_ID, "p": PRODUCT_ID, "s": source, "f": freq, "d": stale, "c": ctype})
     print("Seed complete. tenant_id =", TENANT_ID, "product_id =", PRODUCT_ID)
 
 

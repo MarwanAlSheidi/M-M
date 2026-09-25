@@ -1,7 +1,6 @@
 """POST /api/v1/simulate: same numbers as scripts/last_sell_price.py, recommendation rule, margin inputs,
 and no writes. Loads sample_data/canned_tuna_* (skipjack 1.40, four channels) into a throwaway tenant."""
 from __future__ import annotations
-import csv
 import json
 import os
 import subprocess
@@ -34,7 +33,6 @@ def admin_db():
 def tuna(admin_db):
     """(tenant_id, product_id) with the current canned tuna sample loaded via the loader's service calls."""
     from costing_api.jobs.base import tenant_session
-    from costing_api.jobs.market_refresh import ingest_rows
     from costing_api.schemas import CostElementIn, MarginConfigIn, ProductIn
     from costing_api.services import product_service
     tid = str(uuid.uuid4())
@@ -53,14 +51,10 @@ def tuna(admin_db):
                                              currency=e.currency, valid_from=vf, qty_per_unit=e.qty_per_unit)
         m = MarginConfigIn(**{**spec["margin"], "valid_from": vf})
         product_service.set_margin_config(s, tenant, pid, m.min_pct, m.target_pct, m.max_pct, vf)
-        by_source: dict[str, list] = {}
-        with (SAMPLE / "canned_tuna_market.csv").open() as f:
-            for r in csv.DictReader(f):
-                by_source.setdefault(r["source"], []).append(
-                    {"price": r["price_major"], "currency": r["currency"], "unit": r["unit"],
-                     "observed_at": date.fromisoformat(r["observed_at"])})
-        for source, rows in by_source.items():
-            ingest_rows(s, tid, pid, source, rows)
+        # the real loader path: market_sources upserted once per source with its channel_type, then prices
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from load_market_prices import load as load_prices, read_rows
+        load_prices(s, tenant, pid, read_rows(SAMPLE / "canned_tuna_market.csv"))
     yield tid, pid
     with admin_db.begin() as c:
         for tbl in ("pricing_snapshots", "market_prices", "products", "audit_log"):
@@ -121,19 +115,37 @@ def test_defaults_match_last_sell_price_script(client, auth, tuna):
     assert s["last_viable_sell_minor"] == 1832 and s["currency"] == "OMR" and s["unit"] == "kg"
 
 
-def test_recommendation_rule_and_channel_exclusion(client, auth, tuna):
+def test_channel_type_on_every_entry(client, auth, tuna):
+    s = sim(client, auth, tuna[1])
+    assert {c["channel"]: c["channel_type"] for c in s["channels"]} == {
+        "oman-import": "import", "mena-export": "export", "uae-export": "export", "oman-retail": "retail"}
+
+
+def test_default_exclusion_by_type(client, auth, tuna):
+    s = sim(client, auth, tuna[1])                                         # no exclude_channels sent
+    assert s["recommendation"] == "uae-export"
+    assert s["inputs"]["exclusion"] == "default_by_type"
+    assert {c["channel"] for c in s["channels"] if c["excluded"]} == {"oman-retail", "oman-import"}
+
+
+def test_caller_list_wins_without_extra_defaults(client, auth, tuna):
     pid = tuna[1]
-    everything = sim(client, auth, pid)                                    # rule as written: all channels
-    assert everything["recommendation"] == "oman-retail"                   # +309.3%, a shelf price
-    wholesale = sim(client, auth, pid, exclude_channels=["oman-retail"])
-    assert wholesale["recommendation"] == "uae-export"
-    assert [c["excluded"] for c in wholesale["channels"] if c["channel"] == "oman-retail"] == [True]
-    # skipjack 1.40 -> 1.80: uae-export falls to +5.1% (marginal), nothing wholesale stays comfortable
-    hot = sim(client, auth, pid, skipjack_usd="1.80", exclude_channels=["oman-retail"])
+    everything = sim(client, auth, pid, exclude_channels=[])               # rule as written, nothing excluded
+    assert everything["recommendation"] == "oman-retail" and everything["inputs"]["exclusion"] == "caller"
+    # Only uae-export excluded: retail is NOT excluded by default any more (the caller's list wins), and it is
+    # the only comfortable channel left (mena-export is marginal at +0.3%), so the rule picks it.
+    no_uae = sim(client, auth, pid, exclude_channels=["uae-export"])
+    assert [c["channel"] for c in no_uae["channels"] if c["excluded"]] == ["uae-export"]
+    assert no_uae["recommendation"] == "oman-retail"
+    # Excluding retail as well leaves only mena-export (marginal) and oman-import (not sellable): none.
+    assert sim(client, auth, pid, exclude_channels=["uae-export", "oman-retail"])["recommendation"] is None
+
+
+def test_skipjack_180_with_defaults_recommends_none(client, auth, tuna):
+    hot = sim(client, auth, tuna[1], skipjack_usd="1.80")                  # defaults: retail + import excluded
     by = {c["channel"]: c for c in hot["channels"]}
     assert by["uae-export"]["headroom_pct"] == 5.1 and by["uae-export"]["verdict"] == "sellable_marginal"
     assert hot["recommendation"] is None
-    assert sim(client, auth, pid, skipjack_usd="1.80")["recommendation"] == "oman-retail"
 
 
 def test_margin_floor_changes_the_floor(client, auth, tuna):

@@ -85,3 +85,29 @@ def test_loaders_refuse_bad_input_without_writing(product_file, tmp_path):
     eng.dispose()
     r = run("scripts/load_market_prices.py", "no-such-product", "x", ROOT / "sample_data" / "example_market_prices.csv")
     assert r.returncode != 0 and "no product named" in r.stderr
+
+
+def test_market_loader_upserts_one_source_row_per_channel_with_type(product_file, tmp_path):
+    name, f = product_file
+    assert run("scripts/load_product.py", f).returncode == 0
+    d1, d2 = date.today() - timedelta(days=1), date.today() - timedelta(days=2)
+    csv = tmp_path / "channels.csv"
+    csv.write_text("observed_at,source,channel_type,price_major,currency,unit\n"
+                   f"{d2},wholesale-a,trade,0.300,OMR,loaf\n{d1},wholesale-a,trade,0.310,OMR,loaf\n"
+                   f"{d1},shop-b,retail,0.450,OMR,loaf\n")
+    r = run("scripts/load_market_prices.py", name, csv)
+    assert r.returncode == 0, r.stderr
+    eng = create_engine(ADMIN_URL)
+    q = text("""SELECT ms.source, ms.channel_type, ms.frequency, ms.staleness_days FROM market_sources ms
+                JOIN products p ON p.id = ms.product_id WHERE p.name = :n ORDER BY ms.source""")
+    with eng.connect() as c:
+        assert [tuple(x) for x in c.execute(q, {"n": name})] == [
+            ("shop-b", "retail", "weekly", 30), ("wholesale-a", "trade", "weekly", 30)]
+    bad = tmp_path / "bad.csv"
+    bad.write_text("observed_at,source,channel_type,price_major,currency,unit\n"
+                   f"{d2},wholesale-a,trade,0.300,OMR,loaf\n{d1},wholesale-a,export,0.310,OMR,loaf\n")
+    r = run("scripts/load_market_prices.py", name, bad)
+    assert r.returncode != 0 and "conflicting channel_type" in r.stderr
+    with eng.connect() as c:                                               # nothing changed by the failed load
+        assert [x[1] for x in c.execute(q, {"n": name})] == ["retail", "trade"]
+    eng.dispose()
