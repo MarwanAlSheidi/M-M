@@ -38,48 +38,74 @@ export const login = async (email: string, password: string): Promise<User> => {
 };
 
 export type LineSource = "formula" | "manual" | "ml" | "ml_derived";
-export interface Money { amount_minor: number; amount_major: string; currency: string }
-export interface CostLine extends Money { type: string; source: LineSource; note?: string }
 export interface GuardOut { accepted: boolean; reason: string; final_value: string }
-export interface MLInput { field: string; predicted_value: string; guard: GuardOut }
 export interface SHAPFeature { feature: string; contribution: number }
-export interface QuoteVsForecast {
-  quote_price: string; forecast_p50: string; pct_deviation: string; within_p10_p90: boolean;
-  flag: "ok" | "outside_range"; compare_currency: string; compare_unit: string;
+
+export type Position = "attractive" | "too_high" | "too_low" | "not_viable";
+
+export interface ProductRow {
+  id: string; name: string; category: string; base_unit: string; attributes: Record<string, unknown>;
+  computed_at: string | null; currency: string | null; floor_minor: number | null; target_minor: number | null;
+  ceiling_minor: number | null; market_reference_minor: number | null; position: Position | null;
 }
-export interface Quote {
-  lines: CostLine[]; landed_cost: Money; sellable_qty: string;
-  landed_cost_per_sellable_unit: Money; break_even_per_sellable_unit: Money;
-  sell_above_threshold: Money; buy_below_threshold?: Money | null;
-  ml_inputs: MLInput[]; ml_fields: string[]; shap_top5: SHAPFeature[];
-  quote_vs_forecast?: QuoteVsForecast | null; ml_skipped_reason?: string | null;
-  explanation: string; locale: "en" | "ar";
+export interface CostElementRow {
+  id: string; name: string; unit: string; rate_minor: number; currency: string;
+  valid_from: string; valid_to: string | null; qty_per_unit: number | null; current: boolean;
+}
+export interface MarginRow {
+  id: string; min_pct: number; target_pct: number; max_pct: number | null;
+  valid_from: string; valid_to: string | null; current: boolean;
+}
+export interface MarketSourceRow {
+  id: string; source: string; url: string | null; parser: string | null; frequency: string;
+  staleness_days: number; active: boolean;
+}
+export interface MarketPriceRow { source: string; price_minor: number; currency: string; unit: string; observed_at: string }
+export interface ProductDetail {
+  id: string; name: string; category: string; base_unit: string; attributes: Record<string, unknown>;
+  cost_elements: CostElementRow[]; margin_configs: MarginRow[];
+  market_sources: MarketSourceRow[]; market_prices: MarketPriceRow[];
+}
+export interface MarketComparison {
+  position: Position; market_reference_minor: number; gap_to_floor: number; gap_to_target: number;
+  gap_to_ceiling: number; sources_used: string[];
+}
+export interface Envelope {
+  product_id: string; snapshot_id: string; computed_at: string; as_of: string; computed_by?: string;
+  currency: string; unit: string; unit_cost_minor: number; floor_minor: number; target_minor: number;
+  ceiling_minor: number; ceiling_source: "max_pct" | "mirror";
+  lines: { name: string; amount_minor: number }[];
+  market: MarketComparison | null; explanation: string;
+}
+export interface Forecast {
+  available: boolean; reason?: string | null; product_id: string; as_of: string; target: string;
+  model_version?: string | null; target_currency?: string | null; target_unit?: string | null;
+  p10?: string | null; p50?: string | null; p90?: string | null; shap_top5: SHAPFeature[];
 }
 
-export const postQuote = (req: unknown) => api.post<Quote>("/api/v1/quote", req).then((r) => r.data);
-
-export interface DealRow {
-  id: string; deal_ref: string; deal_date: string; quantity: string; base_unit: string; incoterm: string;
-  currency: string; origin_country: string; dest_country: string; actual_landed_cost_minor: number | null;
-  actual_sell_price_minor: number | null; base_currency: string; is_golden: boolean; status: string;
-  sku: string; name_en: string; name_ar: string;
-}
-export interface DealLine { type: string; amount_minor: number; currency: string; source: LineSource; note?: string | null }
-export interface Prediction {
-  model_name: string; model_version: string; target: string; value_minor: number;
-  p10_minor: number | null; p90_minor: number | null; created_at: string;
-}
-export interface DealDetail extends DealRow { hs_code: string; lines: DealLine[]; predictions: Prediction[] }
-export interface ThresholdPoint { purchase_unit_price_major: string; landed_per_sellable_minor: number }
-export interface DealThresholds {
-  currency: string; base_currency: string; purchase_unit_price_major: string;
-  landed_per_sellable: Money; break_even_per_sellable: Money; sell_above_threshold: Money;
-  actual_sell_per_sellable?: Money | null; target_margin: string; buy_below_threshold?: Money | null;
-  curve: ThresholdPoint[];
-}
-
-export const listDeals = (params: { q?: string; golden?: boolean }) =>
-  api.get<{ items: DealRow[] }>("/api/v1/deals", { params }).then((r) => r.data.items);
-export const getDeal = (id: string) => api.get<DealDetail>(`/api/v1/deals/${id}`).then((r) => r.data);
-export const getThresholds = (id: string, target_margin: string) =>
-  api.get<DealThresholds>(`/api/v1/deals/${id}/thresholds`, { params: { target_margin } }).then((r) => r.data);
+export const listProducts = () => api.get<{ items: ProductRow[] }>("/api/v1/products").then((r) => r.data.items);
+export const getProduct = (id: string) => api.get<ProductDetail>(`/api/v1/products/${id}`).then((r) => r.data);
+export const createProduct = (body: { name: string; category: string; base_unit: string; attributes?: object }) =>
+  api.post<{ id: string }>("/api/v1/products", body).then((r) => r.data);
+export const patchProduct = (id: string, body: Record<string, unknown>) =>
+  api.patch(`/api/v1/products/${id}`, body).then((r) => r.data);
+export const addCostElement = (id: string, body: Record<string, unknown>) =>
+  api.post(`/api/v1/products/${id}/cost-elements`, body).then((r) => r.data);
+export const setMarginConfig = (id: string, body: Record<string, unknown>) =>
+  api.post(`/api/v1/products/${id}/margin-config`, body).then((r) => r.data);
+export const computeEnvelope = (product_id: string) =>
+  api.post<Envelope>("/api/v1/envelope", { product_id }).then((r) => r.data);
+export const latestEnvelope = (product_id: string) =>
+  api.get<Envelope>(`/api/v1/envelope/${product_id}`).then((r) => r.data)
+    .catch((e) => { if (e?.response?.status === 404) return null; throw e; });
+export const ingestMarketCsv = (product_id: string, source: string, file: File) => {
+  const fd = new FormData();
+  fd.append("product_id", product_id); fd.append("source", source); fd.append("file", file);
+  return api.post<{ rows: number; received: number }>("/api/v1/market-prices/ingest-csv", fd).then((r) => r.data);
+};
+export const getForecast = (product_id: string) =>
+  api.get<Forecast>("/api/v1/predict", { params: { product_id } }).then((r) => r.data);
+export const errText = (e: unknown) => {
+  const d = (e as any)?.response?.data?.detail;
+  return typeof d === "string" ? d : d ? JSON.stringify(d) : String(e);
+};

@@ -1,3 +1,6 @@
+> **Historical.** These notes describe the original tuna landed-cost assembly. The tuna domain was
+> replaced by the product-agnostic pricing envelope (migration 0006); see FIXES.md → "Domain swap".
+
 # Assembly notes
 
 This repo is the final state of ~15 design/review rounds, assembled into files.

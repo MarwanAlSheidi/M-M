@@ -8,11 +8,13 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ..deps import get_session, get_tenant
-from ..services import import_service as svc
+from ..deps import get_session, get_tenant, require_admin
+from ..services import bom_import_service as svc
 from ..settings import settings
 
 router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
+# Repurposed for BOM import: each row is one cost element (product, element, unit, rate, currency,
+# qty_per_unit, valid_from). Confirming writes cost-element versions, so it is admin-only.
 ALLOWED_SUFFIXES = {".xlsx", ".csv"}
 
 
@@ -29,8 +31,11 @@ def _sha256(path: Path) -> str:
 
 
 @router.post("")
-def upload(kind: str = Form(...), file: UploadFile = File(...),
+def upload(kind: str = Form(svc.KIND), file: UploadFile = File(...),
            tenant=Depends(get_tenant), session: Session = Depends(get_session)):
+    require_admin(tenant)
+    if kind != svc.KIND:
+        raise HTTPException(400, f"unsupported import kind {kind!r}; only {svc.KIND!r}")
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED_SUFFIXES:
         raise HTTPException(415, f"unsupported file type {ext}; use .xlsx or .csv")
@@ -129,10 +134,10 @@ def stage(batch_id: str, tenant=Depends(get_tenant), session: Session = Depends(
                     {"b": batch_id, "t": tid})
     persisted = set(session.execute(text("""
       SELECT row_fingerprint FROM import_rows
-       WHERE tenant_id = :t AND deal_id IS NOT NULL AND row_fingerprint IS NOT NULL
+       WHERE tenant_id = :t AND cost_element_id IS NOT NULL AND row_fingerprint IS NOT NULL
     """), {"t": tid}).scalars().all())
     seen: set[str] = set()
-    counts = {"ok": 0, "ok_unverified": 0, "flagged": 0, "rejected": 0}
+    counts = {"ok": 0, "rejected": 0}
 
     for i, row in df.iterrows():
         raw = {k: (None if pd_isna(v) else v) for k, v in row.to_dict().items()}
@@ -142,7 +147,6 @@ def stage(batch_id: str, tenant=Depends(get_tenant), session: Session = Depends(
             missing = svc.REQUIRED_FIELDS - set(n)
             if missing:
                 raise ValueError(f"missing required values: {sorted(missing)}")
-            n["_row_index"] = int(i)
             fp = svc.fingerprint(n)
         except Exception as e:
             _insert_row(session, tid, batch_id, int(i), raw, None, "rejected", None, {"error": str(e)}, None)
@@ -154,10 +158,9 @@ def stage(batch_id: str, tenant=Depends(get_tenant), session: Session = Depends(
             counts["rejected"] += 1
             continue
         seen.add(fp)
-        res = svc.recompute_row(session, tid, n)
+        res = svc.validate_row(session, tid, n)
         counts[res.status] += 1
-        _insert_row(session, tid, batch_id, int(i), raw, n, res.status,
-                    str(res.diff_pct) if res.diff_pct is not None else None, res.diff_json, fp)
+        _insert_row(session, tid, batch_id, int(i), raw, res.normalized, res.status, None, res.diff_json, fp)
 
     session.execute(text("UPDATE import_batches SET status = 'staged' WHERE tenant_id = :t AND id = :b"),
                     {"t": tid, "b": batch_id})
@@ -175,7 +178,7 @@ def pd_isna(v) -> bool:
 @router.get("/{batch_id}/rows")
 def list_rows(batch_id: str, status: str | None = None, tenant=Depends(get_tenant),
               session: Session = Depends(get_session)):
-    q = ("SELECT row_index, status, diff_pct, normalized, diff_json, deal_id, accepted, is_golden_approved "
+    q = ("SELECT row_index, status, normalized, diff_json, cost_element_id, accepted "
          "FROM import_rows WHERE tenant_id = :t AND batch_id = :b")
     params = {"t": tenant["tenant_id"], "b": batch_id}
     if status:
@@ -192,9 +195,6 @@ def update_row(batch_id: str, row_index: int, body: dict, tenant=Depends(get_ten
     if body.get("accepted") is not None:
         sets.append("accepted = :a")
         params["a"] = bool(body["accepted"])
-    if body.get("is_golden_approved") is not None:
-        sets.append("is_golden_approved = :g")
-        params["g"] = bool(body["is_golden_approved"])
     if not sets:
         raise HTTPException(400, "no updates")
     res = session.execute(text(f"UPDATE import_rows SET {', '.join(sets)} "
@@ -206,4 +206,5 @@ def update_row(batch_id: str, row_index: int, body: dict, tenant=Depends(get_ten
 
 @router.post("/{batch_id}/confirm")
 def confirm(batch_id: str, tenant=Depends(get_tenant), session: Session = Depends(get_session)):
-    return svc.persist_confirmed(session, tenant["tenant_id"], batch_id, tenant["user_id"])
+    require_admin(tenant)
+    return svc.persist_confirmed(session, tenant, batch_id)

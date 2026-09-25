@@ -15,52 +15,46 @@ class TargetSpec:
     horizon_days: int = 0
 
 
-FORWARD_PRICE = TargetSpec(
-    name="forward_purchase_price_per_kg",
+# Product-agnostic targets. Rows are (product, date); `deal_date` is the harness's date column.
+# Prices/costs are floats in major units of the tenant base currency, per product unit.
+
+# Ceiling moves: where the market price for a product will be `horizon_days` ahead.
+MARKET_PRICE = TargetSpec(
+    name="forecast_market_price_per_product",
     feature_spec=FeatureSpec(
-        numeric=["spot_price_lag1", "spot_price_lag7", "spot_price_lag30",
-                 "fx_lag1", "fx_lag7", "fx_lag30", "month_sin", "month_cos", "is_ramadan"],
-        categorical=["species", "form", "grade", "origin_country"],
-        target_col="forward_price_kg",
+        numeric=["price_lag1", "price_lag7", "price_lag30", "month_sin", "month_cos", "is_ramadan"],
+        categorical=["category"],
+        target_col="price_fwd",
     ),
-    target_col="forward_price_kg",
+    target_col="price_fwd",
     horizon_days=30,
 )
 
-FORWARD_FREIGHT = TargetSpec(
-    name="forward_freight_rate_per_lane",
+# Floor moves: where the product's unit cost (sum of cost elements) will be `horizon_days` ahead.
+INPUT_COST_DRIFT = TargetSpec(
+    name="forecast_input_cost_drift",
     feature_spec=FeatureSpec(
-        numeric=["fuel_index_lag1", "container_util_lag1", "month_sin", "month_cos"],
-        categorical=["origin_country", "dest_country", "mode", "container_type"],
-        target_col="freight_rate_per_kg",
+        numeric=["cost_lag1", "cost_lag7", "cost_lag30", "month_sin", "month_cos"],
+        categorical=["category"],
+        target_col="cost_fwd",
     ),
-    target_col="freight_rate_per_kg",
-    horizon_days=14,
+    target_col="cost_fwd",
+    horizon_days=30,
 )
 
-REALIZED_YIELD = TargetSpec(
-    name="realized_yield_pct",
+# Demand response to price. Needs transaction data (units sold at a price), which the schema
+# does not hold yet; retrain skips it until such data exists.
+ELASTICITY = TargetSpec(
+    name="estimate_elasticity",
     feature_spec=FeatureSpec(
-        numeric=["qty", "storage_days", "temp_c"],
-        categorical=["species", "form_in", "form_out", "process_type", "supplier_id"],
-        target_col="realized_yield",
+        numeric=["price", "price_to_market_ratio", "month_sin", "month_cos", "is_ramadan"],
+        categorical=["category"],
+        target_col="units_sold",
     ),
-    target_col="realized_yield",
+    target_col="units_sold",
 )
 
-PRE_QUOTE_LANDED = TargetSpec(
-    name="pre_quote_landed_estimate",
-    feature_spec=FeatureSpec(
-        numeric=["qty", "spot_price_lag1", "fx_lag1", "duty_rate", "vat_rate", "wacc",
-                 "days_to_customer_payment", "supplier_terms_days", "month_sin", "month_cos"],
-        categorical=["species", "form", "grade", "origin_country", "dest_country",
-                     "incoterm", "mode", "hs_code"],
-        target_col="landed_cost_per_input_unit",
-    ),
-    target_col="landed_cost_per_input_unit",
-)
-
-ALL_TARGETS = [FORWARD_PRICE, FORWARD_FREIGHT, REALIZED_YIELD, PRE_QUOTE_LANDED]
+ALL_TARGETS = [MARKET_PRICE, INPUT_COST_DRIFT, ELASTICITY]
 
 
 def build_dataset(deals, spec: TargetSpec) -> pd.DataFrame:

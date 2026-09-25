@@ -10,17 +10,9 @@ from .encoding import cyclical_month_series
 
 @dataclass
 class FeatureSpec:
-    numeric: List[str] = field(default_factory=lambda: [
-        "qty", "supplier_terms_days", "days_to_customer_payment",
-        "storage_days", "wacc", "overhead_pct",
-        "spot_price_lag1", "spot_price_lag7", "spot_price_lag30",
-        "fx_lag1", "fx_lag7", "fx_lag30",
-        "month_sin", "month_cos", "is_ramadan", "is_q4_peak", "distance_band",
-    ])
-    categorical: List[str] = field(default_factory=lambda: [
-        "species", "form", "grade", "origin_country", "dest_country",
-        "incoterm", "mode", "supplier_id", "buyer_id",
-    ])
+    """Column lists come from each TargetSpec (see datasets.py); no domain defaults."""
+    numeric: List[str] = field(default_factory=list)
+    categorical: List[str] = field(default_factory=list)
     target_col: str = "target"
 
     @property

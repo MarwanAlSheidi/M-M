@@ -1,4 +1,4 @@
-"""Champion forecast of the forward purchase price. Advisory: never a landed cost, never a quote override."""
+"""Champion market-price forecast for a product. Advisory: it never changes the envelope."""
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
@@ -7,11 +7,13 @@ from typing import Optional
 
 import pandas as pd
 
-from ..repos import model_repo
-from ..schemas import SHAPFeature
-from .features import build_features
+from ml.datasets import MARKET_PRICE
 
-TARGET = "forward_purchase_price_per_kg"
+from ..repos import model_repo, tenant_repo
+from ..schemas import SHAPFeature
+from .features import market_features
+
+TARGET = MARKET_PRICE.name
 
 
 @dataclass(frozen=True)
@@ -31,17 +33,17 @@ def _shap_top5(model, feats: pd.DataFrame) -> list[SHAPFeature]:
     return [SHAPFeature(feature=f, contribution=float(row[f])) for f in top]
 
 
-def champion_forecast(session, tenant_id, product, deal_date: date,
-                      currency: str) -> tuple[Optional[Forecast], Optional[str]]:
+def champion_forecast(session, tenant_id, product, as_of: date) -> tuple[Optional[Forecast], Optional[str]]:
     """Returns (forecast, skip_reason); exactly one is set."""
     model = model_repo.get_champion(session, tenant_id, TARGET)
     if model is None:
         return None, "no champion model"
-    feats, skip = build_features(session, tenant_id, product, deal_date, currency)
+    base = tenant_repo.base_currency(session, tenant_id)
+    feats, skip = market_features(session, tenant_id, product, base, as_of)
     if skip:
         return None, skip
     preds = model.predict(feats)
     p10, p50, p90 = (Decimal(str(preds[c].iloc[0])) for c in ("p10", "p50", "p90"))
     return Forecast(p10=p10, p50=p50, p90=p90, shap_top5=_shap_top5(model, feats),
-                    model_version=model.version, target_currency=model.target_currency or "USD",
-                    target_unit=model.target_unit or "kg"), None
+                    model_version=model.version, target_currency=model.target_currency or base,
+                    target_unit=product.base_unit), None

@@ -4,12 +4,11 @@ export
 DC = docker compose
 PSQL = $(DC) exec -T db psql -U $(POSTGRES_SUPERUSER) -d costing
 
-.PHONY: up down logs roles migrate seed test golden smoke smoke-local unit
+.PHONY: up down logs roles migrate seed test smoke smoke-local unit
 
 unit:            ## DB-free tests on the host (run before Docker)
 	uv sync --all-packages --extra dev
 	uv run pytest packages/costing/tests packages/ml/tests -q
-	uv run python scripts/gen_sample_csv.py --check || (echo 'sample_data CSV is stale: run scripts/gen_sample_csv.py' && exit 1)
 
 up:
 	$(DC) up -d --build
@@ -29,15 +28,10 @@ migrate: roles
 	$(PSQL) < apps/api/scripts/grant_app_privileges.sql
 
 seed:
-	$(DC) exec -T api bash -lc "cd /app/apps/api/scripts && python seed_hijri.py && python seed_oman_tuna.py"
+	$(DC) exec -T api bash -lc "cd /app/apps/api/scripts && python seed_hijri.py && python seed_example_tenant.py"
 
 test:
 	$(DC) exec -T api bash -lc "cd /app && pytest packages/costing/tests packages/ml/tests apps/api/tests -q"
-
-golden:          ## export golden fixtures and copy them into the repo (replaces old ones)
-	$(DC) exec -T api bash -lc "rm -f /app/packages/costing/tests/golden/*.json && cd /app/apps/api/scripts && python export_golden.py"
-	rm -f packages/costing/tests/golden/*.json
-	$(DC) cp api:/app/packages/costing/tests/golden/. packages/costing/tests/golden/
 
 smoke:
 	bash scripts/smoke.sh

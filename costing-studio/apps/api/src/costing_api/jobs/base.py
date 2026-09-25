@@ -16,9 +16,8 @@ log = logging.getLogger(__name__)
 
 JOB_MODULES = {
     "fx_refresh": "fx_refresh",
-    "market_ingest": "market_ingest",
-    "stats_recompute": "stats_recompute",
-    "golden_regression": "golden_regression",
+    "market_refresh": "market_refresh",
+    "envelope_recompute": "envelope_recompute",
     "retrain": "retrain",
 }
 

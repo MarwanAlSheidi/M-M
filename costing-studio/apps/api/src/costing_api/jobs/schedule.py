@@ -23,9 +23,8 @@ def _per_tenant(job_name: str):
 def main():
     sched = BlockingScheduler(timezone="Asia/Muscat")
     sched.add_job(lambda: enqueue("fx_refresh", None), CronTrigger(hour=1, minute=0), id="fx_refresh")
-    sched.add_job(_per_tenant("market_ingest"), CronTrigger(hour=1, minute=30), id="market_ingest")
-    sched.add_job(_per_tenant("stats_recompute"), CronTrigger(hour=2, minute=0), id="stats_recompute")
-    sched.add_job(_per_tenant("golden_regression"), CronTrigger(hour=2, minute=30), id="golden_regression")
+    sched.add_job(_per_tenant("market_refresh"), CronTrigger(hour=1, minute=30), id="market_refresh")
+    sched.add_job(_per_tenant("envelope_recompute"), CronTrigger(hour=2, minute=0), id="envelope_recompute")
     sched.add_job(_per_tenant("retrain"), CronTrigger(hour=3, minute=0), id="retrain")
     sched.start()
 

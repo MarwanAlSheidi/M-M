@@ -20,7 +20,7 @@ export default function Login() {
       const user = await login(email, password);
       if (user.locale && user.locale !== i18n.language) i18n.changeLanguage(user.locale);
       const next = params.get("next");
-      nav(next && next.startsWith("/") && !next.startsWith("//") ? next : "/deals", { replace: true });
+      nav(next && next.startsWith("/") && !next.startsWith("//") ? next : "/products", { replace: true });
     } catch (err: any) {
       setError(err?.response?.status === 401 ? t("badLogin") : String(err?.response?.data?.detail ?? err));
     } finally { setBusy(false); }
