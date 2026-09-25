@@ -52,6 +52,7 @@ export default function ProductDetail() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Link to={`/simulate?product=${id}`} className="border rounded px-3 py-2 text-sm">{t("simulate")}</Link>
           {isAdmin && <Link to={`/products/${id}/edit`} className="border rounded px-3 py-2 text-sm">{t("editEnvelope")}</Link>}
           <button className="bg-slate-900 text-white px-3 py-2 rounded text-sm disabled:opacity-60"
             disabled={recompute.isPending} onClick={() => recompute.mutate()}>

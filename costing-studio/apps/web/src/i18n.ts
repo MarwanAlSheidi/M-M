@@ -30,6 +30,16 @@ const en = {
   minPct: "Min %", targetPct: "Target %", maxPct: "Max %", optional: "optional",
   importBomHint: "One row per cost element: product, element, unit, rate, currency, and optionally qty per product unit and valid-from date.",
   stage: "Stage", confirm: "Confirm", bomApplied: "Applied {{n}} cost elements.",
+  simulate: "Simulate", simulateHint: "What-if preview: change an input and the envelope and channel view update. Nothing is saved.",
+  skipjackPrice: "Skipjack price (USD/kg)", noSkipjack: "This product has no skipjack cost element.",
+  marginFloorPct: "Margin floor %", targetMarginPct: "Target margin %", marketDate: "Market reference date",
+  channelsIncluded: "Channels included", channel: "Channel", marketRefShort: "Market ref", headroom: "Headroom",
+  verdict: "Verdict", excluded: "excluded", floorPriceLine: "Floor price (last viable sell):",
+  sameForAllChannels: "the same for every channel", recommendedChannel: "Recommended channel",
+  noRecommendation: "None: no included channel clears the floor comfortably",
+  recommendationRule: "Highest headroom among included channels that clear the floor by at least 10%.",
+  v_sellable_comfortable: "Comfortable", v_sellable_marginal: "Marginal", v_not_sellable: "Not sellable",
+  simAsOf: "Market prices as of {{as_of}}", maxMarginFromProduct: "ceiling uses the product's max margin ({{pct}}%)",
 };
 const ar = {
   products: "المنتجات", product: "المنتج", importBom: "استيراد قائمة المكونات", signIn: "تسجيل الدخول",
@@ -61,6 +71,16 @@ const ar = {
   minPct: "الأدنى %", targetPct: "المستهدف %", maxPct: "الأقصى %", optional: "اختياري",
   importBomHint: "صف لكل عنصر تكلفة: المنتج، العنصر، الوحدة، السعر، العملة، واختيارياً الكمية لكل وحدة وتاريخ السريان.",
   stage: "تجهيز", confirm: "تأكيد", bomApplied: "طُبّق {{n}} عنصر تكلفة.",
+  simulate: "محاكاة", simulateHint: "معاينة افتراضية: غيّر أي مدخل ليتحدث النطاق والقنوات. لا يُحفظ شيء.",
+  skipjackPrice: "سعر السكيبجاك (دولار/كغ)", noSkipjack: "لا يحتوي هذا المنتج على عنصر تكلفة سكيبجاك.",
+  marginFloorPct: "الحد الأدنى للهامش %", targetMarginPct: "الهامش المستهدف %", marketDate: "تاريخ سعر السوق",
+  channelsIncluded: "القنوات المشمولة", channel: "القناة", marketRefShort: "سعر السوق", headroom: "الفرق عن الحد الأدنى",
+  verdict: "الحكم", excluded: "مستبعدة", floorPriceLine: "سعر الحد الأدنى (آخر سعر بيع مجدٍ):",
+  sameForAllChannels: "نفسه لكل القنوات", recommendedChannel: "القناة الموصى بها",
+  noRecommendation: "لا شيء: لا توجد قناة مشمولة تتجاوز الحد الأدنى بهامش مريح",
+  recommendationRule: "أعلى فرق بين القنوات المشمولة التي تتجاوز الحد الأدنى بـ 10% على الأقل.",
+  v_sellable_comfortable: "مريح", v_sellable_marginal: "هامشي", v_not_sellable: "غير قابل للبيع",
+  simAsOf: "أسعار السوق بتاريخ {{as_of}}", maxMarginFromProduct: "السقف يستخدم الهامش الأقصى للمنتج ({{pct}}%)",
 };
 
 let initial = "en";

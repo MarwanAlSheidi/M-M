@@ -12,6 +12,7 @@ import ImportWizard from "./pages/ImportWizard";
 import Login from "./pages/Login";
 import ProductDetail from "./pages/ProductDetail";
 import ProductList from "./pages/ProductList";
+import Simulate from "./pages/Simulate";
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
 
@@ -68,6 +69,7 @@ function Shell() {
         <Route path="/products" element={<RequireAuth><ProductList /></RequireAuth>} />
         <Route path="/products/:id" element={<RequireAuth><ProductDetail /></RequireAuth>} />
         <Route path="/products/:id/edit" element={<RequireAuth><EnvelopeEditor /></RequireAuth>} />
+        <Route path="/simulate" element={<RequireAuth><Simulate /></RequireAuth>} />
         <Route path="/import" element={<RequireAuth><ImportWizard /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/products" replace />} />
       </Routes>

@@ -88,3 +88,32 @@ psqlq "SELECT job_name || ' | ' || status || ' | ' || coalesce(rows_affected::te
   -ge 1 ] || fail "envelope_recompute stored no snapshot"
 psqlq "SELECT status FROM job_runs WHERE job_name='retrain' ORDER BY started_at DESC LIMIT 1" \
   | grep -qx skipped || fail "retrain should be skipped (not enough history)"
+
+echo "==> simulate (canned tuna, read-only)"
+LOADER_DB=${DATABASE_URL:-postgresql+psycopg://costing_app:${APP_PW}@localhost:5432/costing}
+TUNA_CSV=$(mktemp --suffix=.csv)
+# same channel prices as sample_data, re-dated relative to today so they stay inside the 30-day window
+python3 - sample_data/canned_tuna_market.csv "$TUNA_CSV" <<'PY'
+import csv, sys
+from datetime import date, timedelta
+rows = list(csv.DictReader(open(sys.argv[1])))
+last = max(date.fromisoformat(r["observed_at"]) for r in rows)
+shift = (date.today() - timedelta(days=1)) - last
+with open(sys.argv[2], "w", newline="") as f:
+    w = csv.DictWriter(f, fieldnames=rows[0].keys()); w.writeheader()
+    for r in rows:
+        w.writerow({**r, "observed_at": str(date.fromisoformat(r["observed_at"]) + shift)})
+PY
+DATABASE_URL=$LOADER_DB ${PY:-uv run} python scripts/load_product.py sample_data/canned_tuna_product.json >/dev/null \
+  || fail "load canned tuna"
+DATABASE_URL=$LOADER_DB ${PY:-uv run} python scripts/load_market_prices.py "Canned Light Tuna in Sunflower Oil" \
+  "$TUNA_CSV" >/dev/null || fail "load canned tuna market"
+rm -f "$TUNA_CSV"
+TUNA_ID=$(curl -sf "$API/api/v1/products" -H "$AUTH" | jq -r '.items[] | select(.name=="Canned Light Tuna in Sunflower Oil") | .id')
+SNAPS_BEFORE=$(psqlq "SELECT count(*) FROM pricing_snapshots")
+SIM=$(curl -s -w '\n%{http_code}' -X POST "$API/api/v1/simulate" -H "$AUTH" -H "Content-Type: application/json" \
+  -d "{\"product_id\":\"$TUNA_ID\",\"skipjack_usd\":\"1.40\",\"margin_floor_pct\":\"15\",\"margin_target_pct\":\"30\",\"exclude_channels\":[\"oman-retail\"]}")
+[ "$(echo "$SIM" | tail -1)" = "200" ] || fail "simulate returned $(echo "$SIM" | tail -1): $(echo "$SIM" | head -1)"
+echo "$SIM" | head -1 | jq -c '{recommendation, floor: .envelope.floor_minor, channels: [.channels[] | {channel, headroom_pct, verdict}]}'
+[ "$(echo "$SIM" | head -1 | jq -r .recommendation)" = "uae-export" ] || fail "simulate recommendation != uae-export"
+[ "$(psqlq "SELECT count(*) FROM pricing_snapshots")" = "$SNAPS_BEFORE" ] || fail "simulate wrote a snapshot"

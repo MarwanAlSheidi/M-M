@@ -109,3 +109,23 @@ export const errText = (e: unknown) => {
   const d = (e as any)?.response?.data?.detail;
   return typeof d === "string" ? d : d ? JSON.stringify(d) : String(e);
 };
+
+export type Verdict = "sellable_comfortable" | "sellable_marginal" | "not_sellable";
+export interface SimChannel {
+  channel: string; market_ref_minor: number; headroom_pct: number; position: Position; verdict: Verdict;
+  excluded: boolean;
+}
+export interface SimResult {
+  product_id: string; product_name: string; as_of: string; currency: string; unit: string;
+  inputs: { skipjack_usd: string | null; margin_floor_pct: string; margin_target_pct: string;
+            margin_max_pct: string | null; exclude_channels: string[] };
+  envelope: { unit_cost_minor: number; floor_minor: number; target_minor: number; ceiling_minor: number;
+              ceiling_source: "max_pct" | "mirror"; lines: { name: string; amount_minor: number }[] };
+  last_viable_sell_minor: number; channels: SimChannel[]; recommendation: string | null;
+}
+export interface SimRequest {
+  product_id: string; skipjack_usd: string | null; margin_floor_pct: string; margin_target_pct: string;
+  as_of: string; exclude_channels: string[];
+}
+/** Read-only what-if: nothing is stored server-side. */
+export const simulate = (req: SimRequest) => api.post<SimResult>("/api/v1/simulate", req).then((r) => r.data);
