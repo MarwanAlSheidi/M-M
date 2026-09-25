@@ -1,5 +1,23 @@
 # Fixes
 
+## Follow-up: promotion path, model choice, dead code, Docker
+
+- apps/api/tests/test_api_envelope.py: added test_retrain_promotes_champion_and_predict_serves_it -> the promotion acceptance branch had never run. 500 days of a folded-sine price series (nonlinear in the lags) make LightGBM beat ridge under the unchanged criteria; asserts one champion row, artifact on disk, /predict serves it, and a second retrain on the same data is rejected ("relative mape gain 0.0000 < 0.05") leaving the registry unchanged. Promotion worked as written; no code fix was needed.
+- packages/ml/src/ml/integrate.py, packages/ml/tests/test_integrate.py: deleted -> tuna-only overlay of ML onto DealInputs; nothing else imported it.
+- models.DealInputs: NOT deleted -> serialize.py imports it at module load and costing/envelope.py (live flow) imports serialize's _enc/_dec, so removing it means editing serialize.py; waiting on a decision.
+- Docker: `make up` fails in this sandbox (apt-get inside the image build gets 403 from deb.debian.org under the network policy); `make smoke` not run here. `make smoke-local` (same checks) passes.
+
+### Finding: LightGBM vs ridge on market-price forecasting (no change made)
+On a smooth price series the linear ridge baseline beats LightGBM (MAPE 0.0011 vs 0.0019 on 400 days of
+a sine), so the gate correctly refuses promotion. LightGBM only wins where the relationship is
+nonlinear in the lags (folded sine: 0.0003 vs 0.025). With few features (three price lags + calendar)
+and smooth series, the recommendation for a future decision is:
+- try classical forecasting (ARIMA / exponential smoothing, e.g. statsmodels ETS) as the default
+  market-price model and as a second baseline in the promotion gate;
+- reserve LightGBM for targets where it beats those baselines on walk-forward folds (more features,
+  regime changes, cross-product effects).
+The model choice is unchanged for now; the existing gate already keeps a losing LightGBM out.
+
 ## Domain swap: tuna landed cost -> product-agnostic pricing envelope
 
 Decisions confirmed before building: margin on price (`cost / (1 − pct)`); `margin_config.max_pct`

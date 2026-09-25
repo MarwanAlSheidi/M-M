@@ -285,3 +285,56 @@ def test_retrain_trains_market_target_when_history_exists(admin_db, product, cli
         with admin_db.begin() as c:
             c.execute(text("DELETE FROM model_registry WHERE tenant_id = :t AND version LIKE 'v%'"
                            " AND target = 'forecast_market_price_per_product'"), {"t": TENANT})
+
+
+def test_retrain_promotes_champion_and_predict_serves_it(admin_db, product, client, auth):
+    """Acceptance branch of the promotion gate, with the criteria unchanged. The series is a folded sine
+    (|sin|): the next value depends on which way the curve is heading, which is nonlinear in the lags,
+    so LightGBM beats the ridge baseline by a wide margin (MAPE ~0.0003 vs ~0.025)."""
+    import math
+    import shutil
+    from pathlib import Path
+    from ml.datasets import MARKET_PRICE
+    from costing_api.jobs import retrain
+    from costing_api.jobs.base import tenant_session
+
+    target = MARKET_PRICE.name
+    q_rows = text("SELECT version, artifact_path, is_champion FROM model_registry WHERE tenant_id = :t AND target = :tg")
+    with admin_db.begin() as c:
+        c.execute(text("DELETE FROM model_registry WHERE tenant_id = :t AND target = :tg"), {"t": TENANT, "tg": target})
+        for i in range(500):
+            c.execute(text("INSERT INTO market_prices (tenant_id, product_id, source, price_minor, currency, unit, "
+                           "observed_at) VALUES (:t, :p, 'hist', :m, 'OMR', 'loaf', :d)"),
+                      {"t": TENANT, "p": product, "m": round(4500 + 1000 * abs(math.sin(2 * math.pi * i / 140))),
+                       "d": date.today() - timedelta(days=499 - i)})
+    _configure(client, auth, product)
+    artifacts = []
+    try:
+        with tenant_session(TENANT) as s:
+            first = retrain.run(s, tenant_id=TENANT)
+        assert not first.get("skipped"), first
+        assert f"{target}: promoted v" in first["reason"], first
+        with admin_db.connect() as c:
+            rows = c.execute(q_rows, {"t": TENANT, "tg": target}).all()
+        assert len(rows) == 1 and rows[0].is_champion is True, rows
+        artifacts.append(Path(rows[0].artifact_path))
+        assert (artifacts[0] / "model.joblib").is_file(), artifacts[0]
+
+        f = client.get("/api/v1/predict", params={"product_id": product}, headers=auth).json()
+        assert f["available"] is True, f
+        assert f["model_version"] == rows[0].version and f["target_currency"] == "OMR" and f["target_unit"] == "loaf"
+        assert all(f[k] is not None for k in ("p10", "p50", "p90")) and 4.0 < float(f["p50"]) < 6.0, f
+        assert 1 <= len(f["shap_top5"]) <= 5
+
+        # Same data again: the challenger ties the champion, so the 5% relative-gain rule rejects it.
+        with tenant_session(TENANT) as s:
+            second = retrain.run(s, tenant_id=TENANT)
+        assert second.get("skipped") and f"{target}: relative mape gain 0.0000 < 0.05" in second["reason"], second
+        with admin_db.connect() as c:
+            again = c.execute(q_rows, {"t": TENANT, "tg": target}).all()
+        assert again == rows                                    # still exactly one champion, unchanged
+    finally:
+        with admin_db.begin() as c:
+            c.execute(text("DELETE FROM model_registry WHERE tenant_id = :t AND target = :tg"), {"t": TENANT, "tg": target})
+        for a in artifacts:
+            shutil.rmtree(a, ignore_errors=True)
