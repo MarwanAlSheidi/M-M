@@ -19,6 +19,7 @@ Postgres and Redis must already be running on the machine. Then, from the `costi
 Then open: http://localhost:5173/simulate and sign in with `ops@example.om` / `dev-password`.
 The script prints the exact simulate and product-detail links. To stop: `bash scripts/demo.sh stop`.
 The simulate page's "Download PDF" button saves the current inputs as a one-page A4 summary (example: `example_export.pdf`).
+Re-running with the same JSON is a no-op; edit the JSON to see changes propagate.
 
 ## What to try
 1. Change the skipjack price. Watch the envelope move.

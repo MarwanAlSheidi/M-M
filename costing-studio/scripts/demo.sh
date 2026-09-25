@@ -2,8 +2,8 @@
 # One-command demo: bash scripts/demo.sh        (stop with: bash scripts/demo.sh stop)
 #
 # Assumes Postgres (with a superuser from .env) and Redis are already running on this machine; it
-# does not install them. Safe to re-run: migrations, roles, grants and seeds are idempotent, and the
-# canned tuna product is only loaded if it is missing. Starts the API (port 8000) and the web app
+# does not install them. Safe to re-run: migrations, roles, grants, seeds and the canned tuna product
+# load are idempotent (the loader no-ops on identical JSON). Starts the API (port 8000) and the web app
 # (port 5173) in the background and prints the pages to open. Touches no analysis logic.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -55,12 +55,8 @@ say "Database: roles, migrations, grants, seed"
 (cd apps/api/scripts && uv run --no-sync python seed_hijri.py && uv run --no-sync python seed_example_tenant.py)
 
 say "Canned tuna product and market channels"
-exists=$("${SUPER[@]}" -d costing -Atc "SELECT count(*) FROM products WHERE name = '$PRODUCT'")
-if [ "$exists" = "0" ]; then
-  uv run --no-sync python scripts/load_product.py sample_data/canned_tuna_product.json >/dev/null
-else
-  echo "already loaded"
-fi
+# idempotent: creates the product, updates attributes / versions that differ from the JSON, or no-ops
+uv run --no-sync python scripts/load_product.py sample_data/canned_tuna_product.json | sed '/^$/,$d'
 # Same channel prices as sample_data/canned_tuna_market.csv, re-dated so the latest row is yesterday:
 # prices only count for 30 days, and the file's own dates are fixed.
 MARKET=$DEMO/canned_tuna_market.csv
