@@ -9,8 +9,13 @@ market_ref is that source's latest fresh price as of the date). Runs in a READ O
 
 last_viable_sell = unit_cost / (1 - min_pct) = floor: the lowest price that still meets the configured
 minimum margin. It depends only on costs and margins, so it is the same for every channel; the channel
-decides whether the market will pay it. A channel is sellable when its market_ref >= floor
-(position attractive or too_high).
+decides whether the market will pay it.
+
+Per channel: min / latest / max over that channel's fresh rows (the loader's freshness window: 30 days
+unless the source's market_sources row sets another), each row converted to the envelope currency and
+unit. latest is what the engine uses as the channel's market reference.
+headroom_pct = (latest - floor) / floor x 100, signed. Verdict: sellable_comfortable (>= 10),
+sellable_marginal (0 to < 10), not_sellable (< 0).
 """
 from __future__ import annotations
 import argparse
@@ -19,7 +24,13 @@ from datetime import date
 
 from _loader import DEFAULT_TENANT, LoadError, _settings_env, resolve_product
 
-SELLABLE = ("attractive", "too_high")
+COMFORTABLE_PCT = 10
+
+
+def verdict(headroom_pct: float) -> str:
+    if headroom_pct >= COMFORTABLE_PCT:
+        return "sellable_comfortable"
+    return "sellable_marginal" if headroom_pct >= 0 else "not_sellable"
 
 
 def report(session, tenant: dict, product: str, as_of: date) -> None:
@@ -30,7 +41,7 @@ def report(session, tenant: dict, product: str, as_of: date) -> None:
     pid = resolve_product(session, tenant, product)
     inp = load_inputs(session, tenant["tenant_id"], pid, as_of)
     env = compute_envelope(inp)
-    market = load_market_prices(session, tenant["tenant_id"], pid, as_of)
+    market = load_market_prices(session, tenant["tenant_id"], pid, as_of)     # fresh rows only
     if not market:
         print(f"no fresh market prices for {product!r} as of {as_of}")
         return
@@ -39,24 +50,35 @@ def report(session, tenant: dict, product: str, as_of: date) -> None:
 
     exp = exponent_of(env.currency)
     fmt = lambda minor: f"{minor / 10 ** exp:.{exp}f}"    # noqa: E731
+    floor = env.floor_minor
     rows = []
     for channel in sorted({p.source for p in market}):
-        cmp = compare_to_market(env, [p for p in market if p.source == channel], rates)
-        rows.append((channel, cmp.market_reference_minor, cmp.position))
-    rows.sort(key=lambda r: r[1])
+        prices = [p for p in market if p.source == channel]
+        # one row at a time through the engine = that row converted to envelope currency / unit
+        each = [compare_to_market(env, [p], rates).market_reference_minor for p in prices]
+        latest = compare_to_market(env, prices, rates)                         # the engine's channel view
+        headroom = (latest.market_reference_minor - floor) / floor * 100
+        rows.append((channel, min(each), latest.market_reference_minor, max(each), latest.position, headroom))
 
-    print(f"{inp.product_name}: {env.currency} per {env.unit}, as of {as_of}; "
-          f"market_ref = latest fresh price per channel")
-    print("channel | market_ref | unit_cost | floor | target | ceiling | position | last_viable_sell")
-    for channel, ref, pos in rows:
-        print(" | ".join([channel, fmt(ref), fmt(env.unit_cost_minor), fmt(env.floor_minor), fmt(env.target_minor),
-                          fmt(env.ceiling_minor), pos, fmt(env.floor_minor)]))
-    sellable = [r for r in rows if r[2] in SELLABLE]
-    if sellable:
-        channel, _, pos = sellable[0]
-        print(f"Lowest channel where product is sellable: {channel} at {fmt(env.floor_minor)} (position: {pos})")
-    else:
-        print("Not sellable at any channel: cost exceeds market in all channels.")
+    print(f"{inp.product_name}: {env.currency} per {env.unit}, as of {as_of}; rows within each channel's "
+          f"freshness window (30 days by default); latest = the engine's market reference")
+    print("channel | min | latest | max | unit_cost | floor | target | ceiling | position_at_latest | "
+          "headroom_pct | last_viable_sell | verdict")
+    for channel, lo, latest, hi, pos, head in sorted(rows, key=lambda r: r[2]):
+        print(" | ".join([channel, fmt(lo), fmt(latest), fmt(hi), fmt(env.unit_cost_minor), fmt(floor),
+                          fmt(env.target_minor), fmt(env.ceiling_minor), pos, f"{head:+.1f}", fmt(floor),
+                          verdict(head)]))
+
+    print()
+    print(f"Floor price (last viable sell): {fmt(floor)} {env.currency}/{env.unit}")
+    print()
+    print("Channels ranked by headroom:")
+    for i, (channel, _, _, _, _, head) in enumerate(sorted(rows, key=lambda r: -r[5]), start=1):
+        side = "above" if head >= 0 else "below"
+        print(f"{i}. {channel} — {abs(head):.1f}% {side} floor ({verdict(head)})")
+    print()
+    failing = [r[0] for r in sorted(rows, key=lambda r: -r[5]) if r[5] < 0]
+    print(f"Channels not clearing the floor: {', '.join(failing) if failing else 'none'}")
 
 
 def main(argv=None) -> int:

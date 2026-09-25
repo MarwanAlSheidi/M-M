@@ -49,9 +49,27 @@ Lowest channel where product is sellable: mena-export at 1.832 (position: attrac
 ```
 
 ## Answer
-The lowest channel where this product is sellable is MENA export (market 1.838 OMR/kg = 4.78 USD/kg). The last
-viable sell price is 1.832 OMR/kg (about 4.76 USD/kg at the 0.3845 peg): below that price the configured 15%
-minimum margin is not met in any channel.
+`costing-studio/scripts/last_sell_price.py "Canned Light Tuna in Sunflower Oil"` (as of 2026-09-25; OMR per kg;
+min / latest / max over each channel's 30-day window; latest is the engine's market reference):
+
+```
+channel | min | latest | max | unit_cost | floor | target | ceiling | position_at_latest | headroom_pct | last_viable_sell | verdict
+oman-import | 0.827 | 1.496 | 1.496 | 1.557 | 1.832 | 2.224 | 2.831 | not_viable | -18.3 | 1.832 | not_sellable
+mena-export | 1.838 | 1.838 | 1.838 | 1.557 | 1.832 | 2.224 | 2.831 | attractive | +0.3 | 1.832 | sellable_marginal
+uae-export | 1.846 | 2.272 | 2.272 | 1.557 | 1.832 | 2.224 | 2.831 | attractive | +24.0 | 1.832 | sellable_comfortable
+oman-retail | 3.576 | 7.498 | 7.498 | 1.557 | 1.832 | 2.224 | 2.831 | too_high | +309.3 | 1.832 | sellable_comfortable
+```
+
+The floor price is 1.832 OMR/kg (about 4.76 USD/kg). It is the same for every channel because it depends only
+on cost and the configured margin floor. What differs is whether any channel clears it:
+
+- Channels clearing with comfortable margin: oman-retail (+309.3%, a shelf price, not a wholesale channel),
+  uae-export (+24.0%)
+- Channels clearing with marginal margin: mena-export (+0.3%)
+- Channels not clearing: oman-import (−18.3%)
+
+The practical minimum sell price is 1.832 OMR/kg. Below it, the product is not viable at any margin floor.
+Above it, viability depends on the channel.
 
 ## What changes the answer
 - Raw material: 0.80 attractive, 1.20+ not viable.
