@@ -71,6 +71,45 @@ on cost and the configured margin floor. What differs is whether any channel cle
 The practical minimum sell price is 1.832 OMR/kg. Below it, the product is not viable at any margin floor.
 Above it, viability depends on the channel.
 
+## Sensitivity to raw material price
+`costing-studio/scripts/last_sell_price.py "Canned Light Tuna in Sunflower Oil" --skipjack-range 1.00:1.80:0.05`
+(as of 2026-09-25; cells = headroom_pct of each channel's latest price over the floor; channel prices held fixed):
+
+```
+skipjack_usd | oman-import | mena-export | uae-export | oman-retail
+1.00 | +0.0 | +22.9 | +51.9 | +401.2
+1.05 | -2.7 | +19.5 | +47.7 | +387.5
+1.10 | -5.3 | +16.4 | +43.9 | +374.9
+1.15 | -7.9 | +13.2 | +39.9 | +361.7
+1.20 | -10.2 | +10.4 | +36.5 | +350.3
+1.25 | -12.3 | +7.8 | +33.3 | +339.8
+1.30 | -14.3 | +5.3 | +30.1 | +329.4
+1.35 | -16.3 | +2.9 | +27.1 | +319.6
+1.40 | -18.3 | +0.3 | +24.0 | +309.3
+1.45 | -20.1 | -1.9 | +21.3 | +300.3
+1.50 | -21.8 | -3.9 | +18.8 | +291.9
+1.55 | -23.4 | -5.9 | +16.3 | +283.7
+1.60 | -25.0 | -7.8 | +13.9 | +276.0
+1.65 | -26.7 | -9.9 | +11.4 | +267.5
+1.70 | -28.1 | -11.6 | +9.2 | +260.5
+1.75 | -29.5 | -13.3 | +7.1 | +253.5
+1.80 | -30.8 | -15.0 | +5.1 | +246.8
+
+oman-import: floor breach at skipjack >= 1.05 USD/kg
+mena-export: floor breach at skipjack >= 1.45 USD/kg
+uae-export: never in range
+oman-retail: never in range
+```
+
+At the benchmark skipjack price of 1.40 USD/kg, among wholesale channels only uae-export clears the floor with
+comfortable margin (+24.0%); mena-export clears by +0.3% and oman-retail, a shelf price, clears by +309.3%.
+The raw material price at which each channel stops clearing is listed above. Each 0.05 USD/kg on skipjack
+moves every channel's headroom by roughly 2–3 points (more for oman-retail, whose reference is highest):
+oman-import stops clearing from 1.05 USD/kg (headroom exactly 0.0% at 1.00), mena-export from 1.45 USD/kg, one
+step above the reference price, while uae-export stays above the floor across the whole range but falls from
+comfortable to marginal (below 10%) at 1.70 USD/kg and is at +5.1% at 1.80. The market side is unchanged
+throughout: only the floor moves, because it is built from costs and the margin floor alone.
+
 ## What changes the answer
 - Raw material: 0.80 attractive, 1.20+ not viable.
 - Market reference: the envelope does not depend on the market price (it is built from costs and margins
