@@ -53,7 +53,9 @@ minor unit (OMR 3 decimals): quote tiny rates per a larger unit (per MWh, per to
 `qty_per_unit`. Market prices count only while fresh (30 days unless a `market_sources` row says otherwise).
 
 ### First real product: canned light tuna (tripwire)
-`sample_data/canned_tuna_product.json` + `sample_data/canned_tuna_market.csv` (USD inputs, example OMR tenant, per kg):
+Locked on the first inputs (skipjack 0.90 USD/kg, one `oman-wholesale` source), now frozen in
+`apps/api/tests/fixtures/canned_tuna_v1_*`; `sample_data/canned_tuna_*` has since moved to the Oman-landed rate
+(1.40 USD/kg) and four market channels (see FINDINGS.md). USD inputs, example OMR tenant, per kg:
 
 | | OMR per kg |
 |---|---|

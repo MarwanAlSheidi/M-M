@@ -39,7 +39,7 @@ lines clinker 1,330 · gypsum 45 · energy 138 · bag 90 · labour 150 · freigh
 unit cost 1,868 · floor 2,198 · target 2,669 · ceiling 3,396 (baisa per bag); mirror ceiling 3,140.
 In `packages/costing/tests/test_envelope.py` and asserted through the API by `make smoke`.
 
-First real product (`sample_data/canned_tuna_*`, USD inputs, OMR tenant, per kg): unit cost 1,203 · floor 1,415 ·
+First real product (`apps/api/tests/fixtures/canned_tuna_v1_*`, the frozen first inputs; USD inputs, OMR tenant, per kg): unit cost 1,203 · floor 1,415 ·
 target 1,719 · ceiling 2,187 · market 1,377 · too_low (baisa). In `apps/api/tests/test_api_envelope.py`
 (`test_canned_tuna_tripwire`, as_of pinned to 2026-09-25).
 

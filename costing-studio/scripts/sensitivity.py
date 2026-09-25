@@ -51,7 +51,8 @@ def load_inputs(base: str) -> EnvelopeInputs:
 
 def load_market() -> list[MarketPrice]:
     with MARKET.open(newline="") as f:
-        return [MarketPrice(SOURCE, Money.from_major(r["price_major"], r["currency"]), r["unit"],
+        # per-row source when the CSV has the column (multi-channel), else the single legacy source
+        return [MarketPrice(r.get("source") or SOURCE, Money.from_major(r["price_major"], r["currency"]), r["unit"],
                             date.fromisoformat(r["observed_at"])) for r in csv.DictReader(f)]
 
 
@@ -73,7 +74,9 @@ def main(argv=None) -> None:
 
     print(NOTE)
     print()
-    print(f"all amounts {args.base} per {inp.base_unit} except skipjack_usd; market_ref = latest {SOURCE} price")
+    sources = sorted({p.source for p in market})
+    print(f"all amounts {args.base} per {inp.base_unit} except skipjack_usd; market_ref = median of the latest "
+          f"price per source ({', '.join(sources)})")
     cols = ["skipjack_usd", "unit_cost", "floor", "target", "ceiling", "market_ref", "position"]
     print(" | ".join(cols))
     price = args.lo

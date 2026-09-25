@@ -4,7 +4,7 @@ None of these values is verified. Each one needs a real number before the envelo
 
 | Value in the file | Source used | Question to ask to replace it |
 |---|---|---|
-| Frozen whole skipjack tuna, `rate` 0.90 USD/kg | Market report midpoint, not verified. (Note: 0.90 is below the 1.30–1.70 USD/kg Bangkok benchmark quoted in `FINDINGS.md`.) | What did we pay per kg on the last purchase order? |
+| Frozen whole skipjack tuna, `rate` 1.40 USD/kg | Midpoint of the Oman frozen skipjack range 1.37–1.49 USD/kg (Tridge, May 2026). **Still a benchmark, not an actual PO price.** (Was 0.90, an unverified market-report figure.) | What did we pay per kg on the last purchase order? |
 | Direct labour, `rate` 2.50 USD/hour | Assumed. | What is the actual loaded hourly cost? |
 | Energy (cooking, retort, machinery), `rate` 0.08 USD/kWh | Assumed Oman industrial tariff. | What is our actual tariff? |
 | Factory overhead and depreciation, `rate` 0.25 USD/kg | Assumed. | What does the finance team allocate per kg? |

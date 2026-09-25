@@ -29,10 +29,29 @@ skipjack_usd | unit_cost | floor | target | ceiling | market_ref | position
 Benchmark source: Infofish and Thai Union weekly quotes (2024-2025), whole frozen FOB; placeholder pending
 the actual purchase price.
 
-## What we do not know yet
-- Actual frozen skipjack purchase price
-- Actual selling price achieved (if any sales exist)
-- Whether the product spec (70% fish, 185g can) is fixed or adjustable
+## Market channels (benchmarks, not verified sales)
+- Oman import: 2.15 – 3.89 USD/kg
+- UAE export: 4.80 – 5.91 USD/kg
+- MENA export: 4.78 USD/kg
+- Oman retail (shelf, not relevant for wholesale): 9.30 – 19.50 USD/kg
+
+## Last viable sell price per channel (at skipjack 1.40 USD/kg)
+`costing-studio/scripts/last_sell_price.py "Canned Light Tuna in Sunflower Oil"` (as of 2026-09-25; OMR per kg;
+market_ref = latest price per channel), output verbatim:
+
+```
+channel | market_ref | unit_cost | floor | target | ceiling | position | last_viable_sell
+oman-import | 1.496 | 1.557 | 1.832 | 2.224 | 2.831 | not_viable | 1.832
+mena-export | 1.838 | 1.557 | 1.832 | 2.224 | 2.831 | attractive | 1.832
+uae-export | 2.272 | 1.557 | 1.832 | 2.224 | 2.831 | attractive | 1.832
+oman-retail | 7.498 | 1.557 | 1.832 | 2.224 | 2.831 | too_high | 1.832
+Lowest channel where product is sellable: mena-export at 1.832 (position: attractive)
+```
+
+## Answer
+The lowest channel where this product is sellable is MENA export (market 1.838 OMR/kg = 4.78 USD/kg). The last
+viable sell price is 1.832 OMR/kg (about 4.76 USD/kg at the 0.3845 peg): below that price the configured 15%
+minimum margin is not met in any channel.
 
 ## What changes the answer
 - Raw material: 0.80 attractive, 1.20+ not viable.

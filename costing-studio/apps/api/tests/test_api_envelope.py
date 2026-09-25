@@ -346,10 +346,12 @@ def test_retrain_promotes_champion_and_predict_serves_it(admin_db, product, clie
 from decimal import Decimal  # noqa: E402
 from pathlib import Path  # noqa: E402
 
-SAMPLE = Path(__file__).resolve().parents[3] / "sample_data"
+# Frozen copy of the first real-product inputs (skipjack 0.90 USD/kg, one oman-wholesale source) that this
+# tripwire was locked on; sample_data/ has since moved to the Oman-landed rate and multi-channel benchmarks.
+SAMPLE = Path(__file__).resolve().parent / "fixtures"
+TUNA_PRODUCT, TUNA_MARKET = SAMPLE / "canned_tuna_v1_product.json", SAMPLE / "canned_tuna_v1_market.csv"
 TUNA_AS_OF = date(2026, 9, 25)      # pinned so the September market rows stay inside the 30-day window
-needs_sample = pytest.mark.skipif(not (SAMPLE / "canned_tuna_product.json").exists(),
-                                  reason="sample_data/ not in this checkout (the api image copies apps/ and packages/)")
+needs_sample = pytest.mark.skipif(not TUNA_PRODUCT.exists(), reason="tests/fixtures missing")
 
 
 @pytest.fixture
@@ -378,7 +380,7 @@ def _load_canned_tuna(tenant_id: str, with_market: bool = True) -> str:
     from costing_api.jobs.market_refresh import ingest_rows
     from costing_api.schemas import CostElementIn, MarginConfigIn, ProductIn
     from costing_api.services import product_service
-    spec = json.loads((SAMPLE / "canned_tuna_product.json").read_text())
+    spec = json.loads(TUNA_PRODUCT.read_text())
     tenant = {"tenant_id": tenant_id, "user_id": None, "role": "admin"}
     vf = date(2026, 1, 1)           # the file has no valid_from (loader default: today); pin it for as_of
     with tenant_session(tenant_id) as s:
@@ -391,7 +393,7 @@ def _load_canned_tuna(tenant_id: str, with_market: bool = True) -> str:
         m = MarginConfigIn(**{**spec["margin"], "valid_from": vf})
         product_service.set_margin_config(s, tenant, pid, m.min_pct, m.target_pct, m.max_pct, m.valid_from)
         if with_market:
-            with (SAMPLE / "canned_tuna_market.csv").open() as f:
+            with TUNA_MARKET.open() as f:
                 rows = [{"price": r["price_major"], "currency": r["currency"], "unit": r["unit"],
                          "observed_at": date.fromisoformat(r["observed_at"])} for r in csv.DictReader(f)]
             assert ingest_rows(s, tenant_id, pid, "oman-wholesale", rows)["rows"] == 4
@@ -425,7 +427,7 @@ def test_cost_lines_round_in_element_currency_before_conversion(temp_tenants):
     converted to the base currency and rounded again; the unit cost is the sum of those lines."""
     from costing.fx import FxResolver
     usd_to_omr = FxResolver().rate("USD", "OMR")                                  # 0.3845 peg
-    spec = json.loads((SAMPLE / "canned_tuna_product.json").read_text())
+    spec = json.loads(TUNA_PRODUCT.read_text())
     exact = {e["name"]: Decimal(e["rate"]) * Decimal(e["qty_per_unit"]) for e in spec["cost_elements"]}
     cents = {n: int((v * 100).quantize(Decimal(1), rounding="ROUND_HALF_UP")) for n, v in exact.items()}
     baisa = {n: int((Decimal(c) * usd_to_omr * 10).quantize(Decimal(1), rounding="ROUND_HALF_UP"))

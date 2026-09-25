@@ -12,7 +12,7 @@
   },
   "cost_elements": [
     {"name": "Frozen whole skipjack tuna", "unit": "kg",
-     "rate": "1.40", "currency": "USD",
+     "rate": "0.90", "currency": "USD",
      "qty_per_unit": "1.84"},
     {"name": "Sunflower oil", "unit": "kg",
      "rate": "1.50", "currency": "USD",
