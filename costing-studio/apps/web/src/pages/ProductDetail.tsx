@@ -11,6 +11,9 @@ import { PositionIndicator } from "../components/PositionIndicator";
 import { SHAPTop5 } from "../components/SHAPTop5";
 import { formatMinor } from "../money";
 
+// The brief lives in the repository, not in the web app, so link to it there.
+const BRIEF_URL = "https://github.com/MarwanAlSheidi/M-M/blob/claude/ml-integrated-project-s9floa/DECISION_BRIEF.md";
+
 export default function ProductDetail() {
   const { id = "" } = useParams();
   const { t } = useTranslation();
@@ -42,6 +45,10 @@ export default function ProductDetail() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-8">
+      <p className="text-sm border rounded px-3 py-2 bg-amber-50 border-amber-200 text-amber-900">
+        {t("benchmarkNotice")}{" "}
+        <a className="underline" href={BRIEF_URL} target="_blank" rel="noreferrer">DECISION_BRIEF.md</a>.
+      </p>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link to="/products" className="text-sm underline text-slate-600">← {t("products")}</Link>

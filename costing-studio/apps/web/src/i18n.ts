@@ -41,6 +41,7 @@ const en = {
   v_sellable_comfortable: "Comfortable", v_sellable_marginal: "Marginal", v_not_sellable: "Not sellable",
   ct_trade: "trade", ct_retail: "retail", ct_export: "export", ct_import: "import",
   defaultExclusionHint: "Retail and import channels start unticked by default; tick them to include.",
+  benchmarkNotice: "Prices are benchmarks, not verified purchases. See",
   simAsOf: "Market prices as of {{as_of}}", maxMarginFromProduct: "ceiling uses the product's max margin ({{pct}}%)",
 };
 const ar = {
@@ -84,6 +85,7 @@ const ar = {
   v_sellable_comfortable: "مريح", v_sellable_marginal: "هامشي", v_not_sellable: "غير قابل للبيع",
   ct_trade: "تجارة", ct_retail: "تجزئة", ct_export: "تصدير", ct_import: "استيراد",
   defaultExclusionHint: "قنوات التجزئة والاستيراد غير محددة افتراضياً؛ حدّدها لتضمينها.",
+  benchmarkNotice: "الأسعار مرجعية وليست مشتريات مؤكدة. راجع",
   simAsOf: "أسعار السوق بتاريخ {{as_of}}", maxMarginFromProduct: "السقف يستخدم الهامش الأقصى للمنتج ({{pct}}%)",
 };
 
