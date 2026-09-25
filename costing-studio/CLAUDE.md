@@ -24,6 +24,9 @@ A product is data, never code: a `products` row plus `cost_elements` (+ `product
 - Positions (M = market reference = median of the latest fresh price per source, per product unit):
   M < unit_cost → not_viable · unit_cost ≤ M < floor → too_low · floor ≤ M ≤ ceiling → attractive ·
   M > ceiling → too_high.
+- Cost lines round to the element's own currency minor unit before conversion. Changing the tenant base
+  currency therefore moves the envelope by a few minor units. This is intentional: it matches how invoices
+  are issued. (Pinned by `test_cost_lines_round_in_element_currency_before_conversion`.)
 - No ML in the envelope math. ML forecasts (market price, input-cost drift, elasticity) are advisory.
 - Every envelope computation is stored in `pricing_snapshots` with its inputs; audit/ML read those.
 - Cost elements and margin config are dated versions; a new version closes the open one.
@@ -35,6 +38,10 @@ A product is data, never code: a `products` row plus `cost_elements` (+ `product
 lines clinker 1,330 · gypsum 45 · energy 138 · bag 90 · labour 150 · freight (0.30 USD) 115 ·
 unit cost 1,868 · floor 2,198 · target 2,669 · ceiling 3,396 (baisa per bag); mirror ceiling 3,140.
 In `packages/costing/tests/test_envelope.py` and asserted through the API by `make smoke`.
+
+First real product (`sample_data/canned_tuna_*`, USD inputs, OMR tenant, per kg): unit cost 1,203 · floor 1,415 ·
+target 1,719 · ceiling 2,187 · market 1,377 · too_low (baisa). In `apps/api/tests/test_api_envelope.py`
+(`test_canned_tuna_tripwire`, as_of pinned to 2026-09-25).
 
 ## Definition of done
 - `make unit` passes (envelope, money, fx, units, serialize; ML harness incl. LightGBM walk-forward).

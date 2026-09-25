@@ -338,3 +338,109 @@ def test_retrain_promotes_champion_and_predict_serves_it(admin_db, product, clie
             c.execute(text("DELETE FROM model_registry WHERE tenant_id = :t AND target = :tg"), {"t": TENANT, "tg": target})
         for a in artifacts:
             shutil.rmtree(a, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------------------------
+# First real product: canned light tuna (sample_data/canned_tuna_*), loaded through the same schemas
+# and service calls as scripts/load_product.py / load_market_prices.py, in throwaway tenants.
+from decimal import Decimal  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+SAMPLE = Path(__file__).resolve().parents[3] / "sample_data"
+TUNA_AS_OF = date(2026, 9, 25)      # pinned so the September market rows stay inside the 30-day window
+needs_sample = pytest.mark.skipif(not (SAMPLE / "canned_tuna_product.json").exists(),
+                                  reason="sample_data/ not in this checkout (the api image copies apps/ and packages/)")
+
+
+@pytest.fixture
+def temp_tenants(admin_db):
+    """Factory for throwaway tenants with a given base currency; everything they own is deleted after."""
+    made = []
+
+    def make(base_currency: str) -> str:
+        tid = str(uuid.uuid4())
+        with admin_db.begin() as c:
+            c.execute(text("INSERT INTO tenants (id, name, base_currency) VALUES (:i, :n, :c)"),
+                      {"i": tid, "n": f"tripwire-{base_currency}-{tid[:6]}", "c": base_currency})
+        made.append(tid)
+        return tid
+    yield make
+    with admin_db.begin() as c:
+        for tid in made:
+            for tbl in ("pricing_snapshots", "market_prices", "products", "audit_log"):
+                c.execute(text(f"DELETE FROM {tbl} WHERE tenant_id = :t"), {"t": tid})
+            c.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": tid})
+
+
+def _load_canned_tuna(tenant_id: str, with_market: bool = True) -> str:
+    import csv
+    from costing_api.jobs.base import tenant_session
+    from costing_api.jobs.market_refresh import ingest_rows
+    from costing_api.schemas import CostElementIn, MarginConfigIn, ProductIn
+    from costing_api.services import product_service
+    spec = json.loads((SAMPLE / "canned_tuna_product.json").read_text())
+    tenant = {"tenant_id": tenant_id, "user_id": None, "role": "admin"}
+    vf = date(2026, 1, 1)           # the file has no valid_from (loader default: today); pin it for as_of
+    with tenant_session(tenant_id) as s:
+        p = ProductIn(**{k: spec[k] for k in ("name", "category", "base_unit")}, attributes=spec["attributes"])
+        pid = product_service.create_product(s, tenant, p.name, p.category, p.base_unit, p.attributes)["id"]
+        for raw in spec["cost_elements"]:
+            e = CostElementIn(**{**raw, "valid_from": vf})
+            product_service.add_cost_element(s, tenant, pid, name=e.name, unit=e.unit, rate=e.rate,
+                                             currency=e.currency, valid_from=e.valid_from, qty_per_unit=e.qty_per_unit)
+        m = MarginConfigIn(**{**spec["margin"], "valid_from": vf})
+        product_service.set_margin_config(s, tenant, pid, m.min_pct, m.target_pct, m.max_pct, m.valid_from)
+        if with_market:
+            with (SAMPLE / "canned_tuna_market.csv").open() as f:
+                rows = [{"price": r["price_major"], "currency": r["currency"], "unit": r["unit"],
+                         "observed_at": date.fromisoformat(r["observed_at"])} for r in csv.DictReader(f)]
+            assert ingest_rows(s, tenant_id, pid, "oman-wholesale", rows)["rows"] == 4
+    return str(pid)
+
+
+def _envelope(tenant_id: str, product_id: str) -> dict:
+    from costing_api.jobs.base import tenant_session
+    from costing_api.services.envelope_service import build_envelope
+    with tenant_session(tenant_id) as s:
+        return build_envelope(s, tenant_id, product_id, as_of=TUNA_AS_OF, computed_by="tripwire")
+
+
+@needs_sample
+def test_canned_tuna_tripwire(temp_tenants):
+    """First real-product tripwire (README): OMR tenant, 15/30/45 %, latest oman-wholesale price."""
+    tid = temp_tenants("OMR")
+    e = _envelope(tid, _load_canned_tuna(tid))
+    expected = {"unit_cost_minor": 1203, "floor_minor": 1415, "target_minor": 1719, "ceiling_minor": 2187}
+    for k, want in expected.items():
+        assert abs(e[k] - want) <= 1, (k, e[k], want)
+    assert e["currency"] == "OMR" and e["unit"] == "kg" and e["ceiling_source"] == "max_pct"
+    m = e["market"]
+    assert abs(m["market_reference_minor"] - 1377) <= 1 and m["sources_used"] == ["oman-wholesale"]
+    assert m["position"] == "too_low"            # unit cost 1.203 <= 1.377 < floor 1.415
+
+
+@needs_sample
+def test_cost_lines_round_in_element_currency_before_conversion(temp_tenants):
+    """Contract: each line is rate x qty rounded to the ELEMENT currency's minor unit (USD cents), then
+    converted to the base currency and rounded again; the unit cost is the sum of those lines."""
+    from costing.fx import FxResolver
+    usd_to_omr = FxResolver().rate("USD", "OMR")                                  # 0.3845 peg
+    spec = json.loads((SAMPLE / "canned_tuna_product.json").read_text())
+    exact = {e["name"]: Decimal(e["rate"]) * Decimal(e["qty_per_unit"]) for e in spec["cost_elements"]}
+    cents = {n: int((v * 100).quantize(Decimal(1), rounding="ROUND_HALF_UP")) for n, v in exact.items()}
+    baisa = {n: int((Decimal(c) * usd_to_omr * 10).quantize(Decimal(1), rounding="ROUND_HALF_UP"))
+             for n, c in cents.items()}
+
+    usd_t, omr_t = temp_tenants("USD"), temp_tenants("OMR")
+    usd = _envelope(usd_t, _load_canned_tuna(usd_t, with_market=False))
+    omr = _envelope(omr_t, _load_canned_tuna(omr_t, with_market=False))
+
+    assert {l["name"]: l["amount_minor"] for l in usd["lines"]} == cents
+    assert usd["currency"] == "USD" and usd["unit_cost_minor"] == sum(cents.values()) == 313        # 3.13 USD
+    assert {l["name"]: l["amount_minor"] for l in omr["lines"]} == baisa
+    assert omr["currency"] == "OMR" and omr["unit_cost_minor"] == sum(baisa.values()) == 1203       # 1.203 OMR
+    # Not "convert the exact amount, then round" (1.201 OMR), and not "sum in USD, then convert" (1.203485 -> 1.203
+    # here by coincidence, so the per-line baisa dict above is what pins the order).
+    exact_then_convert = int((sum(exact.values()) * usd_to_omr * 1000).quantize(Decimal(1), rounding="ROUND_HALF_UP"))
+    assert exact_then_convert == 1201 and omr["unit_cost_minor"] != exact_then_convert
+    assert cents["Salt"] == 0                    # 0.002 USD per kg rounds away in its own currency

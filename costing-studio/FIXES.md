@@ -1,5 +1,12 @@
 # Fixes
 
+## First real product: canned tuna tripwire
+
+- sample_data/canned_tuna_product.json: "rate_major" -> "rate" on every cost element (the loader/API field name); no values changed.
+- README.md: canned tuna envelope as the first real-product example, with the note that the earlier hand values skipped per-line rounding.
+- CLAUDE.md: per-line rounding in the element currency documented as intentional (verified in code: Money * qty rounds to the element currency's minor unit, to_base converts and rounds again); canned tuna tripwire listed.
+- apps/api/tests/test_api_envelope.py: test_canned_tuna_tripwire (1,203 / 1,415 / 1,719 / 2,187 / 1,377 / too_low within 1 baisa, loaded through the loader's schemas + service calls in a throwaway tenant, as_of pinned to 2026-09-25) and test_cost_lines_round_in_element_currency_before_conversion (USD tenant = sum of cents, OMR tenant = sum of per-line converted baisa; not convert-then-round). Both skip where sample_data/ is absent (api image).
+
 ## Follow-up: dead code removed, product loaders
 
 - packages/costing/src/costing/models.py: deleted -> held only DealInputs, CostLine, CostingResult (tuna); nothing else imported it (no CostType/Incoterm literals existed).

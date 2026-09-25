@@ -49,6 +49,23 @@ Both default to the seeded example tenant (`--tenant <id>` for another). Amounts
 minor unit (OMR 3 decimals): quote tiny rates per a larger unit (per MWh, per tonne) and scale
 `qty_per_unit`. Market prices count only while fresh (30 days unless a `market_sources` row says otherwise).
 
+### First real product: canned light tuna (tripwire)
+`sample_data/canned_tuna_product.json` + `sample_data/canned_tuna_market.csv` (USD inputs, example OMR tenant, per kg):
+
+| | OMR per kg |
+|---|---|
+| Unit cost | 1.203 |
+| Floor (15% margin) | 1.415 |
+| Target (30% margin) | 1.719 |
+| Ceiling (45% margin) | 2.187 |
+| Market ref (latest `oman-wholesale` price) | 1.377 |
+| Position | `too_low` |
+
+The first hand-computed values (1.201 / 1.413 / 1.716 / 2.184) were wrong: they did not round each cost line to
+its currency's minor unit before summing. The engine is correct and keeps per-line rounding; this envelope is
+pinned by `test_canned_tuna_tripwire`. The CSV rows are dated September 2026, so after 30 days they stop counting
+as fresh: refresh the dates before re-running the loader.
+
 ## API
 - `POST /api/v1/auth/login` → JWT; `GET /api/v1/auth/me`
 - `GET /api/v1/products` · `POST /api/v1/products` (admin) · `GET|PATCH /api/v1/products/{id}` (patch: admin)
