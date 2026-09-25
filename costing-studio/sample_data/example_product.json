@@ -1,0 +1,15 @@
+{
+  "name": "White bread loaf 600g",
+  "category": "bakery",
+  "base_unit": "loaf",
+  "attributes": {"weight_g": 600, "shelf_life_days": 4},
+  "cost_elements": [
+    {"name": "flour", "unit": "kg", "rate": "0.380", "currency": "OMR", "qty_per_unit": "0.36", "valid_from": "2026-01-01"},
+    {"name": "yeast & improver", "unit": "kg", "rate": "3.200", "currency": "OMR", "qty_per_unit": "0.008", "valid_from": "2026-01-01"},
+    {"name": "oven energy", "unit": "MWh", "rate": "25.500", "currency": "OMR", "qty_per_unit": "0.0009", "valid_from": "2026-01-01"},
+    {"name": "bag & label", "unit": "each", "rate": "0.012", "currency": "OMR", "valid_from": "2026-01-01"},
+    {"name": "labour & overhead", "unit": "loaf", "rate": "0.070", "currency": "OMR", "valid_from": "2026-01-01"},
+    {"name": "imported packaging film", "unit": "loaf", "rate": "0.01", "currency": "USD", "valid_from": "2026-01-01"}
+  ],
+  "margin": {"min_pct": "0.15", "target_pct": "0.30", "max_pct": "0.45", "valid_from": "2026-01-01"}
+}

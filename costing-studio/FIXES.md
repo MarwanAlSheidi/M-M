@@ -1,5 +1,16 @@
 # Fixes
 
+## Follow-up: dead code removed, product loaders
+
+- packages/costing/src/costing/models.py: deleted -> held only DealInputs, CostLine, CostingResult (tuna); nothing else imported it (no CostType/Incoterm literals existed).
+- packages/costing/src/costing/serialize.py: removed to_json/from_json and the DealInputs import -> _enc/_dec unchanged.
+- packages/costing/tests/test_serialize.py: replaced by a direct _enc/_dec round-trip test (Decimal, date, set, Money, nested dict, list, tuple).
+- packages/costing/tests/conftest.py: deleted -> its only fixture (base_deal_kwargs) served the old DealInputs test.
+- scripts/load_product.py, scripts/load_market_prices.py, scripts/_loader.py: load a product (JSON) and market prices (CSV) through product_service / ingest_rows in one tenant-scoped costing_app transaction, then print the envelope; amounts that would be rounded to the currency's minor unit are refused instead of silently rounded.
+- sample_data/example_product.json, sample_data/example_market_prices.csv: loader examples (bread loaf, hand-checked envelope 0.272 / 0.320 / 0.389 / 0.495 OMR).
+- apps/api/tests/test_loaders.py: runs both loaders end to end (values, duplicate refusal, idempotent prices, rounding and margin refusals, nothing written on error); skipped inside the api image, which has no scripts/.
+- README.md: "Load a real product" section with one-line examples.
+
 ## Follow-up: promotion path, model choice, dead code, Docker
 
 - apps/api/tests/test_api_envelope.py: added test_retrain_promotes_champion_and_predict_serves_it -> the promotion acceptance branch had never run. 500 days of a folded-sine price series (nonlinear in the lags) make LightGBM beat ridge under the unchanged criteria; asserts one champion row, artifact on disk, /predict serves it, and a second retrain on the same data is rejected ("relative mape gain 0.0000 < 0.05") leaving the registry unchanged. Promotion worked as written; no code fix was needed.

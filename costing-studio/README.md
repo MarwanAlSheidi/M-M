@@ -36,6 +36,19 @@ Web app: `cd apps/web && npm i && npm run dev`, open http://localhost:5173 and s
 before `make seed`). Set a real user's password with
 `cd apps/api/scripts && python set_password.py <email>` (as the migrator).
 
+## Load a real product (no code)
+Describe the product in JSON (name, base unit, cost elements with rates, margin) and its market prices in a
+CSV (`observed_at,price_major,currency,unit`); both go through the same service layer as the API and print
+the resulting envelope. Examples: `sample_data/example_product.json`, `sample_data/example_market_prices.csv`.
+```bash
+export DATABASE_URL=postgresql+psycopg://costing_app:app_pw@localhost:5432/costing   # the API role; RLS applies
+uv run python scripts/load_product.py sample_data/example_product.json
+uv run python scripts/load_market_prices.py "White bread loaf 600g" shop-audit sample_data/example_market_prices.csv
+```
+Both default to the seeded example tenant (`--tenant <id>` for another). Amounts must fit the currency's
+minor unit (OMR 3 decimals): quote tiny rates per a larger unit (per MWh, per tonne) and scale
+`qty_per_unit`. Market prices count only while fresh (30 days unless a `market_sources` row says otherwise).
+
 ## API
 - `POST /api/v1/auth/login` → JWT; `GET /api/v1/auth/me`
 - `GET /api/v1/products` · `POST /api/v1/products` (admin) · `GET|PATCH /api/v1/products/{id}` (patch: admin)

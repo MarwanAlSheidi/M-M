@@ -1,11 +1,9 @@
-"""Lossless JSON round-trip for DealInputs (stored as deals.inputs_snapshot)."""
+"""Lossless JSON encoding helpers (Decimal, date, set, Money) used for pricing snapshots."""
 from __future__ import annotations
-from dataclasses import fields
 from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from .models import DealInputs
 from .money import Money
 
 
@@ -41,14 +39,3 @@ def _dec(v: Any) -> Any:
         return [_dec(x) for x in v]
     return v
 
-
-def to_json(inp: DealInputs) -> dict:
-    # Iterate fields explicitly: dataclasses.asdict would flatten Money.
-    return {f.name: _enc(getattr(inp, f.name)) for f in fields(inp)}
-
-
-def from_json(data: dict) -> DealInputs:
-    kw = {k: _dec(v) for k, v in data.items()}
-    kw["locked_rates"] = {k: Decimal(str(v)) for k, v in (kw.get("locked_rates") or {}).items()}
-    kw["ml_fields"] = set(kw.get("ml_fields") or [])
-    return DealInputs(**kw)
