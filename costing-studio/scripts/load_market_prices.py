@@ -1,5 +1,5 @@
 """Load market prices from a CSV for one product + source (same path as the API ingest), then print
-the envelope with its market position.
+the envelope with its market position (skipped, with no snapshot, when no new rows were inserted).
 
     DATABASE_URL=postgresql+psycopg://costing_app:app_pw@localhost:5432/costing \\
       uv run python scripts/load_market_prices.py "Portland cement 50kg bag" retail-survey prices.csv
@@ -112,6 +112,9 @@ def main(argv=None) -> int:
     pid, res = run_in_tenant(args.tenant, lambda s, t: load(s, t, args.product, rows))
     print(f"inserted {res['rows']} of {res['received']} rows into {', '.join(res['sources'])} "
           f"(duplicates of existing (source, date) are skipped)")
+    if res["rows"] == 0:          # nothing new: the envelope and market position cannot have moved
+        print("no new rows, skipping envelope")
+        return 0
     run_in_tenant(args.tenant, lambda s, t: print_envelope(s, t, pid, "load_market_prices"))
     return 0
 

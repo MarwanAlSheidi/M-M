@@ -186,3 +186,21 @@ def test_dry_run_prints_the_diff_and_writes_nothing(product_file, tmp_path):
     same = run("scripts/load_product.py", f, "--dry-run")
     assert "attributes: unchanged" in same.stdout and "cost elements: unchanged" in same.stdout \
         and "margin: unchanged" in same.stdout, same.stdout
+
+
+def test_market_reload_with_identical_csv_skips_the_envelope(product_file, tmp_path):
+    name, f = product_file
+    assert run("scripts/load_product.py", f).returncode == 0
+    csv = tmp_path / "prices.csv"
+    csv.write_text("observed_at,price_major,currency,unit\n" + "\n".join(
+        f"{date.today() - timedelta(days=d)},{p},OMR,loaf" for d, p in ((1, "0.300"), (3, "0.310"))))
+    snaps = lambda: _state(name)["snapshots"]      # noqa: E731
+    s0 = snaps()
+    first = run("scripts/load_market_prices.py", name, "shop-audit", csv)
+    assert first.returncode == 0 and "inserted 2 of 2 rows" in first.stdout, first.stderr
+    assert snaps() == s0 + 1                                                   # first run: one snapshot
+    second = run("scripts/load_market_prices.py", name, "shop-audit", csv)
+    assert second.returncode == 0, second.stderr
+    assert "inserted 0 of 2 rows" in second.stdout and "no new rows, skipping envelope" in second.stdout
+    assert "envelope per" not in second.stdout, second.stdout
+    assert snaps() == s0 + 1                                                   # second run: none
