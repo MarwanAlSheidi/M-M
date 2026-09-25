@@ -1,0 +1,44 @@
+{
+  "name": "Canned Light Tuna in Sunflower Oil",
+  "base_unit": "kg",
+  "category": "seafood",
+  "attributes": {
+    "pack_size": "185g can",
+    "fish_species": "skipjack",
+    "pack_medium": "sunflower oil",
+    "market_region": "Oman/GCC",
+    "yield_whole_to_meat": 0.38,
+    "fish_content_pct": 0.70
+  },
+  "cost_elements": [
+    {"name": "Frozen whole skipjack tuna", "unit": "kg",
+     "rate_major": "0.90", "currency": "USD",
+     "qty_per_unit": "1.84"},
+    {"name": "Sunflower oil", "unit": "kg",
+     "rate_major": "1.50", "currency": "USD",
+     "qty_per_unit": "0.15"},
+    {"name": "Salt", "unit": "kg",
+     "rate_major": "0.20", "currency": "USD",
+     "qty_per_unit": "0.01"},
+    {"name": "Tinplate can 185g", "unit": "can",
+     "rate_major": "0.12", "currency": "USD",
+     "qty_per_unit": "5.41"},
+    {"name": "Carton and label", "unit": "unit",
+     "rate_major": "0.03", "currency": "USD",
+     "qty_per_unit": "5.41"},
+    {"name": "Direct labour", "unit": "hour",
+     "rate_major": "2.50", "currency": "USD",
+     "qty_per_unit": "0.032"},
+    {"name": "Energy (cooking, retort, machinery)", "unit": "kWh",
+     "rate_major": "0.08", "currency": "USD",
+     "qty_per_unit": "1.25"},
+    {"name": "Factory overhead and depreciation", "unit": "kg",
+     "rate_major": "0.25", "currency": "USD",
+     "qty_per_unit": "1.00"}
+  ],
+  "margin": {
+    "min_pct": "0.15",
+    "target_pct": "0.30",
+    "max_pct": "0.45"
+  }
+}
