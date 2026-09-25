@@ -37,6 +37,8 @@ before `make seed`). Set a real user's password with
 `cd apps/api/scripts && python set_password.py <email>` (as the migrator).
 
 ## Load a real product (no code)
+Start with DECISION_BRIEF.md for the current finding, or FINDINGS.md for the underlying analysis.
+
 The canned tuna example is a template, not a real case. Its raw material price is a market report
 placeholder. See FINDINGS.md before drawing conclusions from its envelope.
 
