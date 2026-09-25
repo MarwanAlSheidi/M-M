@@ -37,6 +37,9 @@ before `make seed`). Set a real user's password with
 `cd apps/api/scripts && python set_password.py <email>` (as the migrator).
 
 ## Load a real product (no code)
+The canned tuna example is a template, not a real case. Its raw material price is a market report
+placeholder. See FINDINGS.md before drawing conclusions from its envelope.
+
 Describe the product in JSON (name, base unit, cost elements with rates, margin) and its market prices in a
 CSV (`observed_at,price_major,currency,unit`); both go through the same service layer as the API and print
 the resulting envelope. Examples: `sample_data/example_product.json`, `sample_data/example_market_prices.csv`.
