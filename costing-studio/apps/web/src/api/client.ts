@@ -129,3 +129,5 @@ export interface SimRequest {
 }
 /** Read-only what-if: nothing is stored server-side. */
 export const simulate = (req: SimRequest) => api.post<SimResult>("/api/v1/simulate", req).then((r) => r.data);
+export const exportSimulationPdf = (req: SimRequest) =>
+  api.post<Blob>("/api/v1/simulate/export.pdf", req, { responseType: "blob" }).then((r) => r.data);

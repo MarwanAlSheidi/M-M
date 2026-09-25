@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
-import { errText, getProduct, listProducts, SimRequest, simulate, Verdict } from "../api/client";
+import { errText, exportSimulationPdf, getProduct, listProducts, SimRequest, simulate, Verdict } from "../api/client";
 import { PositionChip, STATUS } from "../components/PositionIndicator";
 import { formatMinor } from "../money";
 
@@ -17,6 +17,17 @@ const VERDICT: Record<Verdict, { color: string; tint: string; icon: string }> = 
   sellable_marginal: STATUS.too_low,
   not_sellable: STATUS.not_viable,
 };
+
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "product";
+
+function saveBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -63,6 +74,11 @@ export default function Simulate() {
     placeholderData: (prev) => prev, retry: false,
   });
   const r = result.data;
+  // the PDF is the same read-only simulation, for the inputs on screen now (not the debounced ones)
+  const pdf = useMutation({
+    mutationFn: () => exportSimulationPdf(req!),
+    onSuccess: (blob) => saveBlob(blob, `costing-${slug(product.data?.name ?? "")}-${today()}.pdf`),
+  });
   const fmt = (m: number) => (r ? formatMinor(m, r.currency) : "—");
   const field = (label: string, value: string, set: (v: string) => void, props: Record<string, unknown> = {}) => (
     <label className="text-sm block">
@@ -74,9 +90,18 @@ export default function Simulate() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">{t("simulate")}</h1>
-        <p className="text-sm text-slate-600">{t("simulateHint")}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">{t("simulate")}</h1>
+          <p className="text-sm text-slate-600">{t("simulateHint")}</p>
+        </div>
+        <div className="text-end">
+          <button type="button" className="border rounded px-3 py-2 text-sm disabled:opacity-50"
+            disabled={!req || !r || pdf.isPending} onClick={() => pdf.mutate()}>
+            {pdf.isPending ? "…" : t("downloadPdf")}
+          </button>
+          {pdf.isError && <div className="text-rose-700 text-xs mt-1">{errText(pdf.error)}</div>}
+        </div>
       </div>
       <div className="grid md:grid-cols-[18rem_1fr] gap-8">
         <form className="space-y-3 min-w-0" onSubmit={(e) => e.preventDefault()}>

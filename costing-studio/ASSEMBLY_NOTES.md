@@ -34,8 +34,9 @@ jobs, `test_backtest_walk_forward.py`, the web app. `make smoke` is the first ru
 9. [DESIGN] ML-fill mode returns 422 when the request currency/unit differs from the model target;
    no conversion was designed for that path.
 10. `hs_duty_rates` unique index uses NULLS NOT DISTINCT so the NULL-origin seed row is idempotent (PG15+).
-11. Dropped unused `weasyprint` (needs system libs in slim images) and `anthropic` deps.
-    Added `libgomp1` to the Dockerfile for LightGBM.
+11. WeasyPrint restored for PDF export; requires libpango and libharfbuzz in the image; fonts bundled in
+    the repo to make output deterministic. Dropped the unused `anthropic` dep. Added `libgomp1` to the
+    Dockerfile for LightGBM.
 12. `make golden` clears old fixtures first: deal_refs contain the batch id, so reruns would pile up.
 13. RLS policy-count test matches the final table list (fx_rates excluded, job_runs included).
 14. Admin job routes require role admin; `fx_refresh` requires platform_admin.

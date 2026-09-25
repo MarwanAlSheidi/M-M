@@ -189,3 +189,35 @@ def test_explicit_list_without_default_types_is_flagged_and_logged(client, auth,
                for r in caplog.records)
     # a list that keeps at least one default-type channel excluded is a plain override
     assert sim(client, auth, tuna[1], exclude_channels=["oman-retail"])["inputs"]["exclusion"] == "caller_override"
+
+
+def test_export_pdf(client, auth, tuna, admin_db):
+    tid, pid = tuna
+    q = text("SELECT (SELECT count(*) FROM pricing_snapshots WHERE tenant_id = :t),"
+             "       (SELECT count(*) FROM audit_log WHERE tenant_id = :t)")
+    with admin_db.connect() as c:
+        before = tuple(c.execute(q, {"t": tid}).one())
+    r = client.post("/api/v1/simulate/export.pdf", headers=auth,
+                    json={"product_id": pid, "as_of": str(AS_OF), "skipjack_usd": "1.40"})
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/pdf"
+    assert len(r.content) > 1024 and r.content.startswith(b"%PDF")
+    if os.environ.get("EXAMPLE_EXPORT_PDF"):      # regenerate the committed example: EXAMPLE_EXPORT_PDF=../example_export.pdf
+        Path(os.environ["EXAMPLE_EXPORT_PDF"]).write_bytes(r.content)
+    assert b"Canned Light Tuna in Sunflower Oil" in r.content          # document title (Info dictionary)
+    # the bundled Arabic font is embedded; WeasyPrint names it after the CSS family ('Noto Naskh Arabic',
+    # spaces -> hyphens), so the literal b"NotoNaskhArabic" never appears in the bytes
+    assert b"+Noto-Naskh-Arabic" in r.content and b"+Noto-Sans" in r.content
+    with admin_db.connect() as c:
+        assert tuple(c.execute(q, {"t": tid}).one()) == before         # no snapshot, no audit entry
+
+
+def test_export_pdf_html_uses_simulate_numbers(client, auth, tuna):
+    """The PDF shows the /simulate numbers (checked on the HTML the PDF is rendered from)."""
+    from costing_api.services.pdf_export import build_html
+    s = sim(client, auth, tuna[1], skipjack_usd="1.40")
+    html = build_html(s, [], [(1, [24.0, 0.3])], ("uae-export", "mena-export"), "تونة", AS_OF)
+    for text_ in ("1.557", "1.832", "2.224", "2.831", "+24.0%", "+0.3%", "OMR / kg", "أدنى سعر بيع مجدٍ",
+                  "الأسعار مرجعية وليست مشتريات موثّقة", "FINDINGS.md / DECISION_BRIEF.md"):
+        assert text_ in html, text_
+    assert "<tr class='recommended'><td>uae-export" in html and "<tr class='excluded'><td>oman-retail" in html

@@ -117,3 +117,8 @@ SIM=$(curl -s -w '\n%{http_code}' -X POST "$API/api/v1/simulate" -H "$AUTH" -H "
 echo "$SIM" | head -1 | jq -c '{recommendation, floor: .envelope.floor_minor, channels: [.channels[] | {channel, channel_type, headroom_pct, verdict, excluded}]}'
 [ "$(echo "$SIM" | head -1 | jq -r .recommendation)" = "uae-export" ] || fail "simulate recommendation != uae-export"
 [ "$(psqlq "SELECT count(*) FROM pricing_snapshots")" = "$SNAPS_BEFORE" ] || fail "simulate wrote a snapshot"
+PDF_OUT=$(mktemp --suffix=.pdf)
+PDF_CODE=$(curl -s -o "$PDF_OUT" -w '%{http_code}' -X POST "$API/api/v1/simulate/export.pdf" -H "$AUTH" \
+  -H "Content-Type: application/json" -d "{\"product_id\":\"$TUNA_ID\"}")
+[ "$PDF_CODE" = "200" ] && [ -s "$PDF_OUT" ] || fail "simulate/export.pdf returned $PDF_CODE ($(wc -c <"$PDF_OUT") bytes)"
+echo "export.pdf: $(wc -c <"$PDF_OUT") bytes"; rm -f "$PDF_OUT"

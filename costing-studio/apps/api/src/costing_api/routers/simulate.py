@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from costing.money import Money
 
 from ..deps import get_session, get_tenant
 from ..services.envelope_service import load_inputs, load_market_prices, resolve_rates
+from ..services.pdf_export import render_simulation_pdf
 
 router = APIRouter(prefix="/api/v1/simulate", tags=["simulate"])
 log = logging.getLogger(__name__)
@@ -59,6 +60,33 @@ def simulate(req: SimulateRequest, tenant=Depends(get_tenant), session: Session 
     "caller_override_without_default_types" and a warning is logged; otherwise "caller_override".
     """
     session.execute(text("SET TRANSACTION READ ONLY"))
+    return run_simulation(session, tenant, req)[0]
+
+
+SENSITIVITY_USD = [Decimal("1.00") + Decimal("0.10") * i for i in range(9)]    # 1.00 .. 1.80 USD/kg
+SENSITIVITY_CHANNELS = ("uae-export", "mena-export")
+
+
+@router.post("/export.pdf")
+def export_pdf(req: SimulateRequest, tenant=Depends(get_tenant), session: Session = Depends(get_session)):
+    """The same simulation as POST /simulate as a one-page A4 PDF. Read-only: no snapshot, no audit row."""
+    session.execute(text("SET TRANSACTION READ ONLY"))
+    result, market = run_simulation(session, tenant, req)
+    sensitivity = None
+    if any(line["name"] == SKIPJACK for line in result["envelope"]["lines"]):
+        sensitivity = []
+        for usd in SENSITIVITY_USD:
+            by = {c["channel"]: c["headroom_pct"]
+                  for c in run_simulation(session, tenant, req.model_copy(update={"skipjack_usd": usd}))[0]["channels"]}
+            sensitivity.append((usd, [by.get(ch) for ch in SENSITIVITY_CHANNELS]))
+    attrs = session.execute(text("SELECT attributes FROM products WHERE tenant_id = :t AND id = :p"),
+                            {"t": tenant["tenant_id"], "p": str(req.product_id)}).scalar_one()
+    pdf = render_simulation_pdf(result, market, sensitivity, SENSITIVITY_CHANNELS, (attrs or {}).get("name_ar"))
+    return Response(pdf, media_type="application/pdf")
+
+
+def run_simulation(session: Session, tenant, req: SimulateRequest):
+    """The /simulate computation: (response dict, market prices used). Caller sets READ ONLY."""
     as_of = req.as_of or date.today()
     try:
         inp = load_inputs(session, tenant["tenant_id"], req.product_id, as_of)
@@ -119,4 +147,4 @@ def simulate(req: SimulateRequest, tenant=Depends(get_tenant), session: Session 
         "last_viable_sell_minor": floor,
         "channels": channels,
         "recommendation": best["channel"] if best else None,
-    }
+    }, market
