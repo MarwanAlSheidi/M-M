@@ -47,7 +47,8 @@ def test_load_product_then_prices(product_file, tmp_path):
                  "target                              0.389 OMR", "ceiling (max_pct)                   0.495 OMR",
                  "market: no fresh prices"):
         assert line in r.stdout, r.stdout
-    assert run("scripts/load_product.py", f).stderr.strip() == f"error: product {name!r} already exists"
+    again = run("scripts/load_product.py", f)                  # same file again: a no-op, not a refusal
+    assert again.returncode == 0 and "unchanged" in again.stdout, again.stderr
 
     csv = tmp_path / "prices.csv"
     csv.write_text("observed_at,price_major,currency,unit\n" + "\n".join(
@@ -111,3 +112,77 @@ def test_market_loader_upserts_one_source_row_per_channel_with_type(product_file
     with eng.connect() as c:                                               # nothing changed by the failed load
         assert [x[1] for x in c.execute(q, {"n": name})] == ["retail", "trade"]
     eng.dispose()
+
+
+def _state(name):
+    """Everything a product load can write, for before/after comparisons."""
+    eng = create_engine(ADMIN_URL)
+    with eng.connect() as c:
+        pid = c.execute(text("SELECT id FROM products WHERE name = :n"), {"n": name}).scalar()
+        q = {"p": pid}
+        out = {
+            "attributes": c.execute(text("SELECT attributes FROM products WHERE id = :p"), q).scalar(),
+            "elements": c.execute(text("""SELECT ce.name, ce.rate_minor, ce.valid_from, ce.valid_to, b.qty_per_unit
+                                            FROM cost_elements ce LEFT JOIN product_bom b ON b.cost_element_id = ce.id
+                                           WHERE ce.product_id = :p ORDER BY ce.name, ce.valid_from"""), q).all(),
+            "margins": c.execute(text("SELECT min_pct, target_pct, max_pct, valid_from, valid_to FROM margin_config "
+                                      "WHERE product_id = :p ORDER BY valid_from"), q).all(),
+            "audit": c.execute(text("SELECT count(*) FROM audit_log WHERE tenant_id = "
+                                    "(SELECT tenant_id FROM products WHERE id = :p)"), q).scalar(),
+            "snapshots": c.execute(text("SELECT count(*) FROM pricing_snapshots WHERE product_id = :p"), q).scalar(),
+        }
+    eng.dispose()
+    return out
+
+
+def test_reload_identical_json_changes_nothing(product_file):
+    name, f = product_file
+    assert run("scripts/load_product.py", f).returncode == 0
+    before = _state(name)
+    r = run("scripts/load_product.py", f)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip().endswith("unchanged"), r.stdout
+    assert _state(name) == before
+
+
+def test_reload_with_one_modified_attribute_updates_only_that(product_file, tmp_path):
+    name, f = product_file
+    assert run("scripts/load_product.py", f).returncode == 0
+    before = _state(name)
+    changed = tmp_path / "changed.json"
+    changed.write_text(json.dumps({**EXAMPLE, "name": name,
+                                   "attributes": {**EXAMPLE["attributes"], "shelf_life_days": 5}}))
+    r = run("scripts/load_product.py", changed)
+    assert r.returncode == 0, r.stderr
+    assert "attribute modified: shelf_life_days: 4 -> 5" in r.stdout, r.stdout
+    after = _state(name)
+    assert after["attributes"] == {**before["attributes"], "shelf_life_days": 5}
+    assert (after["elements"], after["margins"]) == (before["elements"], before["margins"])   # nothing versioned
+    assert after["audit"] == before["audit"] + 1                                               # the one update
+
+
+def test_dry_run_prints_the_diff_and_writes_nothing(product_file, tmp_path):
+    name, f = product_file
+    assert run("scripts/load_product.py", f).returncode == 0
+    before = _state(name)
+    attrs = {k: v for k, v in EXAMPLE["attributes"].items() if k != "weight_g"}
+    elements = [{**e, "rate": "0.400"} if e["name"] == "flour" else e for e in EXAMPLE["cost_elements"]]
+    changed = tmp_path / "changed.json"
+    changed.write_text(json.dumps({**EXAMPLE, "name": name, "cost_elements": elements,
+                                   "margin": {**EXAMPLE["margin"], "target_pct": "0.32"},
+                                   "attributes": {**attrs, "shelf_life_days": 5, "origin": "OM"}}))
+    r = run("scripts/load_product.py", changed, "--dry-run")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.splitlines() == [
+        "dry run, nothing written:",
+        f"existing product {name!r}",
+        "  attribute added:    origin = 'OM'",
+        "  attribute removed:  weight_g (was 600)",
+        "  attribute modified: shelf_life_days: 4 -> 5",
+        "  cost element versioned: flour (rate 0.380 OMR -> 0.400 OMR)",
+        "  margin versioned: min/target/max 15%/30%/45% -> 15%/32%/45%",
+    ], r.stdout
+    assert _state(name) == before
+    same = run("scripts/load_product.py", f, "--dry-run")
+    assert "attributes: unchanged" in same.stdout and "cost elements: unchanged" in same.stdout \
+        and "margin: unchanged" in same.stdout, same.stdout
