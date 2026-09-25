@@ -5,6 +5,7 @@ resolve_rates, then costing.envelope.compute_envelope / compare_to_market per ch
 transaction is switched to READ ONLY before anything runs, so no snapshot or audit row can be written.
 """
 from __future__ import annotations
+import logging
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
@@ -23,6 +24,7 @@ from ..deps import get_session, get_tenant
 from ..services.envelope_service import load_inputs, load_market_prices, resolve_rates
 
 router = APIRouter(prefix="/api/v1/simulate", tags=["simulate"])
+log = logging.getLogger(__name__)
 
 SKIPJACK = "Frozen whole skipjack tuna"   # the raw-material element the skipjack input overrides
 DEFAULT_EXCLUDED_TYPES = ("retail", "import")   # applied only when the caller sends no exclude_channels
@@ -48,6 +50,14 @@ def verdict(headroom_pct: float) -> str:
 
 @router.post("")
 def simulate(req: SimulateRequest, tenant=Depends(get_tenant), session: Session = Depends(get_session)):
+    """Read-only what-if: envelope plus per-channel headroom, verdict and recommendation.
+
+    Omitting exclude_channels excludes retail and import channels by type (inputs.exclusion =
+    "default_by_type"). An explicit exclude_channels list disables the type-based default exclusion
+    entirely. Callers who want type defaults plus additional exclusions should fetch the default list
+    first. When an explicit list leaves every retail/import channel included, inputs.exclusion is
+    "caller_override_without_default_types" and a warning is logged; otherwise "caller_override".
+    """
     session.execute(text("SET TRANSACTION READ ONLY"))
     as_of = req.as_of or date.today()
     try:
@@ -79,7 +89,12 @@ def simulate(req: SimulateRequest, tenant=Depends(get_tenant), session: Session 
         excluded = {s for s in sources if channel_type[s] in DEFAULT_EXCLUDED_TYPES}
         exclusion = "default_by_type"
     else:
-        excluded, exclusion = set(req.exclude_channels), "caller"
+        excluded, exclusion = set(req.exclude_channels), "caller_override"
+        typed = {s for s in sources if channel_type[s] in DEFAULT_EXCLUDED_TYPES}
+        if typed and not (excluded & typed):
+            exclusion = "caller_override_without_default_types"
+            log.warning("simulate product=%s: explicit exclude_channels re-enables default-excluded %s channels: %s",
+                        req.product_id, "/".join(sorted({channel_type[s] for s in typed})), ", ".join(sorted(typed)))
     channels = []
     for ch in sources:
         cmp = compare_to_market(env, [p for p in market if p.source == ch], rates)

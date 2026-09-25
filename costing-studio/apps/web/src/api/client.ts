@@ -118,7 +118,7 @@ export interface SimChannel {
 export interface SimResult {
   product_id: string; product_name: string; as_of: string; currency: string; unit: string;
   inputs: { skipjack_usd: string | null; margin_floor_pct: string; margin_target_pct: string;
-            margin_max_pct: string | null; exclude_channels: string[]; exclusion: "default_by_type" | "caller" };
+            margin_max_pct: string | null; exclude_channels: string[]; exclusion: "default_by_type" | "caller_override" | "caller_override_without_default_types" };
   envelope: { unit_cost_minor: number; floor_minor: number; target_minor: number; ceiling_minor: number;
               ceiling_source: "max_pct" | "mirror"; lines: { name: string; amount_minor: number }[] };
   last_viable_sell_minor: number; channels: SimChannel[]; recommendation: string | null;

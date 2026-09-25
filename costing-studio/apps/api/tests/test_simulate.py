@@ -131,7 +131,8 @@ def test_default_exclusion_by_type(client, auth, tuna):
 def test_caller_list_wins_without_extra_defaults(client, auth, tuna):
     pid = tuna[1]
     everything = sim(client, auth, pid, exclude_channels=[])               # rule as written, nothing excluded
-    assert everything["recommendation"] == "oman-retail" and everything["inputs"]["exclusion"] == "caller"
+    assert everything["recommendation"] == "oman-retail"
+    assert everything["inputs"]["exclusion"] == "caller_override_without_default_types"
     # Only uae-export excluded: retail is NOT excluded by default any more (the caller's list wins), and it is
     # the only comfortable channel left (mena-export is marginal at +0.3%), so the rule picks it.
     no_uae = sim(client, auth, pid, exclude_channels=["uae-export"])
@@ -176,3 +177,15 @@ def test_simulate_writes_nothing(client, auth, tuna, admin_db):
         sim(client, auth, pid, **kw)
     with admin_db.connect() as c:
         assert tuple(c.execute(q, {"t": tid}).one()) == before
+
+
+def test_explicit_list_without_default_types_is_flagged_and_logged(client, auth, tuna, caplog):
+    import logging
+    with caplog.at_level(logging.WARNING, logger="costing_api.routers.simulate"):
+        s = sim(client, auth, tuna[1], exclude_channels=["uae-export"])
+    assert s["inputs"]["exclusion"] == "caller_override_without_default_types"
+    assert s["recommendation"] == "oman-retail"                            # caller's list still honoured
+    assert any("import/retail" in r.getMessage() and "oman-import, oman-retail" in r.getMessage()
+               for r in caplog.records)
+    # a list that keeps at least one default-type channel excluded is a plain override
+    assert sim(client, auth, tuna[1], exclude_channels=["oman-retail"])["inputs"]["exclusion"] == "caller_override"
