@@ -16,9 +16,12 @@ records it); any error rolls the whole product back.
 Re-running on an existing product (same name) is idempotent:
   - attributes: replaced by the file's when they differ (keys added, removed or modified); else untouched;
   - cost elements / margin: a new dated version is posted only when the file differs from the current
-    version (rate, currency, unit, qty_per_unit / min, target, max); identical ones are skipped.
+    version (rate, currency, unit, qty_per_unit / min, target, max); identical ones are skipped. A version
+    starting the same day as the current one replaces it in place while no pricing snapshot exists since
+    that day ("updated version for ..."); after a snapshot it is refused ("... already exists").
     Elements stored but absent from the file are left as they are. category and base_unit are not changed.
---dry-run prints that plan and exits without writing anything (no snapshot either).
+The envelope printed at the end is a preview and is never saved as a pricing snapshot.
+--dry-run prints that plan and exits without writing anything.
 """
 from __future__ import annotations
 import argparse
@@ -144,12 +147,16 @@ def load(session, tenant: dict, spec: dict) -> str:
     versioned = {n for n, _ in pl["elements"]}
     for e in elements:
         if e.name in versioned:
-            product_service.add_cost_element(session, tenant, pid, name=e.name, unit=e.unit, rate=e.rate,
-                                             currency=e.currency.upper(), valid_from=e.valid_from,
-                                             qty_per_unit=e.qty_per_unit)
+            out = product_service.add_cost_element(session, tenant, pid, name=e.name, unit=e.unit, rate=e.rate,
+                                                   currency=e.currency.upper(), valid_from=e.valid_from,
+                                                   qty_per_unit=e.qty_per_unit)
+            if out.get("updated_in_place"):
+                print(f"updated version for {e.name}")
     if pl["margin"] is not None:
-        product_service.set_margin_config(session, tenant, pid, margin.min_pct, margin.target_pct,
-                                          margin.max_pct, margin.valid_from)
+        out = product_service.set_margin_config(session, tenant, pid, margin.min_pct, margin.target_pct,
+                                                margin.max_pct, margin.valid_from)
+        if out.get("updated_in_place"):
+            print("updated version for margin")
     return pid
 
 
@@ -172,7 +179,7 @@ def main(argv=None) -> int:
         return 0
     pid = run_in_tenant(args.tenant, lambda s, t: load(s, t, spec))
     print(f"{'loaded' if pl['create'] else 'updated'} product {spec['name']!r} id={pid}\n" + describe(pl, spec["name"]))
-    run_in_tenant(args.tenant, lambda s, t: print_envelope(s, t, pid, "load_product"))
+    run_in_tenant(args.tenant, lambda s, t: print_envelope(s, t, pid, "load_product", save=False))
     return 0
 
 

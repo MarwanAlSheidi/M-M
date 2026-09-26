@@ -56,18 +56,28 @@ def resolve_product(session, tenant: dict, product: str) -> str:
     return str(row)
 
 
-def print_envelope(session, tenant: dict, product_id: str, computed_by: str) -> None:
+def print_envelope(session, tenant: dict, product_id: str, computed_by: str, save: bool = True) -> None:
+    """Compute and print the envelope. save=False is a preview: the snapshot insert is rolled back, so
+    nothing lands in pricing_snapshots (a snapshot means someone computed the envelope for a reason)."""
     from costing.currencies import exponent_of
     from costing.money import Money
     from costing_api.services.envelope_service import EnvelopeNotConfigured, build_envelope
     try:
-        e = build_envelope(session, tenant["tenant_id"], product_id, computed_by=computed_by)
+        if save:
+            e = build_envelope(session, tenant["tenant_id"], product_id, computed_by=computed_by)
+        else:
+            preview = session.begin_nested()
+            try:
+                e = build_envelope(session, tenant["tenant_id"], product_id, computed_by=computed_by)
+            finally:
+                preview.rollback()
     except EnvelopeNotConfigured as err:
         print(f"envelope not computed: {err}")
         return
     exp = exponent_of(e["currency"])
     m = lambda v: f"{Money(int(v), e['currency']).major:.{exp}f} {e['currency']}"    # noqa: E731  full decimals
-    print(f"\nenvelope per {e['unit']} (as of {e['as_of']}, snapshot {e['snapshot_id']}):")
+    saved = f"snapshot {e['snapshot_id']}" if save else "preview, not saved"
+    print(f"\nenvelope per {e['unit']} (as of {e['as_of']}, {saved}):")
     for line in e["lines"]:
         print(f"  {line['name']:<28} {m(line['amount_minor']):>16}")
     print(f"  {'unit cost':<28} {m(e['unit_cost_minor']):>16}")

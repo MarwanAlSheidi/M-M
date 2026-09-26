@@ -65,7 +65,7 @@ def test_load_product_then_prices(product_file, tmp_path):
         snaps = c.execute(text("""SELECT computed_by FROM pricing_snapshots s JOIN products p ON p.id = s.product_id
                                   WHERE p.name = :n ORDER BY computed_at"""), {"n": name}).scalars().all()
     eng.dispose()
-    assert n == 1 and snaps[:2] == ["load_product", "load_market_prices"]
+    assert n == 1 and snaps == ["load_market_prices"]        # the product loader only previews the envelope
 
 
 def test_loaders_refuse_bad_input_without_writing(product_file, tmp_path):
@@ -204,3 +204,74 @@ def test_market_reload_with_identical_csv_skips_the_envelope(product_file, tmp_p
     assert "inserted 0 of 2 rows" in second.stdout and "no new rows, skipping envelope" in second.stdout
     assert "envelope per" not in second.stdout, second.stdout
     assert snaps() == s0 + 1                                                   # second run: none
+
+
+def _undated(name):
+    """The example product with no valid_from anywhere, so every version starts today."""
+    return {**EXAMPLE, "name": name,
+            "cost_elements": [{k: v for k, v in e.items() if k != "valid_from"} for e in EXAMPLE["cost_elements"]],
+            "margin": {k: v for k, v in EXAMPLE["margin"].items() if k != "valid_from"}}
+
+
+def _api(name):
+    """(client, auth headers, product id) for the loader's tenant, with a forged token like test_simulate."""
+    import jwt
+    from fastapi.testclient import TestClient
+    from costing_api.main import app
+    from costing_api.settings import settings
+    tok = jwt.encode({"sub": str(uuid.uuid4()), "tenant_id": "11111111-1111-1111-1111-111111111111", "role": "admin"},
+                     settings.jwt_secret, algorithm="HS256")
+    eng = create_engine(ADMIN_URL)
+    with eng.connect() as c:
+        pid = str(c.execute(text("SELECT id FROM products WHERE name = :n"), {"n": name}).scalar())
+    eng.dispose()
+    return TestClient(app), {"Authorization": f"Bearer {tok}"}, pid
+
+
+def _flour_changed(name, tmp_path):
+    spec = _undated(name)
+    spec["cost_elements"] = [{**e, "rate": "0.400"} if e["name"] == "flour" else e for e in spec["cost_elements"]]
+    f = tmp_path / "flour.json"
+    f.write_text(json.dumps(spec))
+    return f
+
+
+@pytest.mark.skipif(not os.environ.get("JWT_SECRET"), reason="JWT_SECRET not set")
+def test_same_day_change_updates_the_version_in_place_before_any_snapshot(product_file, tmp_path):
+    name, f = product_file
+    f.write_text(json.dumps(_undated(name)))
+    first = run("scripts/load_product.py", f)
+    assert first.returncode == 0 and "preview, not saved" in first.stdout, first.stderr
+    client, auth, pid = _api(name)
+    assert client.post("/api/v1/simulate", headers=auth, json={"product_id": pid}).status_code == 200
+    before = _state(name)
+    assert before["snapshots"] == 0                            # neither the load nor simulate saved one
+
+    r = run("scripts/load_product.py", _flour_changed(name, tmp_path))
+    assert r.returncode == 0, r.stderr
+    assert "updated version for flour" in r.stdout, r.stdout
+    after = _state(name)
+    assert len(after["elements"]) == len(before["elements"])   # replaced, not versioned
+    flour = [e for e in after["elements"] if e.name == "flour"]
+    assert len(flour) == 1 and flour[0].rate_minor == 400 and flour[0].valid_to is None
+    assert float(flour[0].qty_per_unit) == float(next(e for e in EXAMPLE["cost_elements"]
+                                                      if e["name"] == "flour")["qty_per_unit"])
+    assert after["margins"] == before["margins"] and after["snapshots"] == 0
+
+
+@pytest.mark.skipif(not os.environ.get("JWT_SECRET"), reason="JWT_SECRET not set")
+def test_same_day_change_is_refused_once_a_snapshot_used_the_version(product_file, tmp_path):
+    name, f = product_file
+    f.write_text(json.dumps(_undated(name)))
+    assert run("scripts/load_product.py", f).returncode == 0
+    client, auth, pid = _api(name)
+    assert client.post("/api/v1/simulate", headers=auth, json={"product_id": pid}).status_code == 200
+    # simulate is read-only; the recompute endpoint is what records a snapshot of the current version
+    assert client.post("/api/v1/envelope", headers=auth, json={"product_id": pid}).status_code == 200
+    before = _state(name)
+    assert before["snapshots"] == 1
+
+    r = run("scripts/load_product.py", _flour_changed(name, tmp_path))
+    assert r.returncode != 0
+    assert r.stderr.strip() == f"error: a cost_elements version starting on or after {date.today()} already exists"
+    assert _state(name) == before                              # whole load rolled back

@@ -136,6 +136,20 @@ def _close_open_version(session, table: str, where: str, params: dict, valid_fro
     return open_row
 
 
+def _replaceable_same_day(session, table: str, where: str, params: dict, valid_from: date):
+    """The open version, if it starts on valid_from and no pricing snapshot for the product has been computed
+    since it started (so nothing has used it yet): such a version is corrected in place instead of refused."""
+    open_row = session.execute(text(f"""
+      SELECT id, valid_from FROM {table} WHERE {where} AND valid_to IS NULL
+    """), params).mappings().first()
+    if open_row is None or open_row["valid_from"] != valid_from:
+        return None
+    used = session.execute(text("""
+      SELECT 1 FROM pricing_snapshots WHERE tenant_id = :t AND product_id = :p AND computed_at >= :vf LIMIT 1
+    """), {"t": params["t"], "p": params["p"], "vf": valid_from}).first()
+    return None if used else open_row
+
+
 def add_cost_element(session, tenant: dict, product_id, name: str, unit: str, rate: Decimal, currency: str,
                      valid_from: date, qty_per_unit: Optional[Decimal] = None) -> dict:
     tid = tenant["tenant_id"]
@@ -146,6 +160,24 @@ def add_cost_element(session, tenant: dict, product_id, name: str, unit: str, ra
         raise ValueError("rate and qty_per_unit must be >= 0")
     rate_minor = Money.from_major(rate, currency).amount_minor
     where = "tenant_id = :t AND product_id = :p AND name = :n"
+    same_day = _replaceable_same_day(session, "cost_elements", where,
+                                     {"t": tid, "p": str(product_id), "n": name}, valid_from)
+    if same_day is not None:
+        row = session.execute(text("""
+          UPDATE cost_elements SET unit = :u, rate_minor = :r, currency = :c WHERE id = :id
+          RETURNING id, name, unit, rate_minor, currency, valid_from, valid_to
+        """), {"u": unit, "r": rate_minor, "c": currency, "id": same_day["id"]}).mappings().one()
+        if qty_per_unit is not None:
+            updated = session.execute(text("UPDATE product_bom SET qty_per_unit = :q WHERE cost_element_id = :c"),
+                                      {"q": qty_per_unit, "c": row["id"]}).rowcount
+            if not updated:
+                session.execute(text("""
+                  INSERT INTO product_bom (tenant_id, product_id, cost_element_id, qty_per_unit)
+                  VALUES (:t, :p, :c, :q)
+                """), {"t": tid, "p": str(product_id), "c": row["id"], "q": qty_per_unit})
+        out = {**dict(row), "qty_per_unit": qty_per_unit, "replaced_id": None, "updated_in_place": True}
+        _audit(session, tenant, "cost_element", row["id"], "update", out)
+        return out
     prev = _close_open_version(session, "cost_elements", where,
                                {"t": tid, "p": str(product_id), "n": name}, valid_from)
     if qty_per_unit is None and prev is not None:
@@ -174,6 +206,16 @@ def set_margin_config(session, tenant: dict, product_id, min_pct: Decimal, targe
     tid = tenant["tenant_id"]
     _require_product(session, tid, product_id)
     MarginConfig(min_pct, target_pct, max_pct)            # same validation as the engine
+    same_day = _replaceable_same_day(session, "margin_config", "tenant_id = :t AND product_id = :p",
+                                     {"t": tid, "p": str(product_id)}, valid_from)
+    if same_day is not None:
+        row = session.execute(text("""
+          UPDATE margin_config SET min_pct = :mn, target_pct = :tg, max_pct = :mx WHERE id = :id
+          RETURNING id, min_pct, target_pct, max_pct, valid_from, valid_to
+        """), {"mn": min_pct, "tg": target_pct, "mx": max_pct, "id": same_day["id"]}).mappings().one()
+        out = {**dict(row), "replaced_id": None, "updated_in_place": True}
+        _audit(session, tenant, "margin_config", row["id"], "update", out)
+        return out
     prev = _close_open_version(session, "margin_config", "tenant_id = :t AND product_id = :p",
                                {"t": tid, "p": str(product_id)}, valid_from)
     row = session.execute(text("""
